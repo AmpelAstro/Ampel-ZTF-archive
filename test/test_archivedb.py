@@ -14,6 +14,8 @@ from sqlalchemy.sql.functions import count
 from collections import Iterable
 import json
 
+pytest_plugins = ['ampel.test.fixtures']
+
 @pytest.fixture
 def temp_database(postgres):
     """
