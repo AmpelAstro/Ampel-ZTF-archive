@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# File              : Ampel-ZTF/src/ampel/archive/ArchiveUpdater.py
+# File              : ampel/pipeline/t0/ArchiveUpdater.py
 # License           : BSD-3-Clause
 # Author            : Jakob van Santen <jakob.van.santen@desy.de>
 # Date              : 10.04.2018
@@ -12,7 +12,6 @@ from sqlalchemy import UniqueConstraint, select, bindparam
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.sql.expression import tuple_, func
-from time import time
 from distutils.version import LooseVersion
 
 class ArchiveUpdater(ArchiveDBClient):
@@ -42,7 +41,7 @@ class ArchiveUpdater(ArchiveDBClient):
                     Alert.insert(),
                     programid=alert['candidate']['programid'], jd=alert['candidate']['jd'],
                     partition_id=partition_id, 
-                    ingestion_time=time(), 
+                    ingestion_time=ingestion_time, 
                     **alert
                 )
                 alert_id = result.inserted_primary_key[0]
