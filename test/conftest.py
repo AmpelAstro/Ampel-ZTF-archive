@@ -2,6 +2,29 @@
 from os.path import abspath, join, dirname
 import pytest
 
+from ampel.test.fixtures import docker_service
+
+@pytest.fixture(scope="session")
+def kafka():
+	gen = docker_service('spotify/kafka', 9092,
+	    environ={'ADVERTISED_HOST': '127.0.0.1'},
+	    port_mapping={9092:9092},
+	    healthcheck='$KAFKA_HOME/bin/kafka-topics.sh --zookeeper localhost:2181 --list')
+	port = next(gen)
+	yield '127.0.0.1:{}'.format(port)
+
+@pytest.fixture(scope="session")
+def kafka_stream(kafka, alert_tarball):
+	import itertools
+	from confluent_kafka import Producer
+	from ampel.pipeline.t0.load.TarballWalker import TarballWalker
+	atat = TarballWalker(alert_tarball)
+	producer = Producer({'bootstrap.servers': kafka})
+	for i,fileobj in enumerate(itertools.islice(atat.get_files(), 0, 1000, 1)):
+		producer.produce('ztf_20180819_programid1', fileobj.read())
+	producer.flush()
+	yield kafka
+
 @pytest.fixture(scope='session')
 def alert_tarball():
 	return join(dirname(__file__), '..', 'alerts', 'ztf_public_20180819_mod1000.tar.gz')
