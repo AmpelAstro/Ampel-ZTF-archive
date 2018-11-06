@@ -260,6 +260,44 @@ def test_serializability(temp_database, alert_generator):
         for old, new in zip(reco['prv_candidates'], deserialized['prv_candidates']):
             assert old == pytest.approx(new)
 
+@pytest.fixture
+def alert_32():
+    from os.path import join, dirname
+    import fastavro
+    fname = join(dirname(__file__), '..', 'alerts', 'schema_3.2.avro')
+    with open(fname, 'rb') as f:
+        r = fastavro.reader(f)
+        alert, schema = next(r), r.schema
+
+def test_schema_32(temp_database):
+    from os.path import join, dirname
+    from fastavro._write_py import writer
+    from fastavro import reader
+    from io import BytesIO
+
+    updater = ArchiveUpdater(temp_database)
+    db = ArchiveDB(temp_database)
+
+    with open(join(dirname(__file__), '..', 'alerts', 'schema_3.2.avro'), 'rb') as f:
+        r = reader(f)
+        alert, schema = next(r), r.schema
+
+    updater.insert_alert(alert, schema, 0, 0)
+    reco = db.get_alert(alert['candid'], with_history=True, with_cutouts=True)
+    f = BytesIO()
+    writer(f, schema, [reco])
+    deserialized = next(reader(BytesIO(f.getvalue())))
+    assert deserialized.keys() == reco.keys()
+    for k in reco:
+        if not 'candidate' in k or 'cutout' in k:
+            assert deserialized[k] == reco[k]
+    assert set(deserialized['candidate'].keys()) == set(reco['candidate'].keys())
+    assert deserialized['candidate'] == pytest.approx(reco['candidate'])
+    assert len(deserialized['prv_candidates']) == len(reco['prv_candidates'])
+    for old, new in zip(reco['prv_candidates'], deserialized['prv_candidates']):
+        assert set(old.keys()) == set(new.keys())
+        assert old == pytest.approx(new)
+
 @pytest.mark.skip(reason="Testing alert tarball only contains a single exposure")
 def test_get_alert(mock_database, alert_generator):
     processor_id = 0
