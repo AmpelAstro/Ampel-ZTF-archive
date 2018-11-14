@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# File              : Ampel-ZTF/src/ampel/archive/ArchiveDBClient.py
+# File              : ampel/ztf/archive/ArchiveDBClient.py
 # License           : BSD-3-Clause
 # Author            : Jakob van Santen <jakob.van.santen@desy.de>
 # Date              : 10.04.2018
-# Last Modified Date: 14.09.2018
+# Last Modified Date: 14.11.2018
 # Last Modified By  : vb <vbrinnel@physik.hu-berlin.de>
 
 from sqlalchemy import MetaData, create_engine, select
