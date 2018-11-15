@@ -6,8 +6,8 @@ import time
 from math import isnan
 from collections import defaultdict
 
-from ampel.archive.ArchiveDB import ArchiveDB
-from ampel.pipeline.t0.ArchiveUpdater import ArchiveUpdater
+from ampel.ztf.archive.ArchiveDB import ArchiveDB
+from ampel.ztf.pipeline.t0.ArchiveUpdater import ArchiveUpdater
 
 from sqlalchemy import select, create_engine, MetaData
 import sqlalchemy

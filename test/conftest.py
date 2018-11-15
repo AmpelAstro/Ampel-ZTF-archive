@@ -86,7 +86,7 @@ def transientview_generator(alert_generator):
 @pytest.fixture
 def ampel_alerts(alert_generator):
 	from ampel.pipeline.t0.alerts.AlertSupplier import AlertSupplier
-	from ampel.pipeline.t0.alerts.ZIAlertShaper import ZIAlertShaper
+	from ampel.ztf.pipeline.t0.alerts.ZIAlertShaper import ZIAlertShaper
 	from ampel.base.AmpelAlert import AmpelAlert
 	def ampelize(shaped_alert):
 		return AmpelAlert(shaped_alert['tran_id'], shaped_alert['ro_pps'], shaped_alert['ro_uls'])
