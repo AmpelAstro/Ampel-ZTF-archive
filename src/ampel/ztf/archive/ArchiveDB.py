@@ -232,7 +232,7 @@ class ArchiveDB(ArchiveDBClient):
         if isinstance(objectId, str):
             match = Alert.c.objectId == objectId
         elif isinstance(objectId, collections.Collection):
-            match = in_(Alert.c.objectId, objectId)
+            match = Alert.c.objectId.in_(objectId)
         else:
             raise TypeError("objectId must be str or collection, got {}".format(type(objectId)))
         in_range = and_(Alert.c.jd >= jd_start, Alert.c.jd < jd_end, match)
