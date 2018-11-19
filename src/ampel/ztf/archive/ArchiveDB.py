@@ -4,12 +4,13 @@
 # License           : BSD-3-Clause
 # Author            : Jakob van Santen <jakob.van.santen@desy.de>
 # Date              : 10.04.2018
-# Last Modified Date: 14.11.2018
-# Last Modified By  : vb <vbrinnel@physik.hu-berlin.de>
+# Last Modified Date: 19.11.2018
+# Last Modified By  : Jakob van Santen <jakob.van.santen@desy.de>
 
 from ampel.ztf.archive.ArchiveDBClient import ArchiveDBClient
 from sqlalchemy import select, and_, bindparam
 from sqlalchemy.sql.expression import func
+from sqlalchemy.exc import IntegrityError
 import sqlalchemy, collections
 
 
@@ -131,53 +132,125 @@ class ArchiveDB(ArchiveDBClient):
 
         return alert_query, history_query, cutout_query
 
+    def _populate_read_queue(self, group_id, block_size, condition, order):
+        Alert = self._meta.tables['alert']
+        Queue = self._meta.tables['read_queue']
+        numbered = select(
+            [
+                Alert.c.alert_id,
+                func.row_number().over(order_by=order).label('row_number')
+            ]
+        ).where(condition).alias('numbered')
+        block = func.div(numbered.c.row_number-1, block_size)
+        self._connection.execute(
+            Queue.insert().from_select(
+                [Queue.c.group_id, Queue.c.alert_ids],
+                select(
+                    [
+                        group_id,
+                        func.array_agg(numbered.c.alert_id)
+                    ]
+                ).group_by(block).order_by(block)
+            )
+        )
 
     def _fetch_alerts_with_condition(
-        self, condition, order=None, with_history=True, with_cutouts=False
+        self, condition, order=None, with_history=True, with_cutouts=False,
+        group_name=None, block_size=2,
     ):
         """
         """
 
-        alert_query = self._alert_query.where(condition).order_by(order)
+        if group_name is not None:
+            Alert = self._meta.tables['alert']
+            Groups = self._meta.tables['read_queue_groups']
+            Queue = self._meta.tables['read_queue']
+            with self._connection.begin() as transaction:
+                try:
+                    # Create the group. This will raise IntegrityError if the
+                    # group already exists
+                    result = self._connection.execute(
+                        Groups.insert(),
+                        group_name=group_name
+                    )
+                    group_id = result.inserted_primary_key[0]
+                    # Populate the group queue in the same transaction
+                    self._populate_read_queue(group_id, block_size, condition, order)
+                    transaction.commit()
+                except IntegrityError as e:
+                    # If we arrive here, then another client already committed
+                    # the group name and populated the queue.
+                    transaction.rollback()
+                    group_id = self._connection.execute(
+                        select([Groups.c.group_id])
+                        .where(Groups.c.group_name==group_name)
+                    ).fetchone()[0]
+            # Pop a block of alert IDs from the queue that is not already
+            # locked by another client, and lock it for the duration of the
+            # transaction.
+            item_id = Queue.c.item_id
+            popped_item = Queue.delete().where(
+                Queue.c.item_id == \
+                    select([item_id]) \
+                        .order_by(item_id.asc()) \
+                        .with_for_update(skip_locked=True) \
+                        .limit(1)
+            ).returning(Queue.c.alert_ids).cte()
+            # Query for alerts whose IDs were in the block
+            alert_query = self._alert_query.where(Alert.c.alert_id.in_(select([func.unnest(popped_item.c.alert_ids)])))
+        else:
+            alert_query = self._alert_query.where(condition).order_by(order)
 
-        with self._connection.begin() as transaction:
-
-            try:
+        while True:
+            nrows = 0
+            with self._connection.begin() as transaction:
                 for result in self._connection.execute(alert_query):
-
-                    candidate = dict(result)
-                    alert_id = candidate.pop('alert_id')
-                    alert = {'candid': candidate['candid'], 'publisher': 'ampel'}
-
-                    for k in 'objectId', 'schemavsn':
-                        alert[k] = candidate.pop(k)
-
-                    alert['candidate'] = {'programpi': None, 'pdiffimfilename': None, **candidate}
-                    alert['prv_candidates'] = []
-
-                    if with_history:
-                        for result in self._connection.execute(self._history_query, alert_id=alert_id):
-                            alert['prv_candidates'].append(
-                                {'programpi': None, 'pdiffimfilename': None, **result}
-                            )
-
-                        alert['prv_candidates'] = sorted(
-                            alert['prv_candidates'], 
-                            key=lambda c: (c['jd'],  c['candid'] is None, c['candid'])
-                        )
-
-                    if with_cutouts:
-                        for result in self._connection.execute(self._cutout_query, alert_id=alert_id):
-                            alert['cutout{}'.format(result['kind'].title())] = {
-                                'stampData': result['stampData'],
-                                'fileName': 'unknown'
-                            }
-
-                    yield alert
-
-            finally:
+                    nrows += 1
+                    yield self._construct_alert(result, with_history, with_cutouts)
+                # If we reach this point, all alerts from the block have been
+                # consumed. Commit the transaction to delete the queue item. If
+                # the generator is destroyed before we reach this point,
+                # however, the transaction will be rolled back, releasing the
+                # lock on the queue item and allowing another client to claim
+                # it.
                 transaction.commit()
+            # If in shared queue mode (group_name is not None), execute
+            # the query over and over again until it returns no rows.
+            # If in standalone mode (group name is None), execute it
+            # only once
+            if nrows == 0 or group_name is None:
+                break
 
+    def _construct_alert(self, candidate_row, with_history=True, with_cutouts=True):
+        candidate = dict(candidate_row)
+        alert_id = candidate.pop('alert_id')
+        alert = {'candid': candidate['candid'], 'publisher': 'ampel'}
+
+        for k in 'objectId', 'schemavsn':
+            alert[k] = candidate.pop(k)
+
+        alert['candidate'] = {'programpi': None, 'pdiffimfilename': None, **candidate}
+        alert['prv_candidates'] = []
+
+        if with_history:
+            for result in self._connection.execute(self._history_query, alert_id=alert_id):
+                alert['prv_candidates'].append(
+                    {'programpi': None, 'pdiffimfilename': None, **result}
+                )
+
+            alert['prv_candidates'] = sorted(
+                alert['prv_candidates'], 
+                key=lambda c: (c['jd'],  c['candid'] is None, c['candid'])
+            )
+
+        if with_cutouts:
+            for result in self._connection.execute(self._cutout_query, alert_id=alert_id):
+                alert['cutout{}'.format(result['kind'].title())] = {
+                    'stampData': result['stampData'],
+                    'fileName': 'unknown'
+                }
+
+        return alert
 
     def get_alert(self, candid, with_history=True, with_cutouts=False):
         """
@@ -261,45 +334,29 @@ class ArchiveDB(ArchiveDBClient):
 
 
     def get_alerts_in_time_range(
-        self, jd_min, jd_max, partitions=None, programid=None, with_history=True, with_cutouts=False
+        self, jd_min, jd_max, programid=None, with_history=True, with_cutouts=False,
+        group_name=None, block_size=5000,
     ):
         """
         Retrieve a range of alerts from the archive database
 
         :param jd_start: minimum JD of exposure start
         :param jd_end: maximum JD of exposure start
-        :param partitions: range of partitions to consume. Clients with disjoint
-            partitions will not receive duplicate alerts even if they request
-            overlapping time ranges.
-        :type partitions: int or slice
         :param with_history: return alert with previous detections and upper limits
         :param with_cutout: return alert with cutout images
+        :param group_name: consumer group name. This is used to partition the
+            results of the query among clients in the same group.
+        :param block_size: partition results in chunks with this many alerts
         """
         Alert = self._meta.tables['alert']
         in_range = and_(Alert.c.jd >= jd_min, Alert.c.jd < jd_max)
-
-        if isinstance(partitions, int):
-            in_range = and_(in_range, Alert.c.partition_id == partitions)
-
-        elif isinstance(partitions, slice):
-            assert partitions.step == 1 or partitions.step is None
-            in_range = and_(
-                in_range, 
-                and_(
-                    Alert.c.partition_id >= partitions.start, 
-                    Alert.c.partition_id < partitions.stop
-                )
-            )
-
-        elif partitions is not None:
-            raise TypeError("partitions must be int or slice")
 
         if isinstance(programid, int):
             in_range = and_(in_range, Alert.c.programid == programid)
 
         yield from self._fetch_alerts_with_condition(
             in_range, Alert.c.jd.asc(),
-            with_history=with_history, with_cutouts=with_cutouts
+            with_history=with_history, with_cutouts=with_cutouts, group_name=group_name
         )
 
 

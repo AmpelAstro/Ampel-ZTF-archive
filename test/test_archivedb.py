@@ -38,6 +38,15 @@ def temp_database(postgres):
                     connection.execute(table.delete())
 
 @pytest.fixture
+def alert_archive(temp_database, alert_generator):
+    updater = ArchiveUpdater(temp_database)
+    from itertools import islice
+    for alert, schema in islice(alert_generator(with_schema=True),10):
+        assert schema['version'] == "3.0", "Need alerts with current schema"
+        updater.insert_alert(alert, schema, 0, 0)
+    yield temp_database
+
+@pytest.fixture
 def mock_database(temp_database):
     engine = create_engine(temp_database)
     meta = MetaData()
@@ -380,6 +389,26 @@ def test_archive_object(alert_generator, postgres):
 
     for table, stats in db.get_statistics().items():
         assert stats['rows'] >= db._connection.execute(db._meta.tables[table].count()).fetchone()[0]
+
+def test_partitioned_read_single(alert_archive):
+    db = ArchiveDB(alert_archive)
+    alerts = db.get_alerts_in_time_range(0, 1e8, group_name='testy')
+    l = list((alert['candid'] for alert in alerts))
+    assert len(l) == 10
+
+def test_partitioned_read_double(alert_archive):
+    import itertools
+    db1 = ArchiveDB(alert_archive)
+    db2 = ArchiveDB(alert_archive)
+    # kwargs = dict(group_name='testy', block_size=2, with_history=False, with_cutouts=False)
+    kwargs = dict(group_name='testy', block_size=2)
+    
+    l1 = list((alert['candid'] for alert in itertools.islice(db1.get_alerts_in_time_range(0, 1e8, **kwargs), 5)))
+    l2 = list((alert['candid'] for alert in db2.get_alerts_in_time_range(0, 1e8, **kwargs)))
+    
+    assert set(l1).intersection(l2) == {l1[-1]}, "both clients see alert in last partial block, as it was never committed"
+    assert len(l1) == 5, "first client sees all alerts it consumed"
+    assert len(l2) == 6, "alerts in uncommitted block read by second client"
 
 def test_insert_future_schema(alert_generator, postgres):
     db = ArchiveUpdater(postgres)
