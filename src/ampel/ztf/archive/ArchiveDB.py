@@ -15,7 +15,6 @@ import sqlalchemy, collections
 
 import logging
 log = logging.getLogger('ampel.ztf.archive')
-logging.getLogger('sqlalchemy').setLevel(logging.ERROR)
 
 class ArchiveDB(ArchiveDBClient):
     """

@@ -9,6 +9,11 @@
 
 from sqlalchemy import MetaData, create_engine, select
 from distutils.version import LooseVersion
+import logging
+import warnings
+
+# we know that sqlalchemy can't reflect earthdistance indexes
+warnings.filterwarnings('ignore', message='skipped unsupported reflection of expression-based index cone_search')
 
 class ArchiveDBClient:
     """
@@ -19,6 +24,7 @@ class ArchiveDBClient:
         Initialize and connect to archive database. Arguments will be passed on
         to :py:func:`sqlalchemy.create_engine`.
         """
+        logging.getLogger('sqlalchemy').setLevel(logging.ERROR)
         engine = create_engine(*args, **kwargs)
         self._meta = MetaData()
         self._meta.reflect(bind=engine)
