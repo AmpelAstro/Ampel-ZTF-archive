@@ -13,6 +13,8 @@ from sqlalchemy.sql.expression import func
 from sqlalchemy.exc import IntegrityError
 import sqlalchemy, collections
 
+import logging
+log = logging.getLogger('ampel.ztf.archive')
 
 class ArchiveDB(ArchiveDBClient):
     """
@@ -153,10 +155,17 @@ class ArchiveDB(ArchiveDBClient):
                 ).group_by(block).order_by(block)
             )
         )
+        col = Queue.c.alert_ids
+        return self._connection.execute(select(
+            [
+                func.count(col).label('chunks'),
+                func.sum(func.array_length(col,1)).label('items')
+            ]
+        ).where(Queue.c.group_id==group_id)).fetchone()
 
     def _fetch_alerts_with_condition(
-        self, condition, order=None, with_history=True, with_cutouts=False,
-        group_name=None, block_size=2,
+        self, condition, order=None, with_history=False, with_cutouts=False,
+        group_name=None, block_size=None,
     ):
         """
         """
@@ -175,8 +184,9 @@ class ArchiveDB(ArchiveDBClient):
                     )
                     group_id = result.inserted_primary_key[0]
                     # Populate the group queue in the same transaction
-                    self._populate_read_queue(group_id, block_size, condition, order)
+                    queue_info = self._populate_read_queue(group_id, block_size, condition, order)
                     transaction.commit()
+                    log.info("Created group {} with id {} ({} items in {} chunks)".format(group_name, group_id, queue_info['items'], queue_info['chunks']))
                 except IntegrityError as e:
                     # If we arrive here, then another client already committed
                     # the group name and populated the queue.
@@ -185,6 +195,13 @@ class ArchiveDB(ArchiveDBClient):
                         select([Groups.c.group_id])
                         .where(Groups.c.group_name==group_name)
                     ).fetchone()[0]
+                    chunks = self._connection.execute(select(
+                        [func.count(Queue.c.alert_ids).label('chunks')]
+                    ).where(Queue.c.group_id==group_id)).fetchone()[0]
+                    log.info("Subscribed to group {} with id {} ({} chunks remaining)".format(group_name, group_id, chunks))
+                except Exception as e:
+                    log.error(e)
+                    raise
             # Pop a block of alert IDs from the queue that is not already
             # locked by another client, and lock it for the duration of the
             # transaction.
@@ -220,6 +237,11 @@ class ArchiveDB(ArchiveDBClient):
             # only once
             if nrows == 0 or group_name is None:
                 break
+            else:
+                chunks = self._connection.execute(select(
+                    [func.count(Queue.c.alert_ids).label('chunks')]
+                ).where(Queue.c.group_id==group_id)).fetchone()[0]
+                log.info("Query complete after {} alerts, {} chunks remaining".format(nrows, chunks))
 
     def _construct_alert(self, candidate_row, with_history=True, with_cutouts=True):
         candidate = dict(candidate_row)
@@ -356,7 +378,8 @@ class ArchiveDB(ArchiveDBClient):
 
         yield from self._fetch_alerts_with_condition(
             in_range, Alert.c.jd.asc(),
-            with_history=with_history, with_cutouts=with_cutouts, group_name=group_name
+            with_history=with_history, with_cutouts=with_cutouts,
+            group_name=group_name, block_size=block_size,
         )
 
 
