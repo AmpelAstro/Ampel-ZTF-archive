@@ -15,6 +15,7 @@ import sqlalchemy, collections
 
 import logging
 log = logging.getLogger('ampel.ztf.archive')
+logging.getLogger('sqlalchemy').setLevel(logging.ERROR)
 
 class ArchiveDB(ArchiveDBClient):
     """
@@ -133,6 +134,23 @@ class ArchiveDB(ArchiveDBClient):
         )
 
         return alert_query, history_query, cutout_query
+
+    def get_consumer_groups(self):
+        Groups = self._meta.tables['read_queue_groups']
+        Queue = self._meta.tables['read_queue']
+        query = select(
+             [
+                Groups.c.group_name,
+                func.count(Queue.c.alert_ids).label('chunks'),
+                func.sum(func.array_length(Queue.c.alert_ids,1)).label('items'),
+             ]
+        ).select_from(Groups.outerjoin(Queue)).group_by(Groups.c.group_id)
+        return self._connection.execute(query).fetchall()
+
+    def remove_consumer_group(self, group_name):
+        Groups = self._meta.tables['read_queue_groups']
+        Queue = self._meta.tables['read_queue']
+        self._connection.execute(Groups.delete().where(Groups.c.group_name==group_name))
 
     def _populate_read_queue(self, group_id, block_size, condition, order):
         Alert = self._meta.tables['alert']
@@ -420,3 +438,30 @@ class ArchiveDB(ArchiveDBClient):
             in_range, Alert.c.jd.asc(),
             with_history=with_history, with_cutouts=with_cutouts
         )
+
+def consumer_groups_command():
+    from ampel.pipeline.config.AmpelArgumentParser import AmpelArgumentParser
+    from ampel.pipeline.config.AmpelConfig import AmpelConfig
+    import json
+    
+    parser = AmpelArgumentParser(description="Manage concurrent archive playback groups.")
+    parser.require_resource('archive', ['reader'])
+    subparsers = parser.add_subparsers(help='command help')
+    subparser_list = []
+    def add_command(name, help=None):
+        p = subparsers.add_parser(name, help=help, add_help=False)
+        p.set_defaults(action=name)
+        subparser_list.append(p)
+        return p
+    p = add_command('list', help='list groups')
+    p = add_command('remove', help='remove consumer group')
+    p.add_argument('group_name', help='Name of consumer group to remove')
+    p.set_defaults(action='remove')
+    opts = parser.parse_args()
+    
+    archive = ArchiveDB(
+        AmpelConfig.get_config('resources.archive.reader')
+    )
+    if opts.action == 'remove':
+        archive.remove_consumer_group(opts.group_name)
+    print(json.dumps(list(map(dict,archive.get_consumer_groups())), indent=1))
