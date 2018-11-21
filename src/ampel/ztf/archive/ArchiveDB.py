@@ -146,10 +146,10 @@ class ArchiveDB(ArchiveDBClient):
         ).select_from(Groups.outerjoin(Queue)).group_by(Groups.c.group_id)
         return self._connection.execute(query).fetchall()
 
-    def remove_consumer_group(self, group_name):
+    def remove_consumer_group(self, pattern):
         Groups = self._meta.tables['read_queue_groups']
         Queue = self._meta.tables['read_queue']
-        self._connection.execute(Groups.delete().where(Groups.c.group_name==group_name))
+        self._connection.execute(Groups.delete().where(Groups.c.group_name.like(pattern)))
 
     def _populate_read_queue(self, group_id, block_size, condition, order):
         Alert = self._meta.tables['alert']
@@ -454,7 +454,7 @@ def consumer_groups_command():
         return p
     p = add_command('list', help='list groups')
     p = add_command('remove', help='remove consumer group')
-    p.add_argument('group_name', help='Name of consumer group to remove')
+    p.add_argument('group_name', help='Name of consumer group to remove. This may contain SQL wildcards (%,_)')
     p.set_defaults(action='remove')
     opts = parser.parse_args()
     
