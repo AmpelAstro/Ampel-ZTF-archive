@@ -226,6 +226,7 @@ class ArchiveDB(ArchiveDBClient):
             popped_item = Queue.delete().where(
                 Queue.c.item_id == \
                     select([item_id]) \
+                        .where(Queue.c.group_id==group_id) \
                         .order_by(item_id.asc()) \
                         .with_for_update(skip_locked=True) \
                         .limit(1)
