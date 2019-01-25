@@ -1,5 +1,6 @@
 
 from os.path import abspath, join, dirname
+from os import environ
 import pytest
 
 from ampel.core.test.fixtures import docker_service
@@ -9,12 +10,15 @@ pytest_plugins = ['ampel.core.test.fixtures', 'ampel.ztf.test.fixtures']
 
 @pytest.fixture(scope="session")
 def kafka():
-	gen = docker_service('spotify/kafka', 9092,
-	    environ={'ADVERTISED_HOST': '127.0.0.1'},
-	    port_mapping={9092:9092},
-	    healthcheck='$KAFKA_HOME/bin/kafka-topics.sh --zookeeper localhost:2181 --list')
-	port = next(gen)
-	yield '127.0.0.1:{}'.format(port)
+	if 'KAFKA_HOSTNAME' in environ and 'KAFKA_PORT' in environ:
+		yield '{}:{}'.format(environ['KAFKA_HOSTNAME'], environ['KAFKA_PORT'])
+	else:
+		gen = docker_service('spotify/kafka', 9092,
+		    environ={'ADVERTISED_HOST': '127.0.0.1'},
+		    port_mapping={9092:9092},
+		    healthcheck='$KAFKA_HOME/bin/kafka-topics.sh --zookeeper localhost:2181 --list')
+		port = next(gen)
+		yield '127.0.0.1:{}'.format(port)
 
 @pytest.fixture(scope="session")
 def kafka_stream(kafka, alert_tarball):
