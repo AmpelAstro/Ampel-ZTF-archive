@@ -15,8 +15,6 @@ from sqlalchemy.sql.functions import count
 from collections import Iterable
 import json
 
-pytest_plugins = ['ampel.test.fixtures']
-
 @pytest.fixture
 def temp_database(postgres):
     """
@@ -273,7 +271,7 @@ def test_serializability(temp_database, alert_generator):
 def alert_32():
     from os.path import join, dirname
     import fastavro
-    fname = join(dirname(__file__), '..', 'alerts', 'schema_3.2.avro')
+    fname = join(dirname(__file__), 'test-data', 'schema_3.2.avro')
     with open(fname, 'rb') as f:
         r = fastavro.reader(f)
         alert, schema = next(r), r.schema
@@ -287,7 +285,7 @@ def test_schema_32(temp_database):
     updater = ArchiveUpdater(temp_database)
     db = ArchiveDB(temp_database)
 
-    with open(join(dirname(__file__), '..', 'alerts', 'schema_3.2.avro'), 'rb') as f:
+    with open(join(dirname(__file__), 'test-data', 'schema_3.2.avro'), 'rb') as f:
         r = reader(f)
         alert, schema = next(r), r.schema
 
