@@ -59,7 +59,6 @@ class ArchiveDB(ArchiveDBClient):
             finally:
                 transaction.commit()
         return stats
-    
 
     @staticmethod
     def _build_queries(meta):
@@ -291,6 +290,10 @@ class ArchiveDB(ArchiveDBClient):
                 }
 
         return alert
+
+    def count_alerts(self):
+        Alert = self._meta.tables['alert']
+        return self._connection.execute(select([func.count(Alert.c.alert_id)])).fetchone()[0]
 
     def get_alert(self, candid, with_history=True, with_cutouts=False):
         """
