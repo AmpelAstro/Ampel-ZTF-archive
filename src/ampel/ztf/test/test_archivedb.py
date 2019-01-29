@@ -274,7 +274,7 @@ def alert_32():
     fname = join(dirname(__file__), 'test-data', 'schema_3.2.avro')
     with open(fname, 'rb') as f:
         r = fastavro.reader(f)
-        alert, schema = next(r), r.schema
+        alert, schema = next(r), r.writer_schema
 
 def test_schema_32(temp_database):
     from os.path import join, dirname
@@ -287,7 +287,7 @@ def test_schema_32(temp_database):
 
     with open(join(dirname(__file__), 'test-data', 'schema_3.2.avro'), 'rb') as f:
         r = reader(f)
-        alert, schema = next(r), r.schema
+        alert, schema = next(r), r.writer_schema
 
     updater.insert_alert(alert, schema, 0, 0)
     reco = db.get_alert(alert['candid'], with_history=True, with_cutouts=True)
