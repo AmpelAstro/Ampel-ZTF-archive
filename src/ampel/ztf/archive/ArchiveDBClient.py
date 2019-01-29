@@ -8,12 +8,11 @@
 # Last Modified By  : vb <vbrinnel@physik.hu-berlin.de>
 
 from sqlalchemy import MetaData, create_engine, select
+from sqlalchemy.exc import SAWarning
+
 from distutils.version import LooseVersion
 import logging
 import warnings
-
-# we know that sqlalchemy can't reflect earthdistance indexes
-warnings.filterwarnings('ignore', message='skipped unsupported reflection of expression-based index cone_search')
 
 class ArchiveDBClient:
     """
@@ -27,7 +26,10 @@ class ArchiveDBClient:
         logging.getLogger('sqlalchemy').setLevel(logging.ERROR)
         engine = create_engine(*args, **kwargs)
         self._meta = MetaData()
-        self._meta.reflect(bind=engine)
+        with warnings.catch_warnings():
+            # we know that sqlalchemy can't reflect earthdistance indexes
+            warnings.simplefilter("ignore", category=SAWarning)
+            self._meta.reflect(bind=engine)
         self._connection = engine.connect()
 
         Versions = self._meta.tables['versions']

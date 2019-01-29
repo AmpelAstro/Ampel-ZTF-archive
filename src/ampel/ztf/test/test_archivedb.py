@@ -12,6 +12,9 @@ from ampel.ztf.pipeline.t0.ArchiveUpdater import ArchiveUpdater
 from sqlalchemy import select, create_engine, MetaData
 import sqlalchemy
 from sqlalchemy.sql.functions import count
+from sqlalchemy.exc import SAWarning
+import warnings
+
 from collections import Iterable
 import json
 
@@ -22,7 +25,9 @@ def temp_database(postgres):
     """
     engine = create_engine(postgres)
     meta = MetaData()
-    meta.reflect(bind=engine)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=SAWarning)
+        meta.reflect(bind=engine)
     try:
         with engine.connect() as connection:
             for name, table in meta.tables.items():
@@ -48,7 +53,9 @@ def alert_archive(temp_database, alert_generator):
 def mock_database(temp_database):
     engine = create_engine(temp_database)
     meta = MetaData()
-    meta.reflect(bind=engine)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=SAWarning)
+        meta.reflect(bind=engine)
     with engine.connect() as connection:
         yield meta, connection
 
