@@ -467,4 +467,5 @@ def consumer_groups_command():
     )
     if opts.action == 'remove':
         archive.remove_consumer_group(opts.group_name)
-    print(json.dumps(list(map(dict,archive.get_consumer_groups())), indent=1))
+    print(json.dumps(list(map(dict,archive.get_consumer_groups())), indent=1)) # pylint: disable=bad-builtin
+
