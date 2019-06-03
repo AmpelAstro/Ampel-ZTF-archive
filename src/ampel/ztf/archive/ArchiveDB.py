@@ -16,6 +16,8 @@ import sqlalchemy, collections
 import logging
 log = logging.getLogger('ampel.ztf.archive')
 
+_CLIENTS = {}
+
 class ArchiveDB(ArchiveDBClient):
     """
     """
@@ -29,6 +31,15 @@ class ArchiveDB(ArchiveDBClient):
         self._history_query = history_query
         self._cutout_query = cutout_query
 
+    @classmethod
+    def instance(cls, *args, **kwargs):
+        """
+        Get a shared instance of a client with the given connection parameters
+        """
+        key = (args, tuple(kwargs.items()))
+        if not key in _CLIENTS:
+            _CLIENTS[key] = cls(*args, **kwargs)
+        return _CLIENTS[key]
 
     def get_statistics(self):
         """
