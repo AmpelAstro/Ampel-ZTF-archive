@@ -274,16 +274,17 @@ def test_serializability(temp_database, alert_generator):
         writer(f, schema, [reco])
         deserialized = next(reader(BytesIO(f.getvalue())))
 
-@pytest.fixture
-def alert_32():
+@pytest.fixture(params=["3.2", "3.3"])
+def alert_with_schema(request):
     from os.path import join, dirname
     import fastavro
-    fname = join(dirname(__file__), 'test-data', 'schema_3.2.avro')
+    fname = join(dirname(__file__), 'test-data', 'schema_{}.avro'.format(request.param))
     with open(fname, 'rb') as f:
         r = fastavro.reader(f)
         alert, schema = next(r), r.writer_schema
+    return alert, schema
 
-def test_schema_32(temp_database):
+def test_schema_update(temp_database, alert_with_schema):
     from os.path import join, dirname
     from fastavro._write_py import writer
     from fastavro import reader
@@ -292,10 +293,7 @@ def test_schema_32(temp_database):
     updater = ArchiveUpdater(temp_database)
     db = ArchiveDB(temp_database)
 
-    with open(join(dirname(__file__), 'test-data', 'schema_3.2.avro'), 'rb') as f:
-        r = reader(f)
-        alert, schema = next(r), r.writer_schema
-
+    alert, schema = alert_with_schema
     updater.insert_alert(alert, schema, 0, 0)
     reco = db.get_alert(alert['candid'], with_history=True, with_cutouts=True)
     f = BytesIO()
@@ -305,17 +303,18 @@ def test_schema_32(temp_database):
     for k in reco:
         if not 'candidate' in k or 'cutout' in k:
             assert deserialized[k] == reco[k]
-    assert set(deserialized['candidate'].keys()) == set(reco['candidate'].keys())
+    # reconstructed alert from the database may have extra keys
+    assert not set(deserialized['candidate'].keys()).difference(reco['candidate'].keys())
     old, new = reco['candidate'], deserialized['candidate']
-    for k in old:
+    for k in new:
         if isinstance(old[k], float):
             assert old[k] == pytest.approx(new[k])
         else:
             assert old[k] == new[k]
     assert len(deserialized['prv_candidates']) == len(reco['prv_candidates'])
     for old, new in zip(reco['prv_candidates'], deserialized['prv_candidates']):
-        assert set(old.keys()) == set(new.keys())
-        for k in old:
+        assert not set(old.keys()).difference(new.keys())
+        for k in new:
             if isinstance(old[k], float):
                 assert old[k] == pytest.approx(new[k])
             else:
