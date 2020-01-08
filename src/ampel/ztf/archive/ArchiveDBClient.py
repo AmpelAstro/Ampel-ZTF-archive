@@ -46,3 +46,5 @@ class ArchiveDBClient:
                 )
             finally:
                 transaction.commit()
+    def close(self):
+        self._connection.close()

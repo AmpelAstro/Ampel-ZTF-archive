@@ -16,12 +16,12 @@ import sqlalchemy, collections
 import logging
 log = logging.getLogger('ampel.ztf.archive')
 
-_CLIENTS = {}
+
 
 class ArchiveDB(ArchiveDBClient):
     """
     """
-
+    _CLIENTS = {}
     def __init__(self, *args, **kwargs):
         """
         """
@@ -30,6 +30,16 @@ class ArchiveDB(ArchiveDBClient):
         self._alert_query = alert_query
         self._history_query = history_query
         self._cutout_query = cutout_query
+        self._alert_id_column = self.get_alert_id_column()
+
+    def _get_alert_column(self, name):
+        if 'alert' in self._meta.tables and name in self._meta.tables['alert']:
+            return getattr(self._meta.tables['alert'].c, name)
+        else:
+            return getattr(self._meta.tables['candidate'].c, name)
+
+    def get_alert_id_column(self):
+        return self._meta.tables['alert'].c.alert_id
 
     @classmethod
     def instance(cls, *args, **kwargs):
@@ -37,9 +47,9 @@ class ArchiveDB(ArchiveDBClient):
         Get a shared instance of a client with the given connection parameters
         """
         key = (args, tuple(kwargs.items()))
-        if not key in _CLIENTS:
-            _CLIENTS[key] = cls(*args, **kwargs)
-        return _CLIENTS[key]
+        if not key in cls._CLIENTS:
+            cls._CLIENTS[key] = cls(*args, **kwargs)
+        return cls._CLIENTS[key]
 
     def get_statistics(self):
         """
@@ -71,8 +81,8 @@ class ArchiveDB(ArchiveDBClient):
                 transaction.commit()
         return stats
 
-    @staticmethod
-    def _build_queries(meta):
+    @classmethod
+    def _build_queries(cls, meta):
         """ """
         from sqlalchemy.sql import null
         from sqlalchemy.sql.functions import array_agg
@@ -162,22 +172,22 @@ class ArchiveDB(ArchiveDBClient):
         self._connection.execute(Groups.delete().where(Groups.c.group_name.like(pattern)))
 
     def _populate_read_queue(self, group_id, block_size, condition, order):
-        Alert = self._meta.tables['alert']
         Queue = self._meta.tables['read_queue']
         numbered = select(
             [
-                Alert.c.alert_id,
+                self._alert_id_column,
                 func.row_number().over(order_by=order).label('row_number')
             ]
         ).where(condition).alias('numbered')
-        block = func.div(numbered.c.row_number-1, block_size)
+        alert_id, row_number = numbered.columns
+        block = func.div(row_number-1, block_size)
         self._connection.execute(
             Queue.insert().from_select(
                 [Queue.c.group_id, Queue.c.alert_ids],
                 select(
                     [
                         group_id,
-                        func.array_agg(numbered.c.alert_id)
+                        func.array_agg(alert_id)
                     ]
                 ).group_by(block).order_by(block)
             )
@@ -198,7 +208,6 @@ class ArchiveDB(ArchiveDBClient):
         """
 
         if group_name is not None:
-            Alert = self._meta.tables['alert']
             Groups = self._meta.tables['read_queue_groups']
             Queue = self._meta.tables['read_queue']
             with self._connection.begin() as transaction:
@@ -242,7 +251,7 @@ class ArchiveDB(ArchiveDBClient):
                         .limit(1)
             ).returning(Queue.c.alert_ids).cte()
             # Query for alerts whose IDs were in the block
-            alert_query = self._alert_query.where(Alert.c.alert_id.in_(select([func.unnest(popped_item.c.alert_ids)])))
+            alert_query = self._alert_query.where(self._alert_id_column.in_(select([func.unnest(popped_item.c.alert_ids)])))
         else:
             alert_query = self._alert_query.where(condition).order_by(order)
 
@@ -303,8 +312,7 @@ class ArchiveDB(ArchiveDBClient):
         return alert
 
     def count_alerts(self):
-        Alert = self._meta.tables['alert']
-        return self._connection.execute(select([func.count(Alert.c.alert_id)])).fetchone()[0]
+        return self._connection.execute(select([func.count(self._alert_id_column)])).fetchone()[0]
 
     def get_alert(self, candid, with_history=True, with_cutouts=False):
         """
@@ -402,14 +410,14 @@ class ArchiveDB(ArchiveDBClient):
             results of the query among clients in the same group.
         :param block_size: partition results in chunks with this many alerts
         """
-        Alert = self._meta.tables['alert']
-        in_range = and_(Alert.c.jd >= jd_min, Alert.c.jd < jd_max)
+        jd = self._get_alert_column('jd')
+        in_range = and_(jd >= jd_min, jd < jd_max)
 
         if isinstance(programid, int):
-            in_range = and_(in_range, Alert.c.programid == programid)
+            in_range = and_(in_range, self.get_alert_column('programid') == programid)
 
         yield from self._fetch_alerts_with_condition(
-            in_range, Alert.c.jd.asc(),
+            in_range, jd.asc(),
             with_history=with_history, with_cutouts=with_cutouts,
             group_name=group_name, block_size=block_size,
         )
