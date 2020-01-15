@@ -33,7 +33,7 @@ class ArchiveDB(ArchiveDBClient):
         self._alert_id_column = self.get_alert_id_column()
 
     def _get_alert_column(self, name):
-        if 'alert' in self._meta.tables and name in self._meta.tables['alert']:
+        if 'alert' in self._meta.tables and name in self._meta.tables['alert'].c:
             return getattr(self._meta.tables['alert'].c, name)
         else:
             return getattr(self._meta.tables['candidate'].c, name)
@@ -414,7 +414,7 @@ class ArchiveDB(ArchiveDBClient):
         in_range = and_(jd >= jd_min, jd < jd_max)
 
         if isinstance(programid, int):
-            in_range = and_(in_range, self.get_alert_column('programid') == programid)
+            in_range = and_(in_range, self._get_alert_column('programid') == programid)
 
         yield from self._fetch_alerts_with_condition(
             in_range, jd.asc(),
