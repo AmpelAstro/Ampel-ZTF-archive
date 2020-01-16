@@ -18,13 +18,11 @@ class ZUDSArchiveUpdater(ArchiveDBClient):
     """
     """
 
-    def insert_alert(self, alert, ingestion_time):
+    def insert_alert(self, alert, *args, **kwargs):
         """
         Insert an alert into the archive database
     
         :param alert: alert dict
-        :param schema: avro schema dictionary
-        :param ingestion_time: time the alert was received, in UNIX epoch microseconds
         """
         if LooseVersion(alert['schemavsn']) > self._alert_version:
             raise ValueError(
@@ -42,7 +40,6 @@ class ZUDSArchiveUpdater(ArchiveDBClient):
                     Candidate.insert(),
                     objectId=alert['objectId'],
                     schemavsn=alert['schemavsn'],
-                    ingestion_time=ingestion_time,
                     **alert['candidate']
                 )
             except IntegrityError:
