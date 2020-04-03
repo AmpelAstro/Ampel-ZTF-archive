@@ -462,8 +462,8 @@ class ArchiveDB(ArchiveDBClient):
         )
 
 def consumer_groups_command():
-    from ampel.pipeline.config.AmpelArgumentParser import AmpelArgumentParser
-    from ampel.pipeline.config.AmpelConfig import AmpelConfig
+    from ampel.run.AmpelArgumentParser import AmpelArgumentParser
+    from ampel.config.AmpelConfig import AmpelConfig
     import json
     
     parser = AmpelArgumentParser(description="Manage concurrent archive playback groups.")
@@ -482,7 +482,7 @@ def consumer_groups_command():
     opts = parser.parse_args()
     
     archive = ArchiveDB(
-        AmpelConfig.get_config('resources.archive.reader')
+        AmpelConfig.get('resource.archive.reader')
     )
     if opts.action == 'remove':
         archive.remove_consumer_group(opts.group_name)

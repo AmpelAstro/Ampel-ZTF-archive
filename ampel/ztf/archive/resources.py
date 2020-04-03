@@ -3,7 +3,7 @@
 # License           : BSD-3-Clause
 # Author            : Jakob van Santen <jakob.van.santen@desy.de>
 
-from ampel.pipeline.config.resources import ResourceURI
+from ampel.config.resource.resources import ResourceURI
 
 class ArchiveDBURI(ResourceURI):
     """

@@ -24,7 +24,7 @@ def kafka():
 def kafka_stream(kafka, alert_tarball):
 	import itertools
 	from confluent_kafka import Producer
-	from ampel.pipeline.t0.load.TarballWalker import TarballWalker
+	from ampel.t0.load.TarballWalker import TarballWalker
 	atat = TarballWalker(alert_tarball)
 	producer = Producer({'bootstrap.servers': kafka})
 	for i,fileobj in enumerate(itertools.islice(atat.get_files(), 0, 1000, 1)):
@@ -35,7 +35,7 @@ def kafka_stream(kafka, alert_tarball):
 @pytest.fixture(scope='session')
 def transientview_generator(alert_generator):
 	from ampel.utils.ZIAlertUtils import ZIAlertUtils
-	from ampel.base.ScienceRecord import ScienceRecord
+	from ampel.content.T2Record import T2Record
 	from datetime import datetime
 	from numpy import random
 	def views():
@@ -53,19 +53,19 @@ def transientview_generator(alert_generator):
 				if random.binomial(1, 0.5):
 					del r['results']
 					r['error'] = 512
-			records = [ScienceRecord(alert['objectId'], 'FancyPants', None, results)]
+			records = [T2Record(alert['objectId'], 'FancyPants', None, results)]
 			tw = ZIAlertUtils.to_transientview(content=alert, science_records=records)
 			yield tw
 
 	return views
 
 @pytest.fixture
-def ampel_alerts(alert_generator):
-	from ampel.pipeline.t0.alerts.AlertSupplier import AlertSupplier
-	from ampel.ztf.pipeline.t0.alerts.ZIAlertShaper import ZIAlertShaper
-	from ampel.base.AmpelAlert import AmpelAlert
+def alerts(alert_generator):
+	from ampel.t0.alerts.AlertSupplier import AlertSupplier
+	from ampel.ztf.t0.alerts.ZIAlertShaper import ZIAlertShaper
+	from ampel.alert.PhotoAlert import PhotoAlert
 	def ampelize(shaped_alert):
-		return AmpelAlert(shaped_alert['tran_id'], shaped_alert['ro_pps'], shaped_alert['ro_uls'])
+		return PhotoAlert(shaped_alert['tran_id'], shaped_alert['ro_pps'], shaped_alert['ro_uls'])
 	yield map(ampelize, AlertSupplier(alert_generator(), ZIAlertShaper()))
 
 @pytest.fixture
