@@ -9,6 +9,7 @@ from sqlalchemy import select, create_engine, MetaData
 import sqlalchemy
 from sqlalchemy.sql.functions import count
 from sqlalchemy.exc import SAWarning
+from numbers import Number
 
 from ampel.ztf.pipeline.t0.ZUDSArchiveUpdater import ZUDSArchiveUpdater
 from ampel.ztf.archive.ZUDSArchiveDB import ZUDSArchiveDB
@@ -36,20 +37,14 @@ def temp_database(zudsarchive):
                     connection.execute(table.delete())
 
 @pytest.fixture
-def alerts():
-    with open(join(abspath(dirname(__file__)), 'test-data', 'zuds_alert.test.pkl'), 'rb') as f:
-        return pickle.load(f)
-
-@pytest.fixture
 def alert_archive(temp_database, zuds_alert_generator):
     updater = ZUDSArchiveUpdater(temp_database)
     for alert in zuds_alert_generator():
-        assert updater.insert_alert(alert, 0)
+        assert updater.insert_alert(alert)
     yield temp_database, zuds_alert_generator
 
-from numbers import Number
-
 def split_numeric(d):
+    """Split dict into numeric and non-numeric values, for use with pytest.approx"""
     num = {}
     not_num = {}
     for k,v in d.items():
@@ -81,30 +76,38 @@ def test_alerts_are_unique(zuds_alert_generator):
                     except TypeError:
                         assert pa[k] == pb[k]
 
-def test_insert_unique_alerts(temp_database, alerts):
-    processor_id = 0
+def assert_alerts_equivalent(a, b):
+    assert a.keys() == b.keys()
+    for k in a:
+        if k in ('light_curve', 'candidate', 'publisher'):
+            continue
+        if isinstance(a[k], float):
+            assert a[k] == pytest.approx(b[k])
+        else:
+            assert a[k] == b[k]
+    na , oa = split_numeric(a['candidate'])
+    nb , ob = split_numeric(b['candidate'])
+    assert na == pytest.approx(nb)
+    assert oa == ob
+    assert len(a['light_curve']) == len(b['light_curve'])
+    mjd = lambda d: d['mjd']
+    for pa, pb in zip(sorted(a['light_curve'], key=mjd), sorted(b['light_curve'], key=mjd)):
+        na , oa = split_numeric(pa)
+        nb , ob = split_numeric(pb)
+        assert na == pytest.approx(nb)
+        assert oa == ob
+
+def test_insert_unique_alerts(temp_database, zuds_alert_generator):
     db = ZUDSArchiveUpdater(temp_database)
     connection = db._connection
     meta = db._meta
-    timestamps = []
     candids = set()
-    for alert in alerts:
+    for alert in zuds_alert_generator():
         # alerts are unique
         assert alert['candid'] not in candids
         candids.add(alert['candid'])
-        
-        # # (candid,pid) is unique within an alert packet
-        # prevs = dict()
-        # for idx, candidate in enumerate([alert['candidate']] + alert['prv_candidates']):
-        #     key = (candidate['candid'], candidate['pid'])
-        #     assert key not in prevs
-        #     prevs[key] = candidate
-        del alert['candidate']['mqid']
-        timestamps.append(int(time.time()*1e6))
-        assert db.insert_alert(alert, timestamps[-1])
-    rows = connection.execute(select([meta.tables['candidate'].c.ingestion_time])).fetchall()
-    db_timestamps = sorted([tup[0] for tup in rows])
-    assert timestamps == db_timestamps
+
+        assert db.insert_alert(alert)
     rows = connection.execute(select([meta.tables['candidate'].c.candid])).fetchall()
     db_candids = sorted([tup[0] for tup in rows])
     assert sorted(list(candids)) == db_candids
@@ -114,20 +117,12 @@ def test_partitioned_read_single(alert_archive):
     db = ZUDSArchiveDB(temp_database)
     reco_alerts = list(db.get_alerts_in_time_range(0, 1e8, group_name='testy', with_cutouts=True))
     alerts = list(alert_generator())
+    assert len(alerts) >= 2
     assert len(reco_alerts) == len(alerts)
     for alert, reco_alert in zip(alerts, reco_alerts):
-        assert alert.keys() == reco_alert.keys()
-        for k in alert:
-            if k in ('light_curve', 'candidate', 'publisher'):
-                continue
-            if isinstance(alert[k], float):
-                assert alert[k] == pytest.approx(reco_alert[k])
-            else:
-                assert alert[k] == reco_alert[k]
-        assert sorted(alert['candidate'].keys()) == sorted(reco_alert['candidate'].keys())
-        
+        assert_alerts_equivalent(alert, reco_alert)
 
-def test_partitioned_read_double(alert_archive, alerts):
+def test_partitioned_read_double(alert_archive):
     import itertools
     temp_database, alert_generator = alert_archive
     db1 = ZUDSArchiveDB(temp_database)
@@ -137,6 +132,7 @@ def test_partitioned_read_double(alert_archive, alerts):
     l1 = list((alert['candid'] for alert in itertools.islice(db1.get_alerts_in_time_range(0, 1e8, **kwargs), 5)))
     l2 = list((alert['candid'] for alert in db2.get_alerts_in_time_range(0, 1e8, **kwargs)))
     total = len(list(alert_generator()))
-    assert set(l1).intersection(l2) == {l1[-1]}, "both clients see alert in last partial block, as it was never committed"
+    assert total >= 5
     assert len(l1) == 5, "first client sees all alerts it consumed"
     assert len(l2) == total-4, "alerts in uncommitted block read by second client"
+    assert set(l1).intersection(l2) == {l1[-1]}, "both clients see alert in last partial block, as it was never committed"
