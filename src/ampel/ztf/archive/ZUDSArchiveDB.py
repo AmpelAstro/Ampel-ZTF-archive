@@ -67,7 +67,7 @@ class ZUDSArchiveDB(ArchiveDB):
         for k in 'objectId', 'schemavsn':
             alert[k] = candidate.pop(k)
 
-        bad_keys = ['ingestion_time']
+        bad_keys = ['inserted_at']
         if candidate['alert_type'] == 'single':
             bad_keys += ['jdstartstack', 'jdendstack', 'nframesstack', 'jdmed']
         else:
@@ -81,11 +81,6 @@ class ZUDSArchiveDB(ArchiveDB):
         if with_history:
             for result in self._connection.execute(self._history_query, alert_id=candid):
                 alert['light_curve'].append(result)
-
-            alert['light_curve'] = sorted(
-                alert['light_curve'], 
-                key=lambda c: c['mjd']
-            )
 
         if with_cutouts:
             for result in self._connection.execute(self._cutout_query, alert_id=candid):
