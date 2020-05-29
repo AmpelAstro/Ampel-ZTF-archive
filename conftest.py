@@ -34,7 +34,7 @@ def kafka_stream(kafka, alert_tarball):
 
 @pytest.fixture(scope='session')
 def transientview_generator(alert_generator):
-	from ampel.utils.ZIAlertUtils import ZIAlertUtils
+	from ampel.util.ZIAlertUtils import ZIAlertUtils
 	from ampel.content.T2Record import T2Record
 	from datetime import datetime
 	from numpy import random
