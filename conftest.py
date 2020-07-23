@@ -45,13 +45,13 @@ def transientview_generator(alert_generator):
 					'versions': {'py': 1.0, 'run_config': 1.0},
 					'dt': datetime.utcnow().timestamp(),
 					'duration': 0.001,
-					'results': {'foo': random.uniform(0,1), 'bar': random.uniform(0,1)}
+					'body': {'foo': random.uniform(0,1), 'bar': random.uniform(0,1)}
 				}
 				for _ in range(random.poisson(1))
 			]
 			for r in results:
 				if random.binomial(1, 0.5):
-					del r['results']
+					del r['body']
 					r['error'] = 512
 			records = [T2Record(alert['objectId'], 'FancyPants', None, results)]
 			tw = ZIAlertUtils.to_transientview(content=alert, science_records=records)
