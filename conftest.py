@@ -3,10 +3,10 @@ from os.path import abspath, join, dirname
 from os import environ
 import pytest
 
-from ampel.core.test.fixtures import docker_service
+from ampel.test.fixtures import docker_service
 
-collect_ignore = ['src/ampel/ztf/test/fixtures.py']
-pytest_plugins = ['ampel.core.test.fixtures', 'ampel.ztf.test.fixtures']
+collect_ignore = ['ampel/ztf/test/fixtures.py']
+pytest_plugins = ['ampel.test.fixtures', 'ampel.ztf.test.fixtures']
 
 @pytest.fixture(scope="session")
 def kafka():

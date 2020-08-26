@@ -11,7 +11,7 @@ from sqlalchemy.sql.functions import count
 from sqlalchemy.exc import SAWarning
 from numbers import Number
 
-from ampel.ztf.pipeline.t0.ZUDSArchiveUpdater import ZUDSArchiveUpdater
+from ampel.ztf.t0.ZUDSArchiveUpdater import ZUDSArchiveUpdater
 from ampel.ztf.archive.ZUDSArchiveDB import ZUDSArchiveDB
 
 @pytest.fixture
