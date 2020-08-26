@@ -15,7 +15,7 @@ from sqlalchemy.sql.functions import count
 from sqlalchemy.exc import SAWarning
 import warnings
 
-from collections import Iterable
+from collections.abc import Iterable
 import json
 
 @pytest.fixture
