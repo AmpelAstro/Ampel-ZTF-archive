@@ -2,7 +2,7 @@
 from sqlalchemy import select, and_, bindparam, case
 from sqlalchemy.sql.expression import func
 
-from .ArchiveDB import ArchiveDB
+from ampel.ztf.archive.ArchiveDB import ArchiveDB
 
 class ZUDSArchiveDB(ArchiveDB):
     """
