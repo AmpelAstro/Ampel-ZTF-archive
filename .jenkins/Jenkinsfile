@@ -1,0 +1,38 @@
+pipeline {
+  agent none
+  stages {
+    stage('dependencies') {
+      agent any
+      steps {
+          dir(path: '.jenkins/Ampel-interface') {
+            git(url: 'https://github.com/AmpelProject/Ampel-interface', credentialsId: 'github')
+          }
+          dir(path: '.jenkins/Ampel-core') {
+            git(url: 'https://github.com/AmpelProject/Ampel-core', credentialsId: 'github')
+          }
+          dir(path: '.jenkins/Ampel-alerts') {
+            git(url: 'https://github.com/AmpelProject/Ampel-alerts', credentialsId: 'github')
+          }
+          dir(path: '.jenkins/Ampel-photometry') {
+            git(url: 'https://github.com/AmpelProject/Ampel-photometry', credentialsId: 'github')
+          }
+      }
+    }
+    stage('build') {
+      agent {
+        dockerfile {
+          filename '.jenkins/Dockerfile.build'
+        }
+      }
+      steps {
+        sh 'rm mypy.*.xml || true'
+        sh 'run_mypy.sh ampel'
+      }
+      post {
+        always {
+          junit 'mypy.*.xml'
+        }
+      }
+    }
+  }
+}

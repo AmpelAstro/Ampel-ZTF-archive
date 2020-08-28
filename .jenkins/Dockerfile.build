@@ -1,0 +1,22 @@
+FROM python:3.8.5
+
+RUN apt-get update && \
+    apt-get install -y bash jq && \
+    pip install mypy==0.770 mypy2junit
+
+ADD .jenkins/run_mypy.sh /bin
+
+ADD .jenkins/Ampel-interface /Ampel-interface
+RUN pip install -r /Ampel-interface/requirements.txt /Ampel-interface
+
+ADD .jenkins/Ampel-core /Ampel-core
+RUN pip install -r /Ampel-core/requirements.txt /Ampel-core
+
+ADD .jenkins/Ampel-alerts /Ampel-alerts
+RUN pip install -r /Ampel-alerts/requirements.txt /Ampel-alerts
+
+ADD .jenkins/Ampel-photometry /Ampel-photometry
+RUN pip install /Ampel-photometry
+
+ADD requirements.txt /
+RUN pip install -r /requirements.txt sqlalchemy-stubs
