@@ -7,6 +7,8 @@
 # Last Modified Date: 19.11.2018
 # Last Modified By  : Jakob van Santen <jakob.van.santen@desy.de>
 
+from typing import Any, Dict, Tuple
+
 from ampel.ztf.archive.ArchiveDBClient import ArchiveDBClient
 from sqlalchemy import select, and_, bindparam
 from sqlalchemy.sql.expression import func
@@ -21,7 +23,7 @@ log = logging.getLogger('ampel.ztf.archive')
 class ArchiveDB(ArchiveDBClient):
     """
     """
-    _CLIENTS = {}
+    _CLIENTS: Dict[Tuple[Tuple[Any],Tuple[Tuple[str,Any]]], ArchiveDB] = {}
     def __init__(self, *args, **kwargs):
         """
         """
@@ -461,30 +463,41 @@ class ArchiveDB(ArchiveDBClient):
             with_history=with_history, with_cutouts=with_cutouts
         )
 
-def consumer_groups_command():
-    from ampel.run.AmpelArgumentParser import AmpelArgumentParser
-    from ampel.config.AmpelConfig import AmpelConfig
+def consumer_groups_command() -> None:
+    from argparse import ArgumentParser
     import json
-    
-    parser = AmpelArgumentParser(description="Manage concurrent archive playback groups.")
-    parser.require_resource('archive', ['reader'])
-    subparsers = parser.add_subparsers(help='command help')
-    subparser_list = []
+
+    from ampel.core import AmpelContext
+    from ampel.dev.DictSecretProvider import DictSecretProvider
+    from ampel.model.UnitModel import UnitModel
+
+    parser = ArgumentParser(add_help=True)
+    parser.add_argument('config_file_path')
+    parser.add_argument('--secrets', type=DictSecretProvider.load, required=True)
     def add_command(name, help=None):
-        p = subparsers.add_parser(name, help=help, add_help=False)
+        p = subparsers.add_parser(name, help=help)
         p.set_defaults(action=name)
-        subparser_list.append(p)
         return p
+
     p = add_command('list', help='list groups')
+
     p = add_command('remove', help='remove consumer group')
     p.add_argument('group_name', help='Name of consumer group to remove. This may contain SQL wildcards (%,_)')
     p.set_defaults(action='remove')
-    opts = parser.parse_args()
-    
+
+    args = parser.parse_args()
+
+    ctx = AmpelContext.load(args.config_file_path, secrets=args.secrets)
+    assert ctx.loader.secrets is not None
+
     archive = ArchiveDB(
-        AmpelConfig.get('resource.archive.reader')
+        ctx.config.get('resource.ampel-ztf/archive', str, raise_exc=True),
+        connect_args=ctx.loader.secrets.get(
+            "ztf/archive/{'reader' if arg.action=='list' else 'writer}",
+            dict,
+        ).get()
     )
-    if opts.action == 'remove':
-        archive.remove_consumer_group(opts.group_name)
+    if args.action == 'remove':
+        archive.remove_consumer_group(args.group_name)
     print(json.dumps(list(map(dict,archive.get_consumer_groups())), indent=1)) # pylint: disable=bad-builtin
 
