@@ -23,7 +23,7 @@ log = logging.getLogger('ampel.ztf.archive')
 class ArchiveDB(ArchiveDBClient):
     """
     """
-    _CLIENTS: Dict[Tuple[Tuple[Any],Tuple[Tuple[str,Any]]], ArchiveDB] = {}
+    _CLIENTS: Dict[Tuple[Tuple[Any],Tuple[Tuple[str,Any]]], 'ArchiveDB'] = {}
     def __init__(self, *args, **kwargs):
         """
         """
