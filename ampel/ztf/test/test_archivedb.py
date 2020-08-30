@@ -19,39 +19,17 @@ from collections.abc import Iterable
 import json
 
 @pytest.fixture
-def temp_database(postgres):
-    """
-    Yield archive database, dropping all rows when finished
-    """
-    engine = create_engine(postgres)
-    meta = MetaData()
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", category=SAWarning)
-        meta.reflect(bind=engine)
-    try:
-        with engine.connect() as connection:
-            for name, table in meta.tables.items():
-                if name != 'versions':
-                    connection.execute(table.delete())
-        yield postgres
-    finally:
-        with engine.connect() as connection:
-            for name, table in meta.tables.items():
-                if name != 'versions':
-                    connection.execute(table.delete())
-
-@pytest.fixture
-def alert_archive(temp_database, alert_generator):
-    updater = ArchiveUpdater(temp_database)
+def alert_archive(empty_archive, alert_generator):
+    updater = ArchiveUpdater(empty_archive)
     from itertools import islice
     for alert, schema in islice(alert_generator(with_schema=True),10):
         assert schema['version'] == "3.0", "Need alerts with current schema"
         updater.insert_alert(alert, schema, 0, 0)
-    yield temp_database
+    yield empty_archive
 
 @pytest.fixture
-def mock_database(temp_database):
-    engine = create_engine(temp_database)
+def mock_database(empty_archive):
+    engine = create_engine(empty_archive)
     meta = MetaData()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=SAWarning)
@@ -59,9 +37,9 @@ def mock_database(temp_database):
     with engine.connect() as connection:
         yield meta, connection
 
-def test_insert_unique_alerts(temp_database, alert_generator):
+def test_insert_unique_alerts(empty_archive, alert_generator):
     processor_id = 0
-    db = ArchiveUpdater(temp_database)
+    db = ArchiveUpdater(empty_archive)
     connection = db._connection
     meta = db._meta
     timestamps = []
@@ -88,10 +66,10 @@ def count_previous_candidates(alert):
     upper_limits = sum((1 for c in alert['prv_candidates'] if c['candid'] is None))
     return len(alert['prv_candidates'])-upper_limits, upper_limits
 
-def test_insert_duplicate_alerts(temp_database, alert_generator):
+def test_insert_duplicate_alerts(empty_archive, alert_generator):
     import itertools
     processor_id = 0
-    db = ArchiveUpdater(temp_database)
+    db = ArchiveUpdater(empty_archive)
     connection = db._connection
     meta = db._meta
     
@@ -111,9 +89,9 @@ def test_insert_duplicate_alerts(temp_database, alert_generator):
     assert connection.execute(count(meta.tables['prv_candidate'].columns.candid)).first()[0] == detections
     assert connection.execute(count(meta.tables['upper_limit'].columns.upper_limit_id)).first()[0] == upper_limits
 
-def test_insert_duplicate_photopoints(temp_database, alert_generator):
+def test_insert_duplicate_photopoints(empty_archive, alert_generator):
     processor_id = 0
-    db = ArchiveUpdater(temp_database)
+    db = ArchiveUpdater(empty_archive)
     connection = db._connection
     meta = db._meta
     from sqlalchemy.sql.expression import tuple_, func
@@ -149,9 +127,9 @@ def test_insert_duplicate_photopoints(temp_database, alert_generator):
     assert connection.execute(count(meta.tables['alert_upper_limit_pivot'].columns.upper_limit_id)).first()[0] == 2
     assert connection.execute(sum(func.array_length(meta.tables['alert_upper_limit_pivot'].columns.upper_limit_id, 1))).first()[0] == 2*upper_limits
 
-def test_delete_alert(temp_database, alert_generator):
+def test_delete_alert(empty_archive, alert_generator):
     processor_id = 0
-    db = ArchiveUpdater(temp_database)
+    db = ArchiveUpdater(empty_archive)
     connection = db._connection
     meta = db._meta
     from sqlalchemy.sql.expression import tuple_, func
@@ -236,10 +214,10 @@ def assert_alerts_equivalent(alert, reco_alert):
         else:
             assert reco_candidate[k] == candidate[k]
 
-def test_get_cutout(temp_database, alert_generator):
+def test_get_cutout(empty_archive, alert_generator):
     processor_id = 0
-    updater = ArchiveUpdater(temp_database)
-    db = ArchiveDB(temp_database)
+    updater = ArchiveUpdater(empty_archive)
+    db = ArchiveDB(empty_archive)
     for idx, (alert, schema) in enumerate(alert_generator(with_schema=True)):
         processor_id = idx % 16
         updater.insert_alert(alert, schema, processor_id, 0)
@@ -250,7 +228,7 @@ def test_get_cutout(temp_database, alert_generator):
         alert_cutouts = {k[len('cutout'):].lower() : v['stampData'] for k,v in alert.items() if k.startswith('cutout')}
         assert cutouts == alert_cutouts
 
-def test_serializability(temp_database, alert_generator):
+def test_serializability(empty_archive, alert_generator):
     """
     Ensure that we can recover avro alerts from the db
     """
@@ -260,8 +238,8 @@ def test_serializability(temp_database, alert_generator):
     from fastavro import reader
     from io import BytesIO
     processor_id = 0
-    updater = ArchiveUpdater(temp_database)
-    db = ArchiveDB(temp_database)
+    updater = ArchiveUpdater(empty_archive)
+    db = ArchiveDB(empty_archive)
 
     for idx, (alert, schema) in enumerate(alert_generator(with_schema=True)):
         processor_id = idx % 16
@@ -284,14 +262,14 @@ def alert_with_schema(request):
         alert, schema = next(r), r.writer_schema
     return alert, schema
 
-def test_schema_update(temp_database, alert_with_schema):
+def test_schema_update(empty_archive, alert_with_schema):
     from os.path import join, dirname
     from fastavro._write_py import writer
     from fastavro import reader
     from io import BytesIO
 
-    updater = ArchiveUpdater(temp_database)
-    db = ArchiveDB(temp_database)
+    updater = ArchiveUpdater(empty_archive)
+    db = ArchiveDB(empty_archive)
 
     alert, schema = alert_with_schema
     updater.insert_alert(alert, schema, 0, 0)
@@ -366,9 +344,9 @@ def test_get_alert(mock_database, alert_generator):
         alert = hit_list[i]
         assert_alerts_equivalent(alert, reco_alert)
 
-def test_archive_object(alert_generator, postgres):
+def test_archive_object(alert_generator, empty_archive):
     import astropy.units as u
-    updater = ArchiveUpdater(postgres)
+    updater = ArchiveUpdater(empty_archive)
     from itertools import islice
     for alert, schema in islice(alert_generator(with_schema=True), 10):
         assert schema['version'] == "3.0", "Need alerts with current schema"
@@ -377,7 +355,7 @@ def test_archive_object(alert_generator, postgres):
     updater._connection.execute('end')
     updater._connection.execute('vacuum full')
     del updater
-    db = ArchiveDB(postgres)
+    db = ArchiveDB(empty_archive)
     
     for alert in islice(alert_generator(), 10):
         reco_alert = db.get_alert(alert['candid'], with_history=True, with_cutouts=True)
@@ -423,8 +401,8 @@ def test_partitioned_read_double(alert_archive):
     assert len(l1) == 5, "first client sees all alerts it consumed"
     assert len(l2) == 6, "alerts in uncommitted block read by second client"
 
-def test_insert_future_schema(alert_generator, postgres):
-    db = ArchiveUpdater(postgres)
+def test_insert_future_schema(alert_generator, empty_archive):
+    db = ArchiveUpdater(empty_archive)
 
     alert, schema = next(alert_generator(True))
     schema['version'] = str(float(schema['version'])+10)
