@@ -50,7 +50,6 @@ pipeline {
             " -e 'ARCHIVE_WRITE_USER=ampel-client'"+
             " -v '${workspace}/.jenkins/Ampel-deploy/production/initdb/archive:/docker-entrypoint-initdb.d/'"
             ) { archive ->
-            # wait for postgres to come up
             postgres.inside(
               "--link ${archive.id}:postgres"
             ) {
