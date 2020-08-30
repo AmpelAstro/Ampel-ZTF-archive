@@ -345,7 +345,6 @@ def test_get_alert(mock_database, alert_generator):
         assert_alerts_equivalent(alert, reco_alert)
 
 def test_archive_object(alert_generator, empty_archive):
-    import astropy.units as u
     updater = ArchiveUpdater(empty_archive)
     from itertools import islice
     for alert, schema in islice(alert_generator(with_schema=True), 10):
@@ -375,7 +374,7 @@ def test_archive_object(alert_generator, empty_archive):
     reco_jds = [a['candidate']['jd'] for a in db.get_alerts_in_time_range(min(jds)-sec, max(jds)+sec)]
     assert reco_jds == jds
     
-    reco_candids = [a['candid'] for a in db.get_alerts_in_cone(alerts[0]['candidate']['ra'], alerts[0]['candidate']['dec'], (2*u.deg).to(u.deg).value)]
+    reco_candids = [a['candid'] for a in db.get_alerts_in_cone(alerts[0]['candidate']['ra'], alerts[0]['candidate']['dec'], 2.0)]
     assert alerts[0]['candid'] in reco_candids
 
     # for table, stats in db.get_statistics().items():
