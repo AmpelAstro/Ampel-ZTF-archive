@@ -42,13 +42,20 @@ pipeline {
         }
         script {
           def tester = docker.build("test-image", ". -f .jenkins/Dockerfile.build")
-          docker.image("ampelproject/postgres:10.6").withRun(
+          def postgres = docker.image("ampelproject/postgres:10.6")
+          postgres.withRun(
             " -e 'POSTGRES_USER=ampel'"+
             " -e 'POSTGRES_DB=ztfarchive'"+
             " -e 'ARCHIVE_READ_USER=archive-readonly'"+
             " -e 'ARCHIVE_WRITE_USER=ampel-client'"+
             " -v '${workspace}/.jenkins/Ampel-deploy/production/initdb/archive:/docker-entrypoint-initdb.d/'"
             ) { archive ->
+            # wait for postgres to come up
+            postgres.inside(
+              "--link ${archive.id}:postgres"
+            ) {
+              sh '#!/bin/sh\nfor _ in $(seq 1 60); do if pg_isready -U ampel -h ${POSTGRES_PORT_5432_TCP_ADDR} -p ${POSTGRES_PORT_5432_TCP_PORT}; then break; fi; sleep 1; done'
+            } 
             tester.inside(
               " --link ${archive.id}:_archive"+
               " -v ${workspace}:/workspace"
