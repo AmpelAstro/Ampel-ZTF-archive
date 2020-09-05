@@ -474,7 +474,10 @@ def consumer_groups_command() -> None:
     parser = ArgumentParser(add_help=True)
     parser.add_argument('config_file_path')
     parser.add_argument('--secrets', type=DictSecretProvider.load, required=True)
-    def add_command(name, help=None):
+
+    subparsers = parser.add_subparsers(help="command help", dest="action")
+    subparsers.required = True
+    def add_command(name, help=None) -> ArgumentParser:
         p = subparsers.add_parser(name, help=help)
         p.set_defaults(action=name)
         return p
@@ -493,7 +496,7 @@ def consumer_groups_command() -> None:
     archive = ArchiveDB(
         ctx.config.get('resource.ampel-ztf/archive', str, raise_exc=True),
         connect_args=ctx.loader.secrets.get(
-            "ztf/archive/{'reader' if arg.action=='list' else 'writer}",
+            f"ztf/archive/{'reader' if args.action=='list' else 'writer'}",
             dict,
         ).get()
     )
