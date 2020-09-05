@@ -165,7 +165,7 @@ class ArchiveDB(ArchiveDBClient):
                 func.count(Queue.c.alert_ids).label('chunks'),
                 func.sum(func.array_length(Queue.c.alert_ids,1)).label('items'),
              ]
-        ).select_from(Groups.outerjoin(Queue)).group_by(Groups.c.group_id)
+        ).select_from(Groups.outerjoin(Queue)).group_by(Groups.c.group_id).order_by(Groups.c.group_id)
         return self._connection.execute(query).fetchall()
 
     def remove_consumer_group(self, pattern):
