@@ -43,6 +43,7 @@ pipeline {
         script {
           def tester = docker.build("test-image", ". -f .jenkins/Dockerfile.build")
           def postgres = docker.image("ampelproject/postgres:10.6")
+          docker.image("mongo:4.4-bionic").withRun() { mongo ->
           postgres.withRun(
             " -e 'POSTGRES_USER=ampel'"+
             " -e 'POSTGRES_DB=ztfarchive'"+
@@ -57,6 +58,7 @@ pipeline {
             } 
             tester.inside(
               " --link ${archive.id}:_archive"+
+              " --link ${mongo.id}:_mongo"+
               " -v ${workspace}:/workspace"
             ) {
               sh '#!/bin/sh\n env | sort'
@@ -64,10 +66,12 @@ pipeline {
               sh '#!/bin/sh\n'+
               'export ARCHIVE_HOSTNAME=${_ARCHIVE_PORT_5432_TCP_ADDR}\n'+
               'export ARCHIVE_PORT=${_ARCHIVE_PORT_5432_TCP_PORT}\n'+
+              'export MONGO_HOSTNAME=${_MONGO_PORT_27017_TCP_ADDR}\n'+
+              'export MONGO_PORT=${_MONGO_PORT_27017_TCP_PORT}\n'+
               'pytest ampel/ztf/test --timeout=60 --junitxml=/workspace/pytest.xml'
             }
           }
-        }
+        }}
       }
       post {
         always {
