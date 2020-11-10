@@ -7,5 +7,10 @@ RUN apt-get update && \
 ADD .jenkins/run_mypy.sh /bin
 
 ADD . /build
-RUN cd /build && pip install .jenkins/Ampel-* -e .[testing]
+RUN cd /build && pip install \
+    .jenkins/Ampel-interface \
+    .jenkins/Ampel-core \
+    .jenkins/Ampel-photometry \
+    .jenkins/Ampel-alerts \
+    -e .[testing]
 
