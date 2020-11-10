@@ -64,7 +64,7 @@ pipeline {
               sh '#!/bin/sh\n'+
               'export ARCHIVE_HOSTNAME=${_ARCHIVE_PORT_5432_TCP_ADDR}\n'+
               'export ARCHIVE_PORT=${_ARCHIVE_PORT_5432_TCP_PORT}\n'+
-              'pytest ampel --junitxml=/workspace/pytest.xml'
+              'pytest ampel/ztf/test --junitxml=/workspace/pytest.xml'
             }
           }
         }
