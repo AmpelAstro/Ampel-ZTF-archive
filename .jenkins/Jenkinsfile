@@ -16,6 +16,9 @@ pipeline {
           dir(path: '.jenkins/Ampel-photometry') {
             git(url: 'https://github.com/AmpelProject/Ampel-photometry', credentialsId: 'github')
           }
+          dir(path: '.jenkins/Ampel-deploy') {
+            git(url: 'https://github.com/AmpelProject/Ampel-deploy', credentialsId: 'github')
+          }
       }
     }
     stage('build') {
@@ -37,9 +40,6 @@ pipeline {
     stage('test') {
       agent any
       steps {
-        dir(path: '.jenkins/Ampel-deploy') {
-          git(url: 'https://github.com/AmpelProject/Ampel-deploy', credentialsId: 'github')
-        }
         script {
           def tester = docker.build("test-image", ". -f .jenkins/Dockerfile.build")
           def postgres = docker.image("ampelproject/postgres:10.6")

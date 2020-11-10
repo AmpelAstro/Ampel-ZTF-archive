@@ -6,11 +6,14 @@ RUN apt-get update && \
 
 ADD .jenkins/run_mypy.sh /bin
 
-ADD . /build
+ADD .jenkins /build/.jenkins
 RUN cd /build && pip install \
     .jenkins/Ampel-interface \
     .jenkins/Ampel-core \
     .jenkins/Ampel-photometry \
-    .jenkins/Ampel-alerts \
-    -e .[testing]
+    .jenkins/Ampel-alerts
+
+ADD setup.py /build/setup.py
+ADD ampel /build/ampel
+RUN cd /build && pip install -e .[testing]
 
