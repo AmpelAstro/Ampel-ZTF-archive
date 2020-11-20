@@ -9,6 +9,7 @@
 
 from typing import Any, Dict, Tuple
 
+from ampel.util.mappings import build_unsafe_dict_id
 from ampel.ztf.archive.ArchiveDBClient import ArchiveDBClient
 from sqlalchemy import select, and_, bindparam
 from sqlalchemy.sql.expression import func
@@ -18,12 +19,10 @@ import sqlalchemy, collections
 import logging
 log = logging.getLogger('ampel.ztf.archive')
 
-
-
 class ArchiveDB(ArchiveDBClient):
     """
     """
-    _CLIENTS: Dict[Tuple[Tuple[Any],Tuple[Tuple[str,Any]]], 'ArchiveDB'] = {}
+    _CLIENTS: Dict[bytes, 'ArchiveDB'] = {}
     def __init__(self, *args, **kwargs):
         """
         """
@@ -44,11 +43,11 @@ class ArchiveDB(ArchiveDBClient):
         return self._meta.tables['alert'].c.alert_id
 
     @classmethod
-    def instance(cls, *args, **kwargs):
+    def instance(cls, *args, **kwargs) -> 'ArchiveDB':
         """
         Get a shared instance of a client with the given connection parameters
         """
-        key = (args, tuple(kwargs.items()))
+        key = build_unsafe_dict_id({"args": args, "kwargs": kwargs})
         if not key in cls._CLIENTS:
             cls._CLIENTS[key] = cls(*args, **kwargs)
         return cls._CLIENTS[key]
