@@ -4,7 +4,7 @@ from os import environ
 import pytest
 
 collect_ignore = ['ampel/ztf/test/fixtures.py']
-pytest_plugins = ['ampel.test.fixtures', 'ampel.ztf.test.fixtures']
+pytest_plugins = ['ampel.ztf.test.fixtures']
 
 
 @pytest.fixture(scope='session')
