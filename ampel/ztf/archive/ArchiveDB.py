@@ -4,7 +4,7 @@
 # License           : BSD-3-Clause
 # Author            : Jakob van Santen <jakob.van.santen@desy.de>
 # Date              : 10.04.2018
-# Last Modified Date: 19.11.2018
+# Last Modified Date: 02.12.2020
 # Last Modified By  : Jakob van Santen <jakob.van.santen@desy.de>
 
 from typing import Any, Dict, Tuple
@@ -312,6 +312,66 @@ class ArchiveDB(ArchiveDBClient):
 
         return alert
 
+    def _fetch_photopoints_with_condition(
+        self, condition
+    ):
+        """
+        Get all photopoints from alerts that match the condition, deduplicating
+        history. This can be up to 100x faster than repeated queries for
+        individual alerts.
+        """
+        from sqlalchemy.sql.expression import func, literal_column, union_all
+
+        meta = self._meta
+        PrvCandidate = meta.tables['prv_candidate']
+        UpperLimit = meta.tables['upper_limit']
+        Candidate = meta.tables['candidate']
+        Alert = meta.tables['alert']
+        Pivot = meta.tables['alert_prv_candidate_pivot']
+        UpperLimitPivot = meta.tables['alert_upper_limit_pivot']
+
+        prv_candidate_id = func.unnest(Pivot.c.prv_candidate_id).label('prv_candidate_id')
+        prv_candidate_ids = (
+            select([Alert.c.objectId, prv_candidate_id])
+            .select_from(
+                Alert.join(Pivot, isouter=True)
+            )
+            .where(condition)
+            .distinct(prv_candidate_id)
+            .alias()
+        )
+        prv_candidates = PrvCandidate.join(prv_candidate_ids, prv_candidate_ids.c.prv_candidate_id == PrvCandidate.c.prv_candidate_id)
+
+        upper_limit_id = func.unnest(UpperLimitPivot.c.upper_limit_id).label('upper_limit_id')
+        upper_limit_ids = (
+            select([upper_limit_id])
+            .select_from(
+                Alert.join(UpperLimitPivot, isouter=True)
+            )
+            .where(condition)
+            .distinct(upper_limit_id)
+            .alias()
+        )
+        upper_limits = UpperLimit.join(upper_limit_ids, upper_limit_ids.c.upper_limit_id == UpperLimit.c.upper_limit_id)
+
+        json_agg = lambda table: func.json_agg(literal_column('"'+ table.name+'"'))
+        q = (
+            union_all(
+                select([json_agg(UpperLimit).label('upper_limits')]).select_from(upper_limits),
+                select([json_agg(PrvCandidate).label('prv_candidates')]).select_from(prv_candidates),
+                select([json_agg(Candidate).label('candidates')]).select_from(Candidate.join(Alert)).where(condition),
+            )
+        )
+
+        # ensure exactly one observation per jd. in case of conflicts, sort by
+        # candidate > prv_candidate > upper_limit, then pid
+        photopoints = dict()
+        for row in self._connection.execute(q):
+            for pp in sorted(row[0], key=lambda pp: (pp["jd"], pp["pid"])):
+                photopoints[pp["jd"]] = pp
+
+        return [photopoints[k] for k in sorted(photopoints.keys(), reverse=True)]
+
     def count_alerts(self):
         return self._connection.execute(select([func.count(self._alert_id_column)])).fetchone()[0]
 
@@ -377,6 +437,26 @@ class ArchiveDB(ArchiveDBClient):
             in_range, Alert.c.jd.asc(),
             with_history=with_history, with_cutouts=with_cutouts
         )
+
+
+    def get_photopoints_for_object(
+        self, objectId, programid=None, jd_start=-float('inf'), jd_end=float('inf')
+    ):
+        """
+        Retrieve unique photopoints from the archive database by object ID.
+
+        :param objectId: id of the transient, e.g. ZTF18aaaaaa, or a collection thereof
+        :param jd_start: minimum JD of alert exposure start
+        :param jd_end: maximum JD of alert exposure start
+        :returns: a list of dicts
+        """
+        Alert = self._meta.tables['alert']
+        match = Alert.c.objectId == objectId
+        in_range = and_(Alert.c.jd >= jd_start, Alert.c.jd < jd_end, match)
+        if isinstance(programid, int):
+            in_range = and_(in_range, self._get_alert_column('programid') == programid)
+
+        return self._fetch_photopoints_with_condition(in_range)
 
 
     def get_alerts(self, candids, with_history=True, with_cutouts=False):
