@@ -68,7 +68,7 @@ pipeline {
               'export ARCHIVE_PORT=${_ARCHIVE_PORT_5432_TCP_PORT}\n'+
               'export MONGO_HOSTNAME=${_MONGO_PORT_27017_TCP_ADDR}\n'+
               'export MONGO_PORT=${_MONGO_PORT_27017_TCP_PORT}\n'+
-              'pytest ampel/ztf/test --timeout=60 --junitxml=/workspace/pytest.xml'
+              'pytest ampel/ztf/test -v --timeout=60 --junitxml=/workspace/pytest.xml'
             }
           }
         }}
