@@ -336,7 +336,7 @@ class ArchiveDB(ArchiveDBClient):
 
         for cutout in alert.pop("cutouts", None) or []:
             alert[f"cutout{cutout['kind'].title()}"] = {
-                'stampData': cutout['stampData'].encode(),
+                'stampData': bytes.fromhex(cutout['stampData'][2:]),
                 'fileName': 'unknown'
             }
 
