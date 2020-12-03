@@ -241,6 +241,7 @@ class ArchiveDB(ArchiveDBClient):
 
         alert = (
             select([Alert.c.alert_id] + without_keys(Alert))
+            .select_from(Alert.join(Candidate))
             .where(condition)
             .order_by(order)
             .alias()
