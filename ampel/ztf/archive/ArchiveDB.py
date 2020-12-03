@@ -314,6 +314,7 @@ class ArchiveDB(ArchiveDBClient):
 
         # trim artifacts of schema adaptation
         alert.pop("alert_id")
+        alert["publisher"] = "Ampel"
         fluff = {"alert_id", "prv_candidate_id", "upper_limit_id"}
         missing = {"programpi", "pdiffimfilename"}
         def schemify(candidate):
