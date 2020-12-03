@@ -181,7 +181,7 @@ def assert_alerts_equivalent(alert, reco_alert):
     prvs = sorted(alert['prv_candidates'], key=lambda f: (f['jd'], f['candid'] is None, f['candid']))
     reco_prvs = reco_alert['prv_candidates']
     try:
-        assert [c['candid'] for c in prvs] == [c['candid'] for c in reco_prvs]
+        assert [c.get('candid') for c in prvs] == [c.get('candid') for c in reco_prvs]
     except:
         jd_off = lambda cands: [c['jd'] - cands[0]['jd'] for c in cands]
         print(jd_off(prvs))
@@ -192,11 +192,13 @@ def assert_alerts_equivalent(alert, reco_alert):
         # remove keys not in original alert (because it came from an older schema)
         for k in set(reco_prv.keys()).difference(prv.keys()):
             del reco_prv[k]
-        assert sorted(prv.keys()) == sorted(reco_prv.keys())
+        assert {k for k,v in prv.items() if v is not None} == {k for k,v in reco_prv.items() if v is not None}
         for k in prv.keys():
             # print(k, prv[k], reco_prv[k])
             try:
-                if isinstance(prv[k], float):
+                if prv[k] is None:
+                    assert reco_prv.get(k) is None
+                elif isinstance(prv[k], float):
                     assert prv[k] == pytest.approx(reco_prv[k])
                 else:
                     assert prv[k] == reco_prv[k]
@@ -293,7 +295,10 @@ def test_schema_update(empty_archive, alert_with_schema):
     for old, new in zip(reco['prv_candidates'], deserialized['prv_candidates']):
         assert not set(old.keys()).difference(new.keys())
         for k in new:
-            if isinstance(old[k], float):
+            if new[k] is None:
+                # allow missing key to be None
+                assert old.get(k) is None
+            elif isinstance(old[k], float):
                 assert old[k] == pytest.approx(new[k])
             else:
                 assert old[k] == new[k]
