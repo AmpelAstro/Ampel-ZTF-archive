@@ -19,6 +19,12 @@ import sqlalchemy, collections
 import logging
 log = logging.getLogger('ampel.ztf.archive')
 
+def without_keys(table):
+    keys = set(table.primary_key.columns)
+    for fk in table.foreign_keys:
+        keys.update(fk.constraint.columns)
+    return [c for c in table.columns if c not in keys]
+
 class ArchiveDB(ArchiveDBClient):
     """
     """
@@ -26,11 +32,7 @@ class ArchiveDB(ArchiveDBClient):
     def __init__(self, *args, **kwargs):
         """
         """
-       	super().__init__(*args, **kwargs) 
-        alert_query, history_query, cutout_query = self._build_queries(self._meta)
-        self._alert_query = alert_query
-        self._history_query = history_query
-        self._cutout_query = cutout_query
+        super().__init__(*args, **kwargs)
         self._alert_id_column = self.get_alert_id_column()
 
     def _get_alert_column(self, name):
@@ -82,79 +84,6 @@ class ArchiveDB(ArchiveDBClient):
                 transaction.commit()
         return stats
 
-    @classmethod
-    def _build_queries(cls, meta):
-        """ """
-        from sqlalchemy.sql import null
-        from sqlalchemy.sql.functions import array_agg
-
-        PrvCandidate = meta.tables['prv_candidate']
-        UpperLimit = meta.tables['upper_limit']
-        Candidate = meta.tables['candidate']
-        Alert = meta.tables['alert']
-        Pivot = meta.tables['alert_prv_candidate_pivot']
-        UpperLimitPivot = meta.tables['alert_upper_limit_pivot']
-        Cutout = meta.tables['cutout']
-        unnest = func.unnest
-
-        def without_keys(table):
-            keys = set(table.primary_key.columns)
-            for fk in table.foreign_keys:
-                keys.update(fk.constraint.columns)
-            return [c for c in table.columns if c not in keys]
-
-        alert_query = select(
-            [Alert.c.alert_id, Alert.c.objectId, Alert.c.schemavsn] + without_keys(Candidate)
-        ).select_from(
-            Alert.join(Candidate)
-        )
-
-        # build a query for detections
-        cols = without_keys(PrvCandidate)
-        # unpack the array of keys from the bridge table in order to perform a normal join
-        bridge = select(
-            [Pivot.c.alert_id, unnest(Pivot.c.prv_candidate_id).label('prv_candidate_id')]
-        ).alias('prv_bridge')
-        prv_query = select(cols).select_from(
-            PrvCandidate.join(
-                bridge, PrvCandidate.c.prv_candidate_id == bridge.c.prv_candidate_id
-            )
-        ).where(
-            bridge.c.alert_id == bindparam('alert_id')
-        )
-
-        # and a corresponding one for upper limits, padding out missing columns
-        # with null. Note that the order of the columns must be the same, for
-        # the union query below to map the result correctly to output keys.
-        cols = []
-        for c in without_keys(PrvCandidate):
-            if c.name in UpperLimit.columns:
-                cols.append(UpperLimit.columns[c.name])
-            else:
-                cols.append(null().label(c.name))
-
-        # unpack the array of keys from the bridge table in order to perform a normal join
-        bridge = select(
-            [UpperLimitPivot.c.alert_id, unnest(UpperLimitPivot.c.upper_limit_id).label('upper_limit_id')]
-        ).alias('ul_bridge')
-
-        ul_query = select(cols).select_from(
-            UpperLimit.join(bridge, UpperLimit.c.upper_limit_id == bridge.c.upper_limit_id)
-        ).where(
-            bridge.c.alert_id == bindparam('alert_id')
-        )
-
-        # unify!
-        history_query = prv_query.union(ul_query)
-
-        cutout_query = select(
-            [Cutout.c.kind, Cutout.c.stampData]
-        ).where(
-            Cutout.c.alert_id == bindparam('alert_id')
-        )
-
-        return alert_query, history_query, cutout_query
-
     def get_consumer_groups(self):
         Groups = self._meta.tables['read_queue_groups']
         Queue = self._meta.tables['read_queue']
@@ -203,7 +132,7 @@ class ArchiveDB(ArchiveDBClient):
 
     def _fetch_alerts_with_condition(
         self, condition, order=None, with_history=False, with_cutouts=False,
-        group_name=None, block_size=None,
+        group_name=None, block_size=None
     ):
         """
         """
@@ -252,16 +181,26 @@ class ArchiveDB(ArchiveDBClient):
                         .limit(1)
             ).returning(Queue.c.alert_ids).cte()
             # Query for alerts whose IDs were in the block
-            alert_query = self._alert_query.where(self._alert_id_column.in_(select([func.unnest(popped_item.c.alert_ids)])))
+            alert_query = self._build_alert_query(
+                self._alert_id_column.in_(select([func.unnest(popped_item.c.alert_ids)])),
+                None,
+                with_history,
+                with_cutouts,
+            )
         else:
-            alert_query = self._alert_query.where(condition).order_by(order)
+            alert_query = self._build_alert_query(
+                condition, 
+                order, 
+                with_history,
+                with_cutouts
+            )
 
         while True:
             nrows = 0
             with self._connection.begin() as transaction:
                 for result in self._connection.execute(alert_query):
                     nrows += 1
-                    yield self._construct_alert(result, with_history, with_cutouts)
+                    yield self._apply_schema(result)
                 # If we reach this point, all alerts from the block have been
                 # consumed. Commit the transaction to delete the queue item. If
                 # the generator is destroyed before we reach this point,
@@ -281,34 +220,122 @@ class ArchiveDB(ArchiveDBClient):
                 ).where(Queue.c.group_id==group_id)).fetchone()[0]
                 log.info("Query complete after {} alerts, {} chunks remaining".format(nrows, chunks))
 
-    def _construct_alert(self, candidate_row, with_history=True, with_cutouts=True):
-        candidate = dict(candidate_row)
-        alert_id = candidate.pop('alert_id')
-        alert = {'candid': candidate['candid'], 'publisher': 'ampel'}
+    def _build_alert_query(self, condition, order=None, with_history=True, with_cutouts=False):
+        """
+        Build a query whose results _mostly_ match the structure of the orginal
+        alert packet.
+        """
+        from sqlalchemy.sql.expression import func, literal_column, true
+        from sqlalchemy.dialects.postgresql import JSON
 
-        for k in 'objectId', 'schemavsn':
-            alert[k] = candidate.pop(k)
+        meta = self._meta
+        PrvCandidate = meta.tables['prv_candidate']
+        UpperLimit = meta.tables['upper_limit']
+        Candidate = meta.tables['candidate']
+        Alert = meta.tables['alert']
+        Pivot = meta.tables['alert_prv_candidate_pivot']
+        UpperLimitPivot = meta.tables['alert_upper_limit_pivot']
+        Cutout = meta.tables['cutout']
 
-        alert['candidate'] = {'programpi': None, 'pdiffimfilename': None, **candidate}
-        alert['prv_candidates'] = []
+        json_agg = lambda table: func.json_agg(literal_column('"'+ table.name+'"'))
+
+        alert = (
+            select([Alert.c.alert_id] + without_keys(Alert))
+            .where(condition)
+            .order_by(order)
+            .alias()
+        )
+
+        candidate = (
+            select([
+                json_agg(Candidate).cast(JSON)[0].label('candidate')
+            ])
+            .select_from(Candidate)
+            .where(Candidate.c.alert_id==alert.c.alert_id)
+        )
+
+        query = alert.join(candidate.lateral(), true())
 
         if with_history:
-            for result in self._connection.execute(self._history_query, alert_id=alert_id):
-                alert['prv_candidates'].append(
-                    {'programpi': None, 'pdiffimfilename': None, **result}
+            # unpack the array of keys from the bridge table in order to perform a normal join
+            prv_candidates_ids = select(
+                [Pivot.c.alert_id, func.unnest(Pivot.c.prv_candidate_id).label('prv_candidate_id')]
+            ).alias()
+            prv_candidates = (
+                select([
+                    json_agg(PrvCandidate).label('prv_candidates')
+                ])
+                .select_from(
+                    PrvCandidate.join(
+                        prv_candidates_ids,
+                        PrvCandidate.c.prv_candidate_id == prv_candidates_ids.c.prv_candidate_id
+                    )
                 )
+                .where(prv_candidates_ids.c.alert_id==alert.c.alert_id)
+            )
 
-            alert['prv_candidates'] = sorted(
-                alert['prv_candidates'], 
-                key=lambda c: (c['jd'],  c['candid'] is None, c['candid'])
+            upper_limit_ids = select(
+                [UpperLimitPivot.c.alert_id, func.unnest(UpperLimitPivot.c.upper_limit_id).label('upper_limit_id')]
+            ).alias()
+            upper_limits = (
+                select([
+                    json_agg(UpperLimit).label('upper_limits')
+                ])
+                .select_from(
+                    UpperLimit.join(
+                        upper_limit_ids,
+                        UpperLimit.c.upper_limit_id == upper_limit_ids.c.upper_limit_id
+                    )
+                )
+                .where(upper_limit_ids.c.alert_id==alert.c.alert_id)
+            )
+
+            query = (
+                query
+                .join(prv_candidates.lateral(), true())
+                .join(upper_limits.lateral(), true())
             )
 
         if with_cutouts:
-            for result in self._connection.execute(self._cutout_query, alert_id=alert_id):
-                alert['cutout{}'.format(result['kind'].title())] = {
-                    'stampData': result['stampData'],
-                    'fileName': 'unknown'
-                }
+            cutout = (
+                select([
+                    json_agg(Cutout).label('cutouts')
+                ])
+                .select_from(Cutout)
+                .where(Cutout.c.alert_id==alert.c.alert_id)
+            )
+            query = query.join(cutout.lateral(), true())
+
+        return query.select()
+
+    def _apply_schema(self, candidate_row):
+        alert = dict(candidate_row)
+
+        # trim artifacts of schema adaptation
+        alert.pop("alert_id")
+        fluff = {"alert_id", "prv_candidate_id", "upper_limit_id"}
+        missing = {"programpi", "pdiffimfilename"}
+        def schemify(candidate):
+            for k in fluff:
+                candidate.pop(k, None)
+            for k in missing:
+                candidate[k] = None
+            return candidate
+
+        alert["candidate"] = schemify(alert["candidate"])
+        alert["prv_candidates"] = [
+            schemify(c)
+            for c in sorted(
+                ((alert.get("prv_candidates") or []) + (alert.pop("upper_limits", None) or [])),
+                key=lambda c: (c["jd"], c.get("candid") is None, c.get("candid"))
+            )
+        ]
+
+        for cutout in alert.pop("cutouts", None) or []:
+            alert[f"cutout{cutout['kind'].title()}"] = {
+                'stampData': cutout['stampData'],
+                'fileName': 'unknown'
+            }
 
         return alert
 
@@ -448,7 +475,7 @@ class ArchiveDB(ArchiveDBClient):
         :param objectId: id of the transient, e.g. ZTF18aaaaaa, or a collection thereof
         :param jd_start: minimum JD of alert exposure start
         :param jd_end: maximum JD of alert exposure start
-        :returns: a list of dicts
+        :returns: an alert-packet-like dict containing all returned photopoints
         """
         Alert = self._meta.tables['alert']
         match = Alert.c.objectId == objectId
@@ -456,7 +483,18 @@ class ArchiveDB(ArchiveDBClient):
         if isinstance(programid, int):
             in_range = and_(in_range, self._get_alert_column('programid') == programid)
 
-        return self._fetch_photopoints_with_condition(in_range)
+        datapoints = self._fetch_photopoints_with_condition(in_range)
+        if datapoints:
+            candidate = datapoints.pop(0)
+            return {
+                "objectId": objectId,
+                "candid": candidate["candid"],
+                "programid": candidate["programid"],
+                "candidate": candidate,
+                "prv_candidates": datapoints,
+            }
+        else:
+            return None
 
 
     def get_alerts(self, candids, with_history=True, with_cutouts=False):
