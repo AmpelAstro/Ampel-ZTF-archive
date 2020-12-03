@@ -313,7 +313,8 @@ class ArchiveDB(ArchiveDBClient):
         alert = dict(candidate_row)
 
         # trim artifacts of schema adaptation
-        alert.pop("alert_id")
+        for k in ("alert_id", "partition_id", "ingestion_time"):
+            alert.pop(k)
         alert["publisher"] = "Ampel"
         fluff = {"alert_id", "prv_candidate_id", "upper_limit_id"}
         missing = {"programpi", "pdiffimfilename"}
@@ -335,7 +336,7 @@ class ArchiveDB(ArchiveDBClient):
 
         for cutout in alert.pop("cutouts", None) or []:
             alert[f"cutout{cutout['kind'].title()}"] = {
-                'stampData': cutout['stampData'],
+                'stampData': cutout['stampData'].encode(),
                 'fileName': 'unknown'
             }
 
