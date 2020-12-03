@@ -397,7 +397,7 @@ class ArchiveDB(ArchiveDBClient):
         # candidate > prv_candidate > upper_limit, then pid
         photopoints = dict()
         for row in self._connection.execute(q):
-            for pp in sorted(row[0], key=lambda pp: (pp["jd"], pp["pid"])):
+            for pp in sorted(row[0] or [], key=lambda pp: (pp["jd"], pp["pid"])):
                 photopoints[pp["jd"]] = pp
 
         return [photopoints[k] for k in sorted(photopoints.keys(), reverse=True)]
