@@ -313,7 +313,7 @@ class ArchiveDB(ArchiveDBClient):
         alert = dict(candidate_row)
 
         # trim artifacts of schema adaptation
-        for k in ("alert_id", "partition_id", "ingestion_time"):
+        for k in ("alert_id", "jd", "programid", "partition_id", "ingestion_time"):
             alert.pop(k)
         alert["publisher"] = "Ampel"
         fluff = {"alert_id", "prv_candidate_id", "upper_limit_id"}
