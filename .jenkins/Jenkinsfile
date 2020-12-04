@@ -8,10 +8,10 @@ pipeline {
             git(url: 'https://github.com/AmpelProject/Ampel-interface', credentialsId: 'github')
           }
           dir(path: '.jenkins/Ampel-core') {
-            git(url: 'https://github.com/AmpelProject/Ampel-core', credentialsId: 'github', branch: 'prometheus')
+            git(url: 'https://github.com/AmpelProject/Ampel-core', credentialsId: 'github')
           }
           dir(path: '.jenkins/Ampel-alerts') {
-            git(url: 'https://github.com/AmpelProject/Ampel-alerts', credentialsId: 'github', branch: 'prometheus')
+            git(url: 'https://github.com/AmpelProject/Ampel-alerts', credentialsId: 'github')
           }
           dir(path: '.jenkins/Ampel-photometry') {
             git(url: 'https://github.com/AmpelProject/Ampel-photometry', credentialsId: 'github')
