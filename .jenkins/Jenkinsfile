@@ -2,9 +2,6 @@ pipeline {
   agent none
   stages {
     stage('build') {
-      when {
-        expression { false == true }
-      }
       agent {
         dockerfile {
           filename '.jenkins/Dockerfile.build'
@@ -20,9 +17,6 @@ pipeline {
       }
     }
     stage('test') {
-      when {
-        expression { false == true }
-      }
       agent any
       steps {
         script {
@@ -65,7 +59,7 @@ pipeline {
       }
     }
     stage('deploy') {
-      /* when { tag "v*" } */
+      when { tag "v*" }
       agent {
         dockerfile {
           filename '.jenkins/Dockerfile.build'
