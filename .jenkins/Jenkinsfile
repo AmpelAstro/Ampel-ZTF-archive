@@ -65,7 +65,7 @@ pipeline {
       }
     }
     stage('deploy') {
-      when { tag "v*" }
+      /* when { tag "v*" } */
       agent {
         dockerfile {
           filename '.jenkins/Dockerfile.build'
@@ -73,7 +73,13 @@ pipeline {
       }
       steps {
         withCredentials([string(credentialsId: 'PYPI_TEST_API_TOKEN', variable: 'POETRY_PYPI_TOKEN_TESTPYPI')]) {
-          sh 'cd /build && poetry publish -n --build -r testpypi --username __token__ --password $POETRY_PYPI_TOKEN_TESTPYPI'
+          sh 'cd /build\n'+
+          'poetry publish -n --build -r testpypi --username __token__ --password $POETRY_PYPI_TOKEN_TESTPYPI --verbose\n'+
+          'if [ $(curl -s -o /dev/null -I -w "%{http_code}" "https://test.pypi.org/pypi/ampel-ztf/$(poetry version -s)/json") = "200"]; then\n'
+          '  curl "https://test.pypi.org/pypi/ampel-ztf/$(poetry version -s)/json" | jq\n'+
+          'else\n'+
+          '  echo "Version "$(poetry version -s)" failed to upload"; exit 1\n'+
+          'fi'
         }
       }
     }
