@@ -28,7 +28,7 @@ pipeline {
             " -e 'POSTGRES_DB=ztfarchive'"+
             " -e 'ARCHIVE_READ_USER=archive-readonly'"+
             " -e 'ARCHIVE_WRITE_USER=ampel-client'"+
-            " -v '${workspace}/.jenkins/Ampel-deploy/production/initdb/archive:/docker-entrypoint-initdb.d/'"
+            " -v '${workspace}/.jenkins/initdb/archive:/docker-entrypoint-initdb.d/'"
             ) { archive ->
             postgres.inside(
               "--link ${archive.id}:postgres"
