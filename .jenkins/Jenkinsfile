@@ -73,7 +73,7 @@ pipeline {
       }
       steps {
         withCredentials([string(credentialsId: 'PYPI_TEST_API_TOKEN', variable: 'POETRY_PYPI_TOKEN_TESTPYPI')]) {
-          sh 'cd /build && poetry publish -n --build -r testpypi'
+          sh 'cd /build && poetry publish -n --build -r testpypi --username __token__ --password $POETRY_PYPI_TOKEN_TESTPYPI'
         }
       }
     }
