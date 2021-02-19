@@ -9,7 +9,8 @@ pipeline {
       }
       steps {
         sh 'export POETRY_VIRTUALENVS_PATH=/root/.cache/pypoetry/virtualenvs\n'+
-           '(cd /build &&  poetry run mypy --namespace-packages -p ampel) | mypy2junit > mypy.xml'
+           'cd /build\n'+
+           'poetry run mypy --namespace-packages -p ampel'
       }
       post {
         always {
