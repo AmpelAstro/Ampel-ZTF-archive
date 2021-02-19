@@ -8,8 +8,7 @@ pipeline {
         }
       }
       steps {
-        sh 'export POETRY_VIRTUALENVS_PATH=/root/.cache/pypoetry/virtualenvs\n'+
-           'cd /build\n'+
+        sh 'cd /build\n'+
            'poetry run mypy --namespace-packages -p ampel'
       }
       post {

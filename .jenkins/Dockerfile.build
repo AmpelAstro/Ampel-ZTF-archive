@@ -4,6 +4,9 @@ RUN apt-get update && \
     apt-get install -y bash jq && \
     pip install --upgrade poetry mypy2junit==1.6.0
 
+ENV POETRY_VIRTUALENVS_PATH=/virtualenvs
+RUN mkdir -m 777 ${POETRY_VIRTUALENVS_PATH}
+
 ADD pyproject.toml /build/
 ADD poetry.lock /build/
 
@@ -13,6 +16,4 @@ ADD mypy.ini /build/
 
 ADD ampel /build/ampel
 RUN cd /build && poetry install
-
-RUN chmod -R og+rx /root/.cache/pypoetry/virtualenvs
 
