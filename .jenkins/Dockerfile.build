@@ -18,5 +18,6 @@ ADD conftest.py /build/
 ADD ampel /build/ampel
 RUN cd /build && \
     poetry install && \
-    poetry config repositories.testpypi https://test.pypi.org/legacy/
+    poetry config repositories.testpypi https://test.pypi.org/legacy/ && \
+    mkdir -m 777 /build/dist
 
