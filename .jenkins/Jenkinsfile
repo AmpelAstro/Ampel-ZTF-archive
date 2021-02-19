@@ -72,7 +72,6 @@ pipeline {
         }
       }
       steps {
-        sh 'cd /build && poetry config repositories.testpypi https://test.pypi.org/legacy/'
         withCredentials([string(credentialsId: 'PYPI_TEST_API_TOKEN', variable: 'POETRY_PYPI_TOKEN_TESTPYPI')]) {
           sh 'cd /build && poetry publish -n --build -r testpypi'
         }
