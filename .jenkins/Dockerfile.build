@@ -13,6 +13,7 @@ ADD poetry.lock /build/
 RUN cd /build && poetry install --no-root
 
 ADD mypy.ini /build/
+ADD conftest.py /build/
 
 ADD ampel /build/ampel
 RUN cd /build && poetry install
