@@ -8,8 +8,7 @@ pipeline {
         }
       }
       steps {
-        sh 'cd /build\n'+
-           'poetry run mypy --namespace-packages -p ampel | mypy2junit > /workspace/mypy.xml'
+        sh '(cd /build && poetry run mypy --namespace-packages -p ampel) | mypy2junit > mypy.xml'
       }
       post {
         always {
