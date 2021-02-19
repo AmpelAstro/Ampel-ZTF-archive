@@ -74,6 +74,7 @@ pipeline {
       steps {
         withCredentials([string(credentialsId: 'PYPI_TEST_API_TOKEN', variable: 'POETRY_PYPI_TOKEN_TESTPYPI')]) {
           sh 'cd /build\n'+
+          'poetry config repositories.testpypi https://test.pypi.org/legacy/\n'+
           'poetry config --list\n'+
           'poetry publish -n --build -r testpypi --username __token__ --password $POETRY_PYPI_TOKEN_TESTPYPI --verbose\n'+
           'if [ $(curl -s -o /dev/null -I -w "%{http_code}" "https://test.pypi.org/pypi/ampel-ztf/$(poetry version -s)/json") = "200" ]; then\n'+

@@ -15,12 +15,10 @@ RUN cd /build && poetry install --no-root
 ADD mypy.ini /build/
 ADD conftest.py /build/
 
-ENV XDG_CONFIG_HOME=/root
-
 ADD ampel /build/ampel
 RUN cd /build && \
     poetry install && \
-    poetry config repositories.testpypi https://test.pypi.org/legacy/ && \
-    poetry config --list && \
     mkdir -m 777 /build/dist
+
+ENV XDG_CONFIG_HOME=/tmp
 
