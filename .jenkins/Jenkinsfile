@@ -1,26 +1,6 @@
 pipeline {
   agent none
   stages {
-    stage('dependencies') {
-      agent any
-      steps {
-          dir(path: '.jenkins/Ampel-interface') {
-            git(url: 'https://github.com/AmpelProject/Ampel-interface', credentialsId: 'github')
-          }
-          dir(path: '.jenkins/Ampel-core') {
-            git(url: 'https://github.com/AmpelProject/Ampel-core', credentialsId: 'github')
-          }
-          dir(path: '.jenkins/Ampel-alerts') {
-            git(url: 'https://github.com/AmpelProject/Ampel-alerts', credentialsId: 'github')
-          }
-          dir(path: '.jenkins/Ampel-photometry') {
-            git(url: 'https://github.com/AmpelProject/Ampel-photometry', credentialsId: 'github')
-          }
-          dir(path: '.jenkins/Ampel-deploy') {
-            git(url: 'https://github.com/AmpelProject/Ampel-deploy', credentialsId: 'github')
-          }
-      }
-    }
     stage('build') {
       agent {
         dockerfile {
@@ -28,12 +8,11 @@ pipeline {
         }
       }
       steps {
-        sh 'rm mypy.*.xml || true'
-        sh 'run_mypy.sh ampel'
+        sh '(cd /build && poetry run mypy --namespace-packages -p ampel) | mypy2junit > mypy.xml'
       }
       post {
         always {
-          junit 'mypy.*.xml'
+          junit 'mypy.xml'
         }
       }
     }
@@ -68,7 +47,7 @@ pipeline {
               'export ARCHIVE_PORT=${_ARCHIVE_PORT_5432_TCP_PORT}\n'+
               'export MONGO_HOSTNAME=${_MONGO_PORT_27017_TCP_ADDR}\n'+
               'export MONGO_PORT=${_MONGO_PORT_27017_TCP_PORT}\n'+
-              'pytest ampel/ztf/test -v --timeout=60 --junitxml=/workspace/pytest.xml'
+              'cd /build && poetry run pytest -v --timeout=60 --junitxml=/workspace/pytest.xml'
             }
           }
         }}

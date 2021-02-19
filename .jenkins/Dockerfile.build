@@ -2,18 +2,15 @@ FROM python:3.8.5
 
 RUN apt-get update && \
     apt-get install -y bash jq && \
-    pip install mypy==0.770 mypy2junit==1.5.0 pytest
+    pip install --upgrade poetry mypy2junit==1.6.0
 
-ADD .jenkins/run_mypy.sh /bin
+ADD pyproject.toml /build/
+ADD poetry.lock /build/
 
-ADD .jenkins /build/.jenkins
-RUN cd /build && pip install \
-    .jenkins/Ampel-interface \
-    .jenkins/Ampel-core \
-    .jenkins/Ampel-photometry \
-    .jenkins/Ampel-alerts
+RUN cd /build && poetry install --no-root
 
-ADD setup.py /build/setup.py
+ADD mypy.ini /build/
+
 ADD ampel /build/ampel
-RUN cd /build && pip install -e .[testing]
+RUN cd /build && poetry install
 
