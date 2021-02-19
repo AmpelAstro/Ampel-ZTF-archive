@@ -14,3 +14,5 @@ ADD mypy.ini /build/
 ADD ampel /build/ampel
 RUN cd /build && poetry install
 
+RUN chmod -R og+rx /root/.cache/pypoetry/virtualenvs
+
