@@ -15,6 +15,8 @@ RUN cd /build && poetry install --no-root
 ADD mypy.ini /build/
 ADD conftest.py /build/
 
+ENV XDG_CONFIG_HOME=/root
+
 ADD ampel /build/ampel
 RUN cd /build && \
     poetry install && \
