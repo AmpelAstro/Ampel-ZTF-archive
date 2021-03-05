@@ -23,6 +23,9 @@ RUN cd /build && \
     mkdir -m 777 /build/dist
 
 RUN ls -lR /build/conf
+RUN cd /build && \
+   poetry build && \
+   unzip -l dist/*.whl
 
 ENV XDG_CONFIG_HOME=/tmp
 
