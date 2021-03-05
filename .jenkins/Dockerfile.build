@@ -17,11 +17,12 @@ ADD conftest.py /build/
 ADD README.md /build/
 
 ADD ampel /build/ampel
+ADD conf /build/conf
 RUN cd /build && \
     poetry install && \
     mkdir -m 777 /build/dist
 
-ADD conf /build/
+RUN ls -lR /build/conf
 
 ENV XDG_CONFIG_HOME=/tmp
 
