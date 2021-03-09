@@ -3,8 +3,7 @@ from os.path import abspath, join, dirname
 from os import environ
 import pytest
 
-collect_ignore = ['ampel/ztf/test/fixtures.py']
-pytest_plugins = ['ampel.ztf.test.fixtures']
+pytest_plugins = ['tests.fixtures']
 
 
 @pytest.fixture(scope='session')
