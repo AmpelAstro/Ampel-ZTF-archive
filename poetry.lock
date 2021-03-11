@@ -278,10 +278,13 @@ category = "main"
 optional = false
 python-versions = "*"
 
+[extras]
+server = ["fastapi"]
+
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "fbc1586455ff0124dbaf7cb25e6a4013fe0ef2ec4bf0dab7685a3f801c336eb9"
+content-hash = "ad559b3a23ec5613474f778a52ebb7ebb3b715f1f928e2054c74214c598318a3"
 
 [metadata.files]
 atomicwrites = [
