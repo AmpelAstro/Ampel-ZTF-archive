@@ -1,0 +1,44 @@
+[tool.poetry]
+name = "ampel-ztf-archive"
+version = "0.7.0-alpha.0"
+description = "ZTF alert archive for the Ampel system"
+authors = [
+    "Jakob van Santen <jakob.van.santen@desy.de>",
+]
+maintainers = [
+    "Jakob van Santen <jakob.van.santen@desy.de>"
+]
+license = "BSD-3-Clause"
+readme = "README.md"
+homepage = "https://ampelproject.github.io"
+repository = "https://github.com/AmpelProject/Ampel-ZTF-archive"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Scientific/Engineering :: Astronomy",
+    "Typing :: Typed",
+]
+packages = [
+    {include = "ampel"}
+]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+sqlalchemy-stubs = "^0.4"
+SQLAlchemy = "~1.3"
+psycopg2-binary = "^2.8.6"
+
+[tool.poetry.dev-dependencies]
+pytest = "^6.2.2"
+pytest-cov = "^2.11.1"
+mypy = "^0.800"
+sqlalchemy-stubs = "^0.4"
+pytest-timeout = "^1.4.2"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.coverage.run]
+relative_files = true
