@@ -10,8 +10,6 @@
 import json
 from typing import Any, Dict, Tuple
 
-from ampel.util.mappings import build_unsafe_dict_id
-from ampel.ztf.archive.ArchiveDBClient import ArchiveDBClient
 from sqlalchemy import select, and_, bindparam
 from sqlalchemy.sql.expression import func
 from sqlalchemy.exc import IntegrityError
