@@ -1,6 +1,5 @@
 
 import pytest
-import fastavro
 import os
 import time
 from math import isnan
@@ -17,6 +16,11 @@ import warnings
 
 from collections.abc import Iterable
 import json
+
+def test_walk_tarball(alert_generator):
+    alerts = list(alert_generator())
+    assert len(alerts) == 30
+    assert alerts[0]['publisher'] == 'ZTF (www.ztf.caltech.edu)'
 
 @pytest.fixture
 def alert_archive(empty_archive, alert_generator):
