@@ -1,20 +1,65 @@
 import itertools
+import json
+import subprocess
 import tarfile
+from pathlib import Path
 from os import environ
 from os.path import dirname, join
 
 import pytest
 import fastavro
 
-
 @pytest.fixture(scope="session")
 def archive():
-    if "ARCHIVE_HOSTNAME" in environ and "ARCHIVE_PORT" in environ:
-        yield "postgresql://ampel@{}:{}/ztfarchive".format(
-            environ["ARCHIVE_HOSTNAME"], environ["ARCHIVE_PORT"]
+    container = None
+    try:
+        container = (
+            subprocess.check_output(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    "-d",
+                    "-e",
+                    "POSTGRES_USER=ampel",
+                    "-e",
+                    "POSTGRES_DB=ztfarchive",
+                    "-e",
+                    "ARCHIVE_READ_USER=archive-readonly",
+                    "-e",
+                    "ARCHIVE_WRITE_USER=ampel-client",
+                    "-P",
+                    "-v",
+                    f"{str(Path(__file__).parent/'test-data'/'initdb'/'archive')}:/docker-entrypoint-initdb.d",
+                    "postgres:10.6",
+                ],
+            )
+            .decode()
+            .strip()
         )
-    else:
-        pytest.skip("Requires a Postgres database")
+        # wait for startup
+        subprocess.check_call(
+            [
+                "docker",
+                "run",
+                "--link",
+                f"{container}:postgres",
+                "postgres:10.6",
+                "sh",
+                "-c",
+                "for _ in $(seq 1 60); do if pg_isready -U ampel -h ${POSTGRES_PORT_5432_TCP_ADDR} -p ${POSTGRES_PORT_5432_TCP_PORT}; then break; fi; sleep 1; done",
+            ]
+        )
+        info = subprocess.check_output(["docker", "inspect", container]).decode()
+        port = json.loads(info)[0]["NetworkSettings"]["Ports"]["5432/tcp"][0][
+            "HostPort"
+        ]
+        yield f"postgresql://ampel@localhost:{port}/ztfarchive"
+    finally:
+        if container is not None:
+            subprocess.check_call(
+                ["docker", "stop", container], stdout=subprocess.DEVNULL
+            )
 
 
 @pytest.fixture
