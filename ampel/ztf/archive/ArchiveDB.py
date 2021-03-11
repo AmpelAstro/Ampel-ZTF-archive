@@ -7,6 +7,7 @@
 # Last Modified Date: 02.12.2020
 # Last Modified By  : Jakob van Santen <jakob.van.santen@desy.de>
 
+import json
 from typing import Any, Dict, Tuple
 
 from ampel.util.mappings import build_unsafe_dict_id
@@ -28,7 +29,7 @@ def without_keys(table):
 class ArchiveDB(ArchiveDBClient):
     """
     """
-    _CLIENTS: Dict[bytes, 'ArchiveDB'] = {}
+    _CLIENTS: Dict[str, 'ArchiveDB'] = {}
     def __init__(self, *args, **kwargs):
         """
         """
@@ -49,7 +50,7 @@ class ArchiveDB(ArchiveDBClient):
         """
         Get a shared instance of a client with the given connection parameters
         """
-        key = build_unsafe_dict_id({"args": args, "kwargs": kwargs})
+        key = json.dumps({"args": args, "kwargs": kwargs})
         if not key in cls._CLIENTS:
             cls._CLIENTS[key] = cls(*args, **kwargs)
         return cls._CLIENTS[key]
