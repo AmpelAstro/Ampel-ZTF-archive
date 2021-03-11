@@ -15,6 +15,8 @@ from sqlalchemy.sql.expression import func
 from sqlalchemy.exc import IntegrityError
 import sqlalchemy, collections
 
+from ampel.ztf.archive.ArchiveDBClient import ArchiveDBClient
+
 import logging
 log = logging.getLogger('ampel.ztf.archive')
 
@@ -586,13 +588,10 @@ def consumer_groups_command() -> None:
     from argparse import ArgumentParser
     import json
 
-    from ampel.core import AmpelContext
-    from ampel.dev.DictSecretProvider import DictSecretProvider
-    from ampel.model.UnitModel import UnitModel
-
     parser = ArgumentParser(add_help=True)
-    parser.add_argument('config_file_path')
-    parser.add_argument('--secrets', type=DictSecretProvider.load, required=True)
+    parser.add_argument("uri")
+    parser.add_argument("--user")
+    parser.add_argument("--password")
 
     subparsers = parser.add_subparsers(help="command help", dest="action")
     subparsers.required = True
@@ -609,15 +608,9 @@ def consumer_groups_command() -> None:
 
     args = parser.parse_args()
 
-    ctx = AmpelContext.load(args.config_file_path, secrets=args.secrets)
-    assert ctx.loader.secrets is not None
-
     archive = ArchiveDB(
-        ctx.config.get('resource.ampel-ztf/archive', str, raise_exc=True),
-        connect_args=ctx.loader.secrets.get(
-            f"ztf/archive/{'reader' if args.action=='list' else 'writer'}",
-            dict,
-        ).get()
+        args.uri,
+        connect_args={"user": args.user, "password": args.password}
     )
     if args.action == 'remove':
         archive.remove_consumer_group(args.group_name)

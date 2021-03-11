@@ -23,6 +23,9 @@ packages = [
     {include = "ampel"}
 ]
 
+[tool.poetry.scripts]
+ampel-ztf-archive-consumer-groups = 'ampel.ztf.archive.ArchiveDB:consumer_groups_command'
+
 [tool.poetry.dependencies]
 python = "^3.8"
 sqlalchemy-stubs = "^0.4"
