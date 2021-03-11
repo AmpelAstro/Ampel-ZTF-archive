@@ -8,7 +8,7 @@
 # Last Modified By  : Jakob van Santen <jakob.van.santen@desy.de>
 
 import json
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Tuple, Optional
 
 from sqlalchemy import select, and_, bindparam
 from sqlalchemy.sql.expression import func
@@ -406,7 +406,7 @@ class ArchiveDB(ArchiveDBClient):
     def count_alerts(self):
         return self._connection.execute(select([func.count(self._alert_id_column)])).fetchone()[0]
 
-    def get_alert(self, candid, with_history=True, with_cutouts=False):
+    def get_alert(self, candid: int, with_history: bool=True, with_cutouts: bool=False):
         """
         Retrieve an alert from the archive database
     
@@ -441,7 +441,7 @@ class ArchiveDB(ArchiveDBClient):
 
 
     def get_alerts_for_object(
-        self, objectId, jd_start=-float('inf'), jd_end=float('inf'), with_history=False, with_cutouts=False
+        self, objectId: str, jd_start: Optional[float]=None, jd_end: Optional[float]=None, with_history: bool=False, with_cutouts: bool=False
     ):
         """
         Retrieve alerts from the archive database by ID
@@ -462,7 +462,12 @@ class ArchiveDB(ArchiveDBClient):
             match = Alert.c.objectId.in_(objectId)
         else:
             raise TypeError("objectId must be str or collection, got {}".format(type(objectId)))
-        in_range = and_(Alert.c.jd >= jd_start, Alert.c.jd < jd_end, match)
+        conditions = [match]
+        if jd_end is not None:
+            conditions.insert(0, Alert.c.jd < jd_end)
+        if jd_start is not None:
+            conditions.insert(0, Alert.c.jd >= jd_start)
+        in_range = and_(*conditions)
 
         yield from self._fetch_alerts_with_condition(
             in_range, Alert.c.jd.asc(),
@@ -471,7 +476,7 @@ class ArchiveDB(ArchiveDBClient):
 
 
     def get_photopoints_for_object(
-        self, objectId, programid=None, jd_start=-float('inf'), jd_end=float('inf')
+        self, objectId: str, programid: Optional[int]=None, jd_start: Optional[float]=None, jd_end: Optional[float]=None
     ):
         """
         Retrieve unique photopoints from the archive database by object ID.
@@ -483,9 +488,14 @@ class ArchiveDB(ArchiveDBClient):
         """
         Alert = self._meta.tables['alert']
         match = Alert.c.objectId == objectId
-        in_range = and_(Alert.c.jd >= jd_start, Alert.c.jd < jd_end, match)
+        conditions = [match]
+        if jd_end is not None:
+            conditions.insert(0, Alert.c.jd < jd_end)
+        if jd_start is not None:
+            conditions.insert(0, Alert.c.jd >= jd_start)
         if isinstance(programid, int):
-            in_range = and_(in_range, self._get_alert_column('programid') == programid)
+            conditions.append(self._get_alert_column('programid') == programid)
+        in_range = and_(*conditions)
 
         datapoints = self._fetch_photopoints_with_condition(in_range)
         if datapoints:
