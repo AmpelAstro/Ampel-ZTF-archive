@@ -603,7 +603,10 @@ class ArchiveDB(ArchiveDBClient):
         box = func.earth_box(center, radius)
         loc = func.ll_to_earth(Candidate.c.dec, Candidate.c.ra)
     
-        in_range = and_(BinaryExpression(box, loc, '@>'), func.earth_distance(center, loc) < radius)
+        in_range = and_(
+            BinaryExpression(box, loc, '@>'), # type: ignore
+            func.earth_distance(center, loc) < radius
+        )
         # NB: filtering on jd from Candidate here is ~2x faster than _also_
         #      filtering on Alert (rows that pass are joined on the indexed
         #      primary key)
