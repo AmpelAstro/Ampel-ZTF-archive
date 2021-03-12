@@ -81,7 +81,7 @@ def get_photopoints_for_object(
     return archive.get_photopoints_for_object(objectId, programid, jd_start, jd_end)
 
 
-@app.get("/alerts/time_range")
+@app.get("/alerts/time_range", response_model=AlertChunk)
 def get_alerts_in_time_range(
     jd_start: float = Query(..., description="Earliest observation jd"),
     jd_end: float = Query(..., description="Latest observation jd"),
@@ -119,7 +119,7 @@ def get_alerts_in_time_range(
     )
 
 
-@app.get("/alerts/cone_search")
+@app.get("/alerts/cone_search", response_model=AlertChunk)
 def get_alerts_in_cone(
     ra: float = Query(..., description="Right ascension of field center in degrees (J2000)"),
     dec: float = Query(..., description="Declination of field center in degrees (J2000)"),
