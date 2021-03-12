@@ -131,44 +131,65 @@ class ArchiveDB(ArchiveDBClient):
             ]
         ).where(Queue.c.group_id==group_id)).fetchone()
 
+    def create_read_queue(self, condition, order, group_name, block_size) -> int:
+
+        Groups = self._meta.tables['read_queue_groups']
+        Queue = self._meta.tables['read_queue']
+        with self._connection.begin() as transaction:
+            try:
+                # Create the group. This will raise IntegrityError if the
+                # group already exists
+                result = self._connection.execute(
+                    Groups.insert(),
+                    group_name=group_name
+                )
+                group_id = result.inserted_primary_key[0]
+                # Populate the group queue in the same transaction
+                queue_info = self._populate_read_queue(group_id, block_size, condition, order)
+                transaction.commit()
+                log.info("Created group {} with id {} ({} items in {} chunks)".format(group_name, group_id, queue_info['items'], queue_info['chunks']))
+            except IntegrityError as e:
+                # If we arrive here, then another client already committed
+                # the group name and populated the queue.
+                transaction.rollback()
+                group_id = self._connection.execute(
+                    select([Groups.c.group_id])
+                    .where(Groups.c.group_name==group_name)
+                ).fetchone()[0]
+                chunks = self._connection.execute(select(
+                    [func.count(Queue.c.alert_ids).label('chunks')]
+                ).where(Queue.c.group_id==group_id)).fetchone()[0]
+                log.info("Subscribed to group {} with id {} ({} chunks remaining)".format(group_name, group_id, chunks))
+            except Exception as e:
+                log.error(e)
+                raise
+        return group_id
+    
+    def get_remaining_chunks(self, group_name: str) -> int:
+        Groups = self._meta.tables['read_queue_groups']
+        Queue = self._meta.tables['read_queue']
+        try:
+            group_id = self._connection.execute(
+                select([Groups.c.group_id])
+                .where(Groups.c.group_name==group_name)
+            ).fetchone()[0]
+            return self._connection.execute(select(
+                [func.count(Queue.c.alert_ids).label('chunks')]
+            ).where(Queue.c.group_id==group_id)).fetchone()[0]
+        except:
+            log.exception(f"Failed to get chunks for group {group_name}")
+            return 0
+
     def _fetch_alerts_with_condition(
         self, condition, order=None, with_history=False, with_cutouts=False,
-        group_name=None, block_size=None
+        group_name=None, block_size=None, max_blocks=None,
     ):
         """
         """
 
         if group_name is not None:
-            Groups = self._meta.tables['read_queue_groups']
+            group_id = self.create_read_queue(condition, order, group_name, block_size)
             Queue = self._meta.tables['read_queue']
-            with self._connection.begin() as transaction:
-                try:
-                    # Create the group. This will raise IntegrityError if the
-                    # group already exists
-                    result = self._connection.execute(
-                        Groups.insert(),
-                        group_name=group_name
-                    )
-                    group_id = result.inserted_primary_key[0]
-                    # Populate the group queue in the same transaction
-                    queue_info = self._populate_read_queue(group_id, block_size, condition, order)
-                    transaction.commit()
-                    log.info("Created group {} with id {} ({} items in {} chunks)".format(group_name, group_id, queue_info['items'], queue_info['chunks']))
-                except IntegrityError as e:
-                    # If we arrive here, then another client already committed
-                    # the group name and populated the queue.
-                    transaction.rollback()
-                    group_id = self._connection.execute(
-                        select([Groups.c.group_id])
-                        .where(Groups.c.group_name==group_name)
-                    ).fetchone()[0]
-                    chunks = self._connection.execute(select(
-                        [func.count(Queue.c.alert_ids).label('chunks')]
-                    ).where(Queue.c.group_id==group_id)).fetchone()[0]
-                    log.info("Subscribed to group {} with id {} ({} chunks remaining)".format(group_name, group_id, chunks))
-                except Exception as e:
-                    log.error(e)
-                    raise
             # Pop a block of alert IDs from the queue that is not already
             # locked by another client, and lock it for the duration of the
             # transaction.
@@ -198,6 +219,7 @@ class ArchiveDB(ArchiveDBClient):
 
         while True:
             nrows = 0
+            nchunks = 0
             with self._connection.begin() as transaction:
                 for result in self._connection.execute(alert_query):
                     nrows += 1
@@ -209,11 +231,12 @@ class ArchiveDB(ArchiveDBClient):
                 # lock on the queue item and allowing another client to claim
                 # it.
                 transaction.commit()
+                nchunks += 1
             # If in shared queue mode (group_name is not None), execute
             # the query over and over again until it returns no rows.
             # If in standalone mode (group name is None), execute it
             # only once
-            if nrows == 0 or group_name is None:
+            if nrows == 0 or group_name is None or (max_blocks is not None and nchunks >= max_blocks):
                 break
             else:
                 chunks = self._connection.execute(select(
@@ -529,8 +552,8 @@ class ArchiveDB(ArchiveDBClient):
 
 
     def get_alerts_in_time_range(
-        self, jd_min, jd_max, programid=None, with_history=True, with_cutouts=False,
-        group_name=None, block_size=5000,
+        self, jd_min: float, jd_max: float, programid: Optional[int]=None, with_history: bool=True, with_cutouts: bool=False,
+        group_name: str=None, block_size: int=5000, max_blocks: Optional[int]=None
     ):
         """
         Retrieve a range of alerts from the archive database
@@ -552,7 +575,7 @@ class ArchiveDB(ArchiveDBClient):
         yield from self._fetch_alerts_with_condition(
             in_range, jd.asc(),
             with_history=with_history, with_cutouts=with_cutouts,
-            group_name=group_name, block_size=block_size,
+            group_name=group_name, block_size=block_size, max_blocks=max_blocks,
         )
 
 

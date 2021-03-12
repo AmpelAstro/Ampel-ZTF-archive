@@ -1,11 +1,13 @@
+from ampel.ztf.archive.server.models import AlertChunk
 import secrets
 from functools import lru_cache
 from typing import Optional
 
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, Query, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from .settings import settings
+from .models import AlertChunk
 from ampel.ztf.archive.ArchiveDB import ArchiveDB
 
 app = FastAPI(
@@ -77,6 +79,44 @@ def get_photopoints_for_object(
     auth: bool = Depends(authorized),
 ):
     return archive.get_photopoints_for_object(objectId, programid, jd_start, jd_end)
+
+
+@app.get("/alerts/time_range")
+def get_alerts_in_time_range(
+    programid: Optional[int] = None,
+    jd_start: float = Query(..., description="Earliest observation jd"),
+    jd_end: float = Query(..., description="Latest observation jd"),
+    with_history: bool = False,
+    with_cutouts: bool = False,
+    chunk_size: int = Query(
+        100,  gt=0, lte=10000, description="Number of alerts to return per page"
+    ),
+    resume_token: Optional[str] = Query(
+        None, description="Identifier of a previous query to continue"
+    ),
+    archive: ArchiveDB = Depends(get_archive),
+    auth: bool = Depends(authorized),
+) -> AlertChunk:
+    if resume_token is None:
+        resume_token = secrets.token_urlsafe(32)
+    chunk = list(
+        archive.get_alerts_in_time_range(
+            jd_min=jd_start,
+            jd_max=jd_end,
+            programid=programid,
+            with_history=with_history,
+            with_cutouts=with_cutouts,
+            group_name=resume_token,
+            block_size=chunk_size,
+            max_blocks=1,
+        )
+    )
+    return AlertChunk(
+        resume_token=resume_token,
+        chunk_size=chunk_size,
+        chunks_remaining=archive.get_remaining_chunks(resume_token),
+        alerts=chunk,
+    )
 
 
 # If we are mounted under a (non-stripped) prefix path, create a potemkin root
