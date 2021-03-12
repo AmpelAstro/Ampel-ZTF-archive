@@ -498,69 +498,6 @@ def test_schema_update(empty_archive, alert_with_schema):
                 assert old[k] == new[k]
 
 
-@pytest.mark.skip(reason="Testing alert tarball only contains a single exposure")
-def test_get_alert(mock_database, alert_generator):
-    processor_id = 0
-    meta, connection = mock_database
-
-    timestamps = []
-    jds = defaultdict(dict)
-    for idx, alert in enumerate(alert_generator()):
-        processor_id = idx % 16
-        timestamps.append(int(time.time() * 1e6))
-        assert alert["candid"] not in jds[alert["candidate"]["jd"]]
-        jds[alert["candidate"]["jd"]][alert["candid"]] = (processor_id, alert)
-        archive.insert_alert(connection, meta, alert, processor_id, timestamps[-1])
-
-    exposures = sorted(jds.keys())
-    assert len(exposures) == 4
-    jd_min = exposures[1]
-    jd_max = exposures[3]
-    reco_jds = {
-        exposures[i]: {k: pair[1] for k, pair in jds[exposures[i]].items()}
-        for i in (1, 2)
-    }
-
-    # retrieve alerts in the middle two exposures
-    for reco_alert in archive.get_alerts_in_time_range(
-        connection, meta, jd_min, jd_max
-    ):
-        alert = reco_jds[reco_alert["candidate"]["jd"]].pop(reco_alert["candid"])
-        assert_alerts_equivalent(alert, reco_alert)
-    for k in reco_jds.keys():
-        assert len(reco_jds[k]) == 0, "retrieved all alerts in time range"
-
-    # retrieve again, but only in a subset of partitions
-    reco_jds = {
-        exposures[i]: {
-            k: pair[1]
-            for k, pair in jds[exposures[i]].items()
-            if (pair[0] >= 5 and pair[0] < 12)
-        }
-        for i in (1, 2)
-    }
-    for reco_alert in archive.get_alerts_in_time_range(
-        connection, meta, jd_min, jd_max, slice(5, 12)
-    ):
-        alert = reco_jds[reco_alert["candidate"]["jd"]].pop(reco_alert["candid"])
-        assert_alerts_equivalent(alert, reco_alert)
-    for k in reco_jds.keys():
-        assert len(reco_jds[k]) == 0, "retrieved all alerts in time range"
-
-    hit_list = []
-    for i, alert in enumerate(alert_generator()):
-        reco_alert = archive.get_alert(connection, meta, alert["candid"])
-        assert_alerts_equivalent(alert, reco_alert)
-        if i % 17 == 0:
-            hit_list.append(alert)
-
-    for i, reco_alert in enumerate(
-        archive.get_alerts(connection, meta, [c["candid"] for c in hit_list])
-    ):
-        alert = hit_list[i]
-        assert_alerts_equivalent(alert, reco_alert)
-
-
 def test_archive_object(alert_generator, empty_archive):
     updater = ArchiveUpdater(empty_archive)
     from itertools import islice
