@@ -580,7 +580,7 @@ class ArchiveDB(ArchiveDBClient):
 
 
     def get_alerts_in_cone(
-        self, ra, dec, radius, jd_min=None, jd_max=None, with_history=False, with_cutouts=False
+        self, ra, dec, radius, programid: Optional[int]=None, jd_min=None, jd_max=None, with_history=False, with_cutouts=False, group_name=None, block_size=5000, max_blocks=None
     ):
         """
         Retrieve a range of alerts from the archive database
@@ -611,10 +611,13 @@ class ArchiveDB(ArchiveDBClient):
             in_range = and_(in_range, Candidate.c.jd >= jd_min)
         if jd_max is not None:
             in_range = and_(in_range, Candidate.c.jd < jd_max)
+        if isinstance(programid, int):
+            in_range = and_(in_range, self._get_alert_column('programid') == programid)
 
         yield from self._fetch_alerts_with_condition(
             in_range, Alert.c.jd.asc(),
-            with_history=with_history, with_cutouts=with_cutouts
+            with_history=with_history, with_cutouts=with_cutouts,
+            group_name=group_name, block_size=block_size, max_blocks=max_blocks,
         )
 
 def consumer_groups_command() -> None:
