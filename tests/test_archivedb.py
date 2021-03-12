@@ -48,7 +48,7 @@ def mock_database(empty_archive):
 def test_insert_unique_alerts(empty_archive, alert_generator):
     processor_id = 0
     db = ArchiveUpdater(empty_archive)
-    connection = db._connection
+    connection = db._engine.connect()
     meta = db._meta
     timestamps = []
     candids = set()
@@ -83,7 +83,7 @@ def test_insert_duplicate_alerts(empty_archive, alert_generator):
 
     processor_id = 0
     db = ArchiveUpdater(empty_archive)
-    connection = db._connection
+    connection = db._engine.connect()
     meta = db._meta
 
     alert, schema = next(alert_generator(with_schema=True))
@@ -136,7 +136,7 @@ def test_insert_duplicate_alerts(empty_archive, alert_generator):
 def test_insert_duplicate_photopoints(empty_archive, alert_generator):
     processor_id = 0
     db = ArchiveUpdater(empty_archive)
-    connection = db._connection
+    connection = db._engine.connect()
     meta = db._meta
     from sqlalchemy.sql.expression import tuple_, func
     from sqlalchemy.sql.functions import sum
@@ -261,7 +261,7 @@ def test_insert_duplicate_photopoints(empty_archive, alert_generator):
 def test_delete_alert(empty_archive, alert_generator):
     processor_id = 0
     db = ArchiveUpdater(empty_archive)
-    connection = db._connection
+    connection = db._engine.connect()
     meta = db._meta
     from sqlalchemy.sql.expression import tuple_, func
     from sqlalchemy.sql.functions import sum
@@ -506,8 +506,9 @@ def test_archive_object(alert_generator, empty_archive):
         assert schema["version"] == "3.0", "Need alerts with current schema"
         updater.insert_alert(alert, schema, 0, 0)
     # end the transaction to commit changes to the stats tables
-    updater._connection.execute("end")
-    updater._connection.execute("vacuum full")
+    with updater._engine.connect() as connection:
+        connection.execute("end")
+        connection.execute("vacuum full")
     del updater
     db = ArchiveDB(empty_archive)
 
