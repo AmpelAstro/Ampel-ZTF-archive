@@ -155,14 +155,22 @@ class ArchiveDB(ArchiveDBClient):
                     select([Groups.c.group_id])
                     .where(Groups.c.group_name==group_name)
                 ).fetchone()[0]
-                conn.execute(
-                    update(Groups)
-                    .where(Groups.c.group_id==group_id)
-                    .values(last_accessed=func.now())
-                )
                 chunks = conn.execute(select(
                     [func.count(Queue.c.alert_ids).label('chunks')]
                 ).where(Queue.c.group_id==group_id)).fetchone()[0]
+                # Update the access time to keep the group from being deleted
+                # after 24 hours of inactivity. If another client has already
+                # updated the access time, rollback.
+                with conn.begin() as transaction:
+                    try:
+                        conn.execute(
+                            update(Groups)
+                            .where(Groups.c.group_id==group_id)
+                            .values(last_accessed=func.now())
+                        )
+                    except IntegrityError:
+                        transaction.rollback()
+
                 log.info("Subscribed to group {} with id {} ({} chunks remaining)".format(group_name, group_id, chunks))
             except Exception as e:
                 log.error(e)
