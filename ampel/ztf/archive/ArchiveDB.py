@@ -10,7 +10,7 @@
 import json
 from typing import Any, Dict, Tuple, Optional, List
 
-from sqlalchemy import select, and_, bindparam
+from sqlalchemy import select, update, and_, bindparam
 from sqlalchemy.sql.expression import func
 from sqlalchemy.exc import IntegrityError
 import sqlalchemy, collections
@@ -155,6 +155,11 @@ class ArchiveDB(ArchiveDBClient):
                     select([Groups.c.group_id])
                     .where(Groups.c.group_name==group_name)
                 ).fetchone()[0]
+                conn.execute(
+                    update(Groups)
+                    .where(Groups.c.group_id==group_id)
+                    .values(last_accessed=func.now())
+                )
                 chunks = conn.execute(select(
                     [func.count(Queue.c.alert_ids).label('chunks')]
                 ).where(Queue.c.group_id==group_id)).fetchone()[0]
