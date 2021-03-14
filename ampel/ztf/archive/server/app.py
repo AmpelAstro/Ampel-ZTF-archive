@@ -216,7 +216,6 @@ def stream_get_chunk(
     with_history: bool = True,
     with_cutouts: bool = False,
     archive: ArchiveDB = Depends(get_archive),
-    auth: bool = Depends(authorized),
 ):
     """
     Get the next available chunk of alerts from the given stream.

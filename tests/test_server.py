@@ -1,3 +1,4 @@
+import secrets
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
@@ -104,6 +105,13 @@ async def test_read_stream(integration_client: httpx.AsyncClient, integration_ap
     assert chunk["chunks_remaining"] == 0
 
     response = await integration_client.get(f"/stream/{body['resume_token']}/chunk")
+    response.raise_for_status()
+    chunk = response.json()
+    assert len(chunk["alerts"]) == 0
+    assert chunk["chunks_remaining"] == 0
+
+    # read a nonexistant chunk
+    response = await integration_client.get(f"/stream/{secrets.token_urlsafe(32)}/chunk")
     response.raise_for_status()
     chunk = response.json()
     assert len(chunk["alerts"]) == 0

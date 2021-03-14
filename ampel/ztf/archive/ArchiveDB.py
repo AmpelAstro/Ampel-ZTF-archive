@@ -272,10 +272,19 @@ class ArchiveDB(ArchiveDBClient):
         Queue = self._meta.tables['read_queue']
         with self._engine.connect() as conn:
             # TODO could do this with a lateral join
-            group_id = conn.execute(
-                select([Groups.c.group_id])
-                .where(Groups.c.group_name==group_name)
-            ).fetchone()[0]
+            group_id = (
+                result[0]
+                if (
+                    result := conn.execute(
+                        select([Groups.c.group_id])
+                        .where(Groups.c.group_name==group_name)
+                    ).fetchone()
+                ) is not None
+                else None
+            )
+            # Fail gracefully on nonexistant groups
+            if group_id is None:
+                return
             # Pop a block of alert IDs from the queue that is not already
             # locked by another client, and lock it for the duration of the
             # transaction.
