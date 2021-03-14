@@ -6,9 +6,11 @@ from typing import Optional
 from fastapi import FastAPI, Depends, Query, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
-from .settings import settings
-from .models import AlertChunk
+from .settings import Settings
+from .models import AlertChunk, AlertQuery, StreamDescription
 from ampel.ztf.archive.ArchiveDB import ArchiveDB
+
+settings = Settings()
 
 app = FastAPI(
     title="ZTF Alert Archive Service",
@@ -89,10 +91,11 @@ def get_alerts_in_time_range(
     with_history: bool = False,
     with_cutouts: bool = False,
     chunk_size: int = Query(
-        100,  gt=0, lte=10000, description="Number of alerts to return per page"
+        100, gt=0, lte=10000, description="Number of alerts to return per page"
     ),
     resume_token: Optional[str] = Query(
-        None, description="Identifier of a previous query to continue"
+        None,
+        description="Identifier of a previous query to continue. This token expires after 24 hours.",
     ),
     archive: ArchiveDB = Depends(get_archive),
     auth: bool = Depends(authorized),
@@ -121,8 +124,12 @@ def get_alerts_in_time_range(
 
 @app.get("/alerts/cone_search", response_model=AlertChunk)
 def get_alerts_in_cone(
-    ra: float = Query(..., description="Right ascension of field center in degrees (J2000)"),
-    dec: float = Query(..., description="Declination of field center in degrees (J2000)"),
+    ra: float = Query(
+        ..., description="Right ascension of field center in degrees (J2000)"
+    ),
+    dec: float = Query(
+        ..., description="Declination of field center in degrees (J2000)"
+    ),
     radius: float = Query(..., description="radius of search field in degrees"),
     jd_start: float = Query(..., description="Earliest observation jd"),
     jd_end: float = Query(..., description="Latest observation jd"),
@@ -130,10 +137,11 @@ def get_alerts_in_cone(
     with_history: bool = False,
     with_cutouts: bool = False,
     chunk_size: int = Query(
-        100,  gt=0, lte=10000, description="Number of alerts to return per page"
+        100, gt=0, lte=10000, description="Number of alerts to return per page"
     ),
     resume_token: Optional[str] = Query(
-        None, description="Identifier of a previous query to continue"
+        None,
+        description="Identifier of a previous query to continue. This token expires after 24 hours.",
     ),
     archive: ArchiveDB = Depends(get_archive),
     auth: bool = Depends(authorized),
@@ -161,6 +169,65 @@ def get_alerts_in_cone(
         chunks_remaining=archive.get_remaining_chunks(resume_token),
         alerts=chunk,
     )
+
+
+@app.post("/streams/", response_model=StreamDescription, status_code=201)
+def create_stream(
+    query: AlertQuery,
+    archive: ArchiveDB = Depends(get_archive),
+    auth: bool = Depends(authorized),
+):
+    """
+    Create a stream of alerts from the given query. The resulting resume_token
+    can be used to read the stream concurrently from multiple clients.
+    """
+    if query.cone:
+        condition, order = archive._cone_search_condition(
+            query.cone.ra,
+            query.cone.dec,
+            query.cone.radius,
+            query.programid,
+            query.jd.gt,
+            query.jd.lt,
+        )
+    else:
+        condition, order = archive._time_range_condition(
+            query.programid,
+            query.jd.gt,
+            query.jd.lt,
+        )
+
+    with archive._engine.connect() as conn:
+        name = secrets.token_urlsafe(32)
+        group_id, chunks = archive._create_read_queue(
+            conn, condition, order, name, query.chunk_size
+        )
+
+    return {
+        "resume_token": name,
+        "chunk_size": query.chunk_size,
+        "chunks": chunks,
+    }
+
+
+@app.get("/stream/{resume_token}/chunk", response_model=AlertChunk)
+def stream_get_chunk(
+    resume_token: str,
+    with_history: bool = True,
+    with_cutouts: bool = False,
+    archive: ArchiveDB = Depends(get_archive),
+    auth: bool = Depends(authorized),
+):
+    """
+    Get the next available chunk of alerts from the given stream.
+    """
+    chunk = list(archive.get_chunk_from_queue(resume_token, with_history, with_cutouts))
+    return AlertChunk(
+        resume_token=resume_token,
+        chunks_remaining=archive.get_remaining_chunks(resume_token),
+        alerts=chunk,
+    )
+
 
 # If we are mounted under a (non-stripped) prefix path, create a potemkin root
 # router and mount the actual root as a sub-application. This has no effect

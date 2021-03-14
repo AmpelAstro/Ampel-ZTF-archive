@@ -85,6 +85,18 @@ def empty_archive(archive):
                     connection.execute(table.delete())
 
 
+@pytest.fixture
+def alert_archive(empty_archive, alert_generator):
+    from ampel.ztf.t0.ArchiveUpdater import ArchiveUpdater
+    updater = ArchiveUpdater(empty_archive)
+    from itertools import islice
+
+    for alert, schema in islice(alert_generator(with_schema=True), 10):
+        assert schema["version"] == "3.0", "Need alerts with current schema"
+        updater.insert_alert(alert, schema, 0, 0)
+    yield empty_archive
+
+
 @pytest.fixture(scope="session")
 def alert_tarball():
     return join(dirname(__file__), "test-data", "ztf_public_20180819_mod1000.tar.gz")

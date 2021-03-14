@@ -11,6 +11,8 @@ import json
 from typing import Any, Dict, Tuple, Optional, List
 
 from sqlalchemy import select, update, and_, bindparam
+from sqlalchemy.engine.base import Connection
+from sqlalchemy.sql.elements import BooleanClauseList, ClauseElement, ColumnClause, UnaryExpression
 from sqlalchemy.sql.expression import func
 from sqlalchemy.exc import IntegrityError
 import sqlalchemy, collections
@@ -36,7 +38,7 @@ class ArchiveDB(ArchiveDBClient):
         super().__init__(*args, **kwargs)
         self._alert_id_column = self.get_alert_id_column()
 
-    def _get_alert_column(self, name):
+    def _get_alert_column(self, name: str) -> ColumnClause:
         if 'alert' in self._meta.tables and name in self._meta.tables['alert'].c:
             return getattr(self._meta.tables['alert'].c, name)
         else:
@@ -130,7 +132,14 @@ class ArchiveDB(ArchiveDBClient):
             ]
         ).where(Queue.c.group_id==group_id)).fetchone()
 
-    def _create_read_queue(self, conn, condition, order, group_name, block_size) -> int:
+    def _create_read_queue(
+        self,
+        conn: Connection,
+        condition: BooleanClauseList,
+        order: ClauseElement,
+        group_name: str,
+        block_size: int
+    ) -> Tuple[int, int]:
 
         Groups = self._meta.tables['read_queue_groups']
         Queue = self._meta.tables['read_queue']
@@ -146,6 +155,7 @@ class ArchiveDB(ArchiveDBClient):
                 # Populate the group queue in the same transaction
                 queue_info = self._populate_read_queue(conn, group_id, block_size, condition, order)
                 transaction.commit()
+                chunks = queue_info["chunks"]
                 log.info("Created group {} with id {} ({} items in {} chunks)".format(group_name, group_id, queue_info['items'], queue_info['chunks']))
             except IntegrityError as e:
                 # If we arrive here, then another client already committed
@@ -175,8 +185,8 @@ class ArchiveDB(ArchiveDBClient):
             except Exception as e:
                 log.error(e)
                 raise
-        return group_id
-    
+        return group_id, chunks
+
     def get_remaining_chunks(self, group_name: str) -> int:
         Groups = self._meta.tables['read_queue_groups']
         Queue = self._meta.tables['read_queue']
@@ -201,7 +211,7 @@ class ArchiveDB(ArchiveDBClient):
         """
 
         if group_name is not None:
-            group_id = self._create_read_queue(conn, condition, order, group_name, block_size)
+            group_id, _ = self._create_read_queue(conn, condition, order, group_name, block_size)
             Queue = self._meta.tables['read_queue']
             # Pop a block of alert IDs from the queue that is not already
             # locked by another client, and lock it for the duration of the
@@ -256,6 +266,46 @@ class ArchiveDB(ArchiveDBClient):
                     [func.count(Queue.c.alert_ids).label('chunks')]
                 ).where(Queue.c.group_id==group_id)).fetchone()[0]
                 log.info("Query complete after {} alerts, {} chunks remaining".format(nrows, chunks))
+
+    def get_chunk_from_queue(self, group_name: str, with_history: bool=True, with_cutouts: bool=False):
+        Groups = self._meta.tables['read_queue_groups']
+        Queue = self._meta.tables['read_queue']
+        with self._engine.connect() as conn:
+            # TODO could do this with a lateral join
+            group_id = conn.execute(
+                select([Groups.c.group_id])
+                .where(Groups.c.group_name==group_name)
+            ).fetchone()[0]
+            # Pop a block of alert IDs from the queue that is not already
+            # locked by another client, and lock it for the duration of the
+            # transaction.
+            item_id = Queue.c.item_id
+            popped_item = Queue.delete().where(
+                Queue.c.item_id == \
+                    select([item_id]) \
+                        .where(Queue.c.group_id==group_id) \
+                        .order_by(item_id.asc()) \
+                        .with_for_update(skip_locked=True) \
+                        .limit(1)
+            ).returning(Queue.c.alert_ids).cte()
+            # Query for alerts whose IDs were in the block
+            alert_query = self._build_alert_query(
+                self._alert_id_column.in_(select([func.unnest(popped_item.c.alert_ids)])),
+                None,
+                with_history,
+                with_cutouts,
+            )
+            with conn.begin() as transaction:
+                for result in conn.execute(alert_query):
+                    yield self._apply_schema(result)
+                # If we reach this point, all alerts from the block have been
+                # consumed. Commit the transaction to delete the queue item. If
+                # the generator is destroyed before we reach this point,
+                # however, the transaction will be rolled back, releasing the
+                # lock on the queue item and allowing another client to claim
+                # it.
+                transaction.commit()
+
 
     def _build_alert_query(self, condition, order=None, with_history=True, with_cutouts=False):
         """
@@ -570,6 +620,23 @@ class ArchiveDB(ArchiveDBClient):
             yield from self._fetch_alerts_with_condition(conn, Alert.c.candid.in_(candids), order,
                 with_history=with_history, with_cutouts=with_cutouts)
 
+    def _time_range_condition(
+        self,
+        programid: Optional[int]=None,
+        jd_start: Optional[float]=None,
+        jd_end: Optional[float]=None,
+    ) -> Tuple[BooleanClauseList, UnaryExpression]:
+        jd = self._get_alert_column('jd')
+
+        conditions: List[ClauseElement] = []
+        if jd_end is not None:
+            conditions.insert(0, jd < jd_end)
+        if jd_start is not None:
+            conditions.insert(0, jd >= jd_start)
+        if programid is not None:
+            conditions.insert(0, self._get_alert_column('programid') == programid)
+    
+        return and_(*conditions), jd.asc()
 
     def get_alerts_in_time_range(
         self, jd_min: float, jd_max: float, programid: Optional[int]=None, with_history: bool=True, with_cutouts: bool=False,
@@ -586,35 +653,24 @@ class ArchiveDB(ArchiveDBClient):
             results of the query among clients in the same group.
         :param block_size: partition results in chunks with this many alerts
         """
-        jd = self._get_alert_column('jd')
-        in_range = and_(jd >= jd_min, jd < jd_max)
-
-        if isinstance(programid, int):
-            in_range = and_(in_range, self._get_alert_column('programid') == programid)
+        condition, order = self._time_range_condition(programid, jd_min, jd_max)
 
         with self._engine.connect() as conn:
             yield from self._fetch_alerts_with_condition(
-                conn, in_range, jd.asc(),
+                conn, condition, order,
                 with_history=with_history, with_cutouts=with_cutouts,
                 group_name=group_name, block_size=block_size, max_blocks=max_blocks,
             )
 
-
-    def get_alerts_in_cone(
-        self, ra, dec, radius, programid: Optional[int]=None, jd_min=None, jd_max=None, with_history=False, with_cutouts=False, group_name=None, block_size=5000, max_blocks=None
-    ):
-        """
-        Retrieve a range of alerts from the archive database
-
-        :param ra: right ascension of search field center in degrees (J2000)
-        :param dec: declination of search field center in degrees (J2000)
-        :param radius: radius of search field in degrees
-        :param jd_start: minimum JD of exposure start
-        :param jd_end: maximum JD of exposure start
-        :param with_history: return alert with previous detections and upper limits
-        :param with_cutout: return alert with cutout images
-        
-        """
+    def _cone_search_condition(
+        self,
+        ra: float,
+        dec: float,
+        radius: float,
+        programid: Optional[int]=None,
+        jd_min: Optional[float]=None,
+        jd_max: Optional[float]=None,
+    ) -> Tuple[BooleanClauseList, UnaryExpression]:
         from sqlalchemy import func
         from sqlalchemy.sql.expression import BinaryExpression
         Alert = self._meta.tables['alert']
@@ -637,10 +693,40 @@ class ArchiveDB(ArchiveDBClient):
             in_range = and_(in_range, Candidate.c.jd < jd_max)
         if isinstance(programid, int):
             in_range = and_(in_range, self._get_alert_column('programid') == programid)
+        
+        return in_range, Alert.c.jd.asc()
+
+    def get_alerts_in_cone(
+        self,
+        ra: float,
+        dec: float,
+        radius: float,
+        programid: Optional[int]=None,
+        jd_min: Optional[float]=None,
+        jd_max: Optional[float]=None,
+        with_history: bool=False,
+        with_cutouts: bool=False,
+        group_name: Optional[str]=None,
+        block_size: int=5000,
+        max_blocks: Optional[int]=None,
+    ):
+        """
+        Retrieve a range of alerts from the archive database
+
+        :param ra: right ascension of search field center in degrees (J2000)
+        :param dec: declination of search field center in degrees (J2000)
+        :param radius: radius of search field in degrees
+        :param jd_start: minimum JD of exposure start
+        :param jd_end: maximum JD of exposure start
+        :param with_history: return alert with previous detections and upper limits
+        :param with_cutout: return alert with cutout images
+        
+        """
+        condition, order = self._cone_search_condition(ra, dec, radius, programid, jd_min, jd_max)
 
         with self._engine.connect() as conn:
             yield from self._fetch_alerts_with_condition(
-                conn, in_range, Alert.c.jd.asc(),
+                conn, condition, order,
                 with_history=with_history, with_cutouts=with_cutouts,
                 group_name=group_name, block_size=block_size, max_blocks=max_blocks,
             )

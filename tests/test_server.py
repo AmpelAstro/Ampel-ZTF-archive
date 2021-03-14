@@ -1,8 +1,10 @@
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
+
 import httpx
 import pytest
-
+from ampel.ztf.archive.ArchiveDB import ArchiveDB
+from ampel.ztf.archive.server.settings import Settings
 
 if TYPE_CHECKING:
     from _pytest.monkeypatch import MonkeyPatch
@@ -34,6 +36,30 @@ async def mock_client(mocked_app):
         yield client
 
 
+@pytest.fixture
+def integration_app(monkeypatch: "MonkeyPatch", alert_archive):
+    monkeypatch.setenv("AUTH_USER", "yogi")
+    monkeypatch.setenv("AUTH_PASSWORD", "bear")
+    monkeypatch.setenv("ARCHIVE_URI", alert_archive)
+    monkeypatch.setattr("ampel.ztf.archive.server.app.settings", Settings())
+    from ampel.ztf.archive.server import app
+
+    assert app.settings.archive_uri == alert_archive
+    app.get_archive.cache_clear()
+    yield app
+    app.get_archive.cache_clear()
+
+
+@pytest.fixture
+async def integration_client(integration_app):
+    async with httpx.AsyncClient(
+        app=integration_app.app,
+        base_url="http://test",
+        auth=httpx.BasicAuth("yogi", "bear"),
+    ) as client:
+        yield client
+
+
 @pytest.mark.asyncio
 async def test_get_alert(mock_client: httpx.AsyncClient, mock_db: MagicMock):
     response = await mock_client.get("/alert/123")
@@ -53,3 +79,32 @@ async def test_basic_auth(
     kwargs = {} if auth is DEFAULT else {"auth": auth}
     response = await mock_client.get("/object/thingamajig/alerts", **kwargs)
     assert response.status_code == status
+
+
+@pytest.mark.asyncio
+async def test_create_stream(integration_client: httpx.AsyncClient, integration_app):
+    response = await integration_client.post("/streams", json={})
+    assert response.status_code == 201
+    body = response.json()
+    assert body["chunks"] > 0
+    archive: ArchiveDB = integration_app.get_archive()
+    assert body["chunks"] == archive.get_remaining_chunks(body["resume_token"])
+
+
+@pytest.mark.asyncio
+async def test_read_stream(integration_client: httpx.AsyncClient, integration_app):
+    response = await integration_client.post("/streams/", json={})
+    assert response.status_code == 201
+    body = response.json()
+
+    response = await integration_client.get(f"/stream/{body['resume_token']}/chunk")
+    response.raise_for_status()
+    chunk = response.json()
+    assert len(chunk["alerts"]) == 10
+    assert chunk["chunks_remaining"] == 0
+
+    response = await integration_client.get(f"/stream/{body['resume_token']}/chunk")
+    response.raise_for_status()
+    chunk = response.json()
+    assert len(chunk["alerts"]) == 0
+    assert chunk["chunks_remaining"] == 0

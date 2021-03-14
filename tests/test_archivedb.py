@@ -23,28 +23,6 @@ def test_walk_tarball(alert_generator):
     assert alerts[0]["publisher"] == "ZTF (www.ztf.caltech.edu)"
 
 
-@pytest.fixture
-def alert_archive(empty_archive, alert_generator):
-    updater = ArchiveUpdater(empty_archive)
-    from itertools import islice
-
-    for alert, schema in islice(alert_generator(with_schema=True), 10):
-        assert schema["version"] == "3.0", "Need alerts with current schema"
-        updater.insert_alert(alert, schema, 0, 0)
-    yield empty_archive
-
-
-@pytest.fixture
-def mock_database(empty_archive):
-    engine = create_engine(empty_archive)
-    meta = MetaData()
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", category=SAWarning)
-        meta.reflect(bind=engine)
-    with engine.connect() as connection:
-        yield meta, connection
-
-
 def test_insert_unique_alerts(empty_archive, alert_generator):
     processor_id = 0
     db = ArchiveUpdater(empty_archive)
