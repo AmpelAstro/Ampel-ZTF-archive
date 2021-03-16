@@ -26,6 +26,9 @@ class TopicQuery(BaseModel):
     chunk_size: int = Field(
         100,  gte=100, lte=10000, description="Number of alerts per chunk"
     )
+    start: Optional[int] = Field(None, gte=0)
+    stop: Optional[int] = Field(None, gte=1)
+    step: Optional[int] = Field(None, gt=0)
 
 class ConeConstraint(BaseModel):
     ra: float = Field(..., description="Right ascension of field center in degrees (J2000)")

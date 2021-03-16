@@ -152,7 +152,13 @@ class ArchiveDB(ArchiveDBClient):
                 "size": size,
             }      
 
-    def create_read_queue_from_topic(self, topic: str, group_name: str, block_size: int) -> Dict[str,Any]:
+    def create_read_queue_from_topic(
+        self,
+        topic: str,
+        group_name: str,
+        block_size: int,
+        selection: slice = slice(None),
+    ) -> Dict[str,Any]:
         Groups = self._meta.tables['read_queue_groups']
         Queue = self._meta.tables['read_queue']
         Topic = self._meta.tables['topic']
@@ -178,9 +184,23 @@ class ArchiveDB(ArchiveDBClient):
             numbered = select([
                 unnested.c.alert_id,
                 func.row_number().over(order_by='alert_id').label('row_number')
-            ]).alias()
-            alert_id, row_number = numbered.columns
-            block = func.div(row_number-1, block_size)
+            ])
+            if selection != slice(None):
+                r = numbered.c.row_number
+                conditions = []
+                # NB: row_number is 1-indexed
+                if selection.start is not None:
+                    conditions.append(r > selection.start)
+                if selection.stop is not None:
+                    conditions.append(r <= selection.stop)
+                if selection.step is not None:
+                    conditions.append(r % selection.step == 1)
+                alert_id, row_number = numbered.where(and_(*conditions)).alias().columns
+            else:
+                alert_id, row_number = numbered.alias().columns
+            
+            block = func.div(row_number-(1+(selection.start or 0)), block_size*(selection.step or 1))
+            
             conn.execute(
                 Queue.insert().from_select(
                     [Queue.c.group_id, Queue.c.alert_ids],

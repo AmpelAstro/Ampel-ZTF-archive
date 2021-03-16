@@ -214,7 +214,10 @@ def create_stream_from_topic(
     name = secrets.token_urlsafe()
     try:
         queue_info = archive.create_read_queue_from_topic(
-            query.topic, name, query.chunk_size
+            query.topic,
+            name,
+            query.chunk_size,
+            slice(query.start, query.stop, query.step),
         )
     except GroupNotFoundError:
         raise HTTPException(status_code=404, detail="Topic not found")
