@@ -4,6 +4,7 @@ from functools import lru_cache
 from typing import Optional
 
 from fastapi import FastAPI, Depends, Query, HTTPException, status
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from .settings import Settings
@@ -25,6 +26,8 @@ app = FastAPI(
     version="1.0.0",
     root_path=settings.root_path,
 )
+
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 @lru_cache(maxsize=1)
