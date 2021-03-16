@@ -7,7 +7,14 @@ from fastapi import FastAPI, Depends, Query, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from .settings import Settings
-from .models import AlertChunk, AlertQuery, StreamDescription, Topic, TopicQuery
+from .models import (
+    AlertChunk,
+    AlertQuery,
+    StreamDescription,
+    Topic,
+    TopicDescription,
+    TopicQuery,
+)
 from ampel.ztf.archive.ArchiveDB import ArchiveDB, GroupNotFoundError
 
 settings = Settings()
@@ -185,6 +192,14 @@ def create_topic(
     return name
 
 
+@app.get("/topic/{topic}", response_model=TopicDescription)
+def get_topic(
+    topic: str,
+    archive: ArchiveDB = Depends(get_archive),
+):
+    return {"topic": topic, **archive.get_topic_info(topic)}
+
+
 @app.post("/streams/from_topic", response_model=StreamDescription, status_code=201)
 def create_stream_from_topic(
     query: TopicQuery,
@@ -257,7 +272,9 @@ def stream_get_chunk(
     Get the next available chunk of alerts from the given stream.
     """
     try:
-        chunk = list(archive.get_chunk_from_queue(resume_token, with_history, with_cutouts))
+        chunk = list(
+            archive.get_chunk_from_queue(resume_token, with_history, with_cutouts)
+        )
     except GroupNotFoundError:
         raise HTTPException(status_code=404, detail="Stream not found")
     return AlertChunk(

@@ -121,12 +121,21 @@ async def test_read_stream(integration_client: httpx.AsyncClient, integration_ap
 async def test_read_topic(integration_client: httpx.AsyncClient, integration_app):
 
     candids = [595147624915010001, 595193335915010017, 595211874215015018]
+    description = "the bird is the word"
     response = await integration_client.post(
-        "/topics", json={"description": "the bird is the word", "candids": candids}
+        "/topics", json={"description": description, "candids": candids}
     )
     assert response.status_code == 201
     topic = response.json()
     assert isinstance(topic, str)
+
+    response = await integration_client.get("/topic/" + topic)
+    response.raise_for_status()
+    assert response.json() == {
+        "topic": topic,
+        "description": description,
+        "size": len(candids),
+    }
 
     response = await integration_client.post(
         "/streams/from_topic", json={"topic": topic}

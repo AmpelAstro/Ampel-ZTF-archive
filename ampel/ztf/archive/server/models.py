@@ -16,6 +16,11 @@ class Topic(BaseModel):
     description: str = Field(..., description="Informative string for this topic")
     candids: List[int] = Field(..., description="IPAC candidate ids to associate with this topic")
 
+class TopicDescription(BaseModel):
+    topic: str
+    description: str = Field(..., description="Informative string for this topic")
+    size: int
+
 class TopicQuery(BaseModel):
     topic: str
     chunk_size: int = Field(

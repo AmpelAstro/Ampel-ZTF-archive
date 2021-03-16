@@ -104,11 +104,12 @@ class ArchiveDB(ArchiveDBClient):
         Groups = self._meta.tables['topic_groups']
         Queue = self._meta.tables['topic']
         Alert = self._meta.tables['alert']
+        # TODO: chunk inputs, add update operation
         with self._engine.connect() as conn:
             result = conn.execute(
                 Groups.insert(),
                 topic_name=name,
-                description=description,
+                topic_description=description,
             )
             topic_id = result.inserted_primary_key[0]
             alert_id = select([Alert.c.alert_id]).where(Alert.c.candid.in_(candidate_ids)).alias().c.alert_id
@@ -128,6 +129,29 @@ class ArchiveDB(ArchiveDBClient):
             )
         return topic_id
     
+    def get_topic_info(self, topic: str) -> Dict[str, Any]:
+        Topic = self._meta.tables['topic']
+        TopicGroups = self._meta.tables['topic_groups']
+        with self._engine.connect() as conn:
+            if (row := conn.execute(
+                select([TopicGroups.c.topic_id, TopicGroups.c.topic_description])
+                .where(TopicGroups.c.topic_name==topic)
+            ).fetchone()) is None:
+                raise GroupNotFoundError
+            else:
+                topic_id: int = row.topic_id
+            
+            info = conn.execute(
+                select([func.sum(func.array_length(Topic.c.alert_ids, 1))])
+                .where(Topic.c.topic_id==topic_id)
+            ).fetchone()
+            size = 0 if info is None else info[0]
+            assert row.topic_description
+            return {
+                "description": row.topic_description,
+                "size": size,
+            }      
+
     def create_read_queue_from_topic(self, topic: str, group_name: str, block_size: int) -> Dict[str,Any]:
         Groups = self._meta.tables['read_queue_groups']
         Queue = self._meta.tables['read_queue']
