@@ -186,7 +186,7 @@ def create_topic(
 
 
 @app.post("/streams/from_topic", response_model=StreamDescription, status_code=201)
-def create_stream(
+def create_stream_from_topic(
     query: TopicQuery,
     archive: ArchiveDB = Depends(get_archive),
 ):
@@ -208,7 +208,7 @@ def create_stream(
 
 
 @app.post("/streams/from_query", response_model=StreamDescription, status_code=201)
-def create_stream(
+def create_stream_from_query(
     query: AlertQuery,
     archive: ArchiveDB = Depends(get_archive),
     auth: bool = Depends(authorized),

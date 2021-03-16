@@ -128,7 +128,7 @@ class ArchiveDB(ArchiveDBClient):
             )
         return topic_id
     
-    def create_read_queue_from_topic(self, topic: str, group_name: str, block_size: int) -> int:
+    def create_read_queue_from_topic(self, topic: str, group_name: str, block_size: int) -> Dict[str,Any]:
         Groups = self._meta.tables['read_queue_groups']
         Queue = self._meta.tables['read_queue']
         Topic = self._meta.tables['topic']
