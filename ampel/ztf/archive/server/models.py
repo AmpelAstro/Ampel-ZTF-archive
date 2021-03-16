@@ -24,7 +24,7 @@ class TopicDescription(BaseModel):
 class TopicQuery(BaseModel):
     topic: str
     chunk_size: int = Field(
-        1000,  gt=100, lte=10000, description="Number of alerts per chunk"
+        500,  gte=100, lte=10000, description="Number of alerts per chunk"
     )
 
 class ConeConstraint(BaseModel):
