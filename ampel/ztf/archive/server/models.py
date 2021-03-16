@@ -24,7 +24,7 @@ class TopicDescription(BaseModel):
 class TopicQuery(BaseModel):
     topic: str
     chunk_size: int = Field(
-        500,  gte=100, lte=10000, description="Number of alerts per chunk"
+        100,  gte=100, lte=10000, description="Number of alerts per chunk"
     )
 
 class ConeConstraint(BaseModel):
@@ -41,5 +41,5 @@ class AlertQuery(BaseModel):
     jd: TimeConstraint = TimeConstraint()
     programid: Optional[int] = None
     chunk_size: int = Field(
-        100,  gt=0, lte=10000, description="Number of alerts per chunk"
+        100,  gte=0, lte=10000, description="Number of alerts per chunk"
     )
