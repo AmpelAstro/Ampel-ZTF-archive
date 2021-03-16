@@ -28,6 +28,9 @@ def without_keys(table):
         keys.update(fk.constraint.columns)
     return [c for c in table.columns if c not in keys]
 
+class GroupNotFoundError(KeyError):
+    ...
+
 class ArchiveDB(ArchiveDBClient):
     """
     """
@@ -96,6 +99,83 @@ class ArchiveDB(ArchiveDBClient):
         ).select_from(Groups.outerjoin(Queue)).group_by(Groups.c.group_id).order_by(Groups.c.group_id)
         with self._engine.connect() as conn:
             return conn.execute(query).fetchall()
+
+    def create_topic(self, name: str, candidate_ids: List[int], description: Optional[str]=None) -> int:
+        Groups = self._meta.tables['topic_groups']
+        Queue = self._meta.tables['topic']
+        Alert = self._meta.tables['alert']
+        with self._engine.connect() as conn:
+            result = conn.execute(
+                Groups.insert(),
+                topic_name=name,
+                description=description,
+            )
+            topic_id = result.inserted_primary_key[0]
+            alert_id = select([Alert.c.alert_id]).where(Alert.c.candid.in_(candidate_ids)).alias().c.alert_id
+            conn.execute(
+                Queue.insert().from_select(
+                    [
+                        Queue.c.topic_id,
+                        Queue.c.alert_ids
+                    ],
+                    select(
+                        [
+                            topic_id,
+                            func.array_agg(alert_id)
+                        ]
+                    )
+                )
+            )
+        return topic_id
+    
+    def create_read_queue_from_topic(self, topic: str, group_name: str, block_size: int) -> int:
+        Groups = self._meta.tables['read_queue_groups']
+        Queue = self._meta.tables['read_queue']
+        Topic = self._meta.tables['topic']
+        TopicGroups = self._meta.tables['topic_groups']
+        with self._engine.connect() as conn:
+            if (row := conn.execute(
+                select([TopicGroups.c.topic_id])
+                .where(TopicGroups.c.topic_name==topic)
+            ).fetchone()) is None:
+                raise GroupNotFoundError
+            else:
+                topic_id: int = row.topic_id
+            group_id = conn.execute(
+                Groups.insert(),
+                group_name=group_name
+            ).inserted_primary_key[0]
+
+            unnested = (
+                select([func.unnest(Topic.c.alert_ids).label('alert_id')])
+                .where(Topic.c.topic_id==topic_id)
+                .alias()
+            )
+            numbered = select([
+                unnested.c.alert_id,
+                func.row_number().over(order_by='alert_id').label('row_number')
+            ]).alias()
+            alert_id, row_number = numbered.columns
+            block = func.div(row_number-1, block_size)
+            conn.execute(
+                Queue.insert().from_select(
+                    [Queue.c.group_id, Queue.c.alert_ids],
+                    select(
+                        [
+                            group_id,
+                            func.array_agg(alert_id)
+                        ]
+                    ).group_by(block).order_by(block)
+                )
+            )
+            col = Queue.c.alert_ids
+            return conn.execute(select(
+                [
+                    func.count(col).label('chunks'),
+                    func.sum(func.array_length(col,1)).label('items')
+                ]
+            ).where(Queue.c.group_id==group_id)).fetchone()
+
 
     def remove_consumer_group(self, pattern: str) -> None:
         Groups = self._meta.tables['read_queue_groups']

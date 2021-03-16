@@ -7,8 +7,8 @@ from fastapi import FastAPI, Depends, Query, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from .settings import Settings
-from .models import AlertChunk, AlertQuery, StreamDescription
-from ampel.ztf.archive.ArchiveDB import ArchiveDB
+from .models import AlertChunk, AlertQuery, StreamDescription, Topic, TopicQuery
+from ampel.ztf.archive.ArchiveDB import ArchiveDB, GroupNotFoundError
 
 settings = Settings()
 
@@ -171,7 +171,43 @@ def get_alerts_in_cone(
     )
 
 
-@app.post("/streams/", response_model=StreamDescription, status_code=201)
+@app.post("/topics/", status_code=201)
+def create_topic(
+    topic: Topic,
+    archive: ArchiveDB = Depends(get_archive),
+    auth: bool = Depends(authorized),
+):
+    """
+    Create a new persistent collection of alerts
+    """
+    name = secrets.token_urlsafe()
+    archive.create_topic(name, topic.candids, topic.description)
+    return name
+
+
+@app.post("/streams/from_topic", response_model=StreamDescription, status_code=201)
+def create_stream(
+    query: TopicQuery,
+    archive: ArchiveDB = Depends(get_archive),
+):
+    """
+    Create a stream of alerts from the given persistent topic
+    """
+    name = secrets.token_urlsafe()
+    try:
+        queue_info = archive.create_read_queue_from_topic(
+            query.topic, name, query.chunk_size
+        )
+    except GroupNotFoundError:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    return {
+        "resume_token": name,
+        "chunk_size": query.chunk_size,
+        "chunks": queue_info["chunks"],
+    }
+
+
+@app.post("/streams/from_query", response_model=StreamDescription, status_code=201)
 def create_stream(
     query: AlertQuery,
     archive: ArchiveDB = Depends(get_archive),

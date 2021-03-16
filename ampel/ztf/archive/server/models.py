@@ -12,6 +12,16 @@ class StreamDescription(BaseModel):
     chunk_size: int
     chunks: int
 
+class Topic(BaseModel):
+    description: str = Field(..., description="Informative string for this topic")
+    candids: List[int] = Field(..., description="IPAC candidate ids to associate with this topic")
+
+class TopicQuery(BaseModel):
+    topic: str
+    chunk_size: int = Field(
+        1000,  gt=100, lte=10000, description="Number of alerts per chunk"
+    )
+
 class ConeConstraint(BaseModel):
     ra: float = Field(..., description="Right ascension of field center in degrees (J2000)")
     dec: float = Field(..., description="Declination of field center in degrees (J2000)")

@@ -84,7 +84,7 @@ async def test_basic_auth(
 
 @pytest.mark.asyncio
 async def test_create_stream(integration_client: httpx.AsyncClient, integration_app):
-    response = await integration_client.post("/streams", json={})
+    response = await integration_client.post("/streams/from_query", json={})
     assert response.status_code == 201
     body = response.json()
     assert body["chunks"] > 0
@@ -94,7 +94,7 @@ async def test_create_stream(integration_client: httpx.AsyncClient, integration_
 
 @pytest.mark.asyncio
 async def test_read_stream(integration_client: httpx.AsyncClient, integration_app):
-    response = await integration_client.post("/streams/", json={})
+    response = await integration_client.post("/streams/from_query", json={})
     assert response.status_code == 201
     body = response.json()
 
@@ -111,8 +111,43 @@ async def test_read_stream(integration_client: httpx.AsyncClient, integration_ap
     assert chunk["chunks_remaining"] == 0
 
     # read a nonexistant chunk
-    response = await integration_client.get(f"/stream/{secrets.token_urlsafe(32)}/chunk")
+    response = await integration_client.get(
+        f"/stream/{secrets.token_urlsafe(32)}/chunk"
+    )
     response.raise_for_status()
     chunk = response.json()
     assert len(chunk["alerts"]) == 0
     assert chunk["chunks_remaining"] == 0
+
+
+@pytest.mark.asyncio
+async def test_read_topic(integration_client: httpx.AsyncClient, integration_app):
+
+    candids = [595147624915010001, 595193335915010017, 595211874215015018]
+    response = await integration_client.post(
+        "/topics", json={"description": "the bird is the word", "candids": candids}
+    )
+    assert response.status_code == 201
+    topic = response.json()
+    assert isinstance(topic, str)
+
+    response = await integration_client.post(
+        "/streams/from_topic", json={"topic": topic}
+    )
+    assert response.status_code == 201
+    stream = response.json()
+
+    response = await integration_client.get(f"/stream/{stream['resume_token']}/chunk")
+    response.raise_for_status()
+    assert [alert["candid"] for alert in response.json()["alerts"]] == candids
+    assert response.json()["chunks_remaining"] == 0
+
+
+@pytest.mark.asyncio
+async def test_read_invalid_topic(
+    integration_client: httpx.AsyncClient, integration_app
+):
+    response = await integration_client.post(
+        "/streams/from_topic", json={"topic": secrets.token_urlsafe()}
+    )
+    assert response.status_code == 404

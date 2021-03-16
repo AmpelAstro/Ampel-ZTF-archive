@@ -1,5 +1,6 @@
 import pytest
 import os
+import secrets
 import time
 from math import isnan
 from collections import defaultdict
@@ -564,3 +565,39 @@ def test_insert_future_schema(alert_generator, empty_archive):
     schema["version"] = str(float(schema["version"]) + 10)
     with pytest.raises(ValueError) as e_info:
         db.insert_alert(alert, schema, 0, 0)
+
+
+def test_create_topic(alert_archive):
+    candids = [595147624915010001, 595193335915010017, 595211874215015018]
+    db = ArchiveDB(alert_archive)
+    topic = secrets.token_urlsafe()
+    topic_id = db.create_topic(
+        topic,
+        candids,
+        "the bird is the word",
+    )
+    with db._engine.connect() as conn:
+        Topic = db._meta.tables["topic"]
+        row = conn.execute(Topic.select().where(Topic.c.topic_id==topic_id)).fetchone()
+        assert row
+        assert len(row["alert_ids"]) == 3
+
+def test_topic_to_read_queue(alert_archive):
+    candids = [595147624915010001, 595193335915010017, 595211874215015018]
+    db = ArchiveDB(alert_archive)
+    topic = secrets.token_urlsafe()
+    group = secrets.token_urlsafe()
+    db.create_topic(
+        topic,
+        candids,
+        "the bird is the word",
+    )
+    queue_info = db.create_read_queue_from_topic(topic, group, 2)
+    assert queue_info["chunks"] == 2
+    assert queue_info["items"] == 3
+
+    assert [alert["candid"] for alert in db.get_chunk_from_queue(group)] == candids[:2]
+    assert [alert["candid"] for alert in db.get_chunk_from_queue(group)] == candids[2:]
+    assert [alert["candid"] for alert in db.get_chunk_from_queue(group)] == []
+
+    
