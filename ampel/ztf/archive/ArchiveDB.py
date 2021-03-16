@@ -270,18 +270,17 @@ class ArchiveDB(ArchiveDBClient):
     def get_remaining_chunks(self, group_name: str) -> int:
         Groups = self._meta.tables['read_queue_groups']
         Queue = self._meta.tables['read_queue']
-        try:
-            with self._engine.connect() as conn:
-                group_id = conn.execute(
-                    select([Groups.c.group_id])
-                    .where(Groups.c.group_name==group_name)
-                ).fetchone()[0]
-                return conn.execute(select(
-                    [func.count(Queue.c.alert_ids).label('chunks')]
-                ).where(Queue.c.group_id==group_id)).fetchone()[0]
-        except:
-            log.exception(f"Failed to get chunks for group {group_name}")
-            return 0
+        with self._engine.connect() as conn:
+            if (row := conn.execute(
+                select([Groups.c.group_id])
+                .where(Groups.c.group_name==group_name)
+            ).fetchone()) is not None:
+                group_id: int = row.group_id
+            else:
+                raise GroupNotFoundError
+            return conn.execute(select(
+                [func.count(Queue.c.alert_ids).label('chunks')]
+            ).where(Queue.c.group_id==group_id)).fetchone()[0]
 
     def _fetch_alerts_with_condition(
         self, conn, condition, order=None, with_history=False, with_cutouts=False,
@@ -364,7 +363,7 @@ class ArchiveDB(ArchiveDBClient):
             )
             # Fail gracefully on nonexistant groups
             if group_id is None:
-                return
+                raise GroupNotFoundError
             # Pop a block of alert IDs from the queue that is not already
             # locked by another client, and lock it for the duration of the
             # transaction.

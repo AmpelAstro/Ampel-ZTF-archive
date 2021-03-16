@@ -256,7 +256,10 @@ def stream_get_chunk(
     """
     Get the next available chunk of alerts from the given stream.
     """
-    chunk = list(archive.get_chunk_from_queue(resume_token, with_history, with_cutouts))
+    try:
+        chunk = list(archive.get_chunk_from_queue(resume_token, with_history, with_cutouts))
+    except GroupNotFoundError:
+        raise HTTPException(status_code=404, detail="Stream not found")
     return AlertChunk(
         resume_token=resume_token,
         chunks_remaining=archive.get_remaining_chunks(resume_token),
