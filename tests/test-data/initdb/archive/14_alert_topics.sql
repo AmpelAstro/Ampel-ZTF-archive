@@ -18,5 +18,7 @@ CREATE TABLE topic (
 
 -- GRANT SELECT, INSERT, UPDATE, DELETE on topic_groups TO GROUP readers;
 -- GRANT SELECT, INSERT, UPDATE, DELETE on topic TO GROUP readers;
+-- GRANT SELECT, USAGE on SEQUENCE topic_groups_topic_id_seq TO GROUP readers;
+-- GRANT SELECT, USAGE on SEQUENCE topic_item_id_seq TO GROUP readers;
 
 COMMIT;
