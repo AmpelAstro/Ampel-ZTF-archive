@@ -114,10 +114,7 @@ async def test_read_stream(integration_client: httpx.AsyncClient, integration_ap
     response = await integration_client.get(
         f"/stream/{secrets.token_urlsafe(32)}/chunk"
     )
-    response.raise_for_status()
-    chunk = response.json()
-    assert len(chunk["alerts"]) == 0
-    assert chunk["chunks_remaining"] == 0
+    assert response.status_code == 404
 
 
 @pytest.mark.asyncio
