@@ -66,6 +66,14 @@ def get_alert(
     return archive.get_alert(candid, with_history, with_cutouts)
 
 
+@app.get("/cutouts/{candid}")
+def get_cutouts(
+    candid: int,
+    archive: ArchiveDB = Depends(get_archive),
+):
+    return archive.get_cutout(candid)
+
+
 @app.get("/object/{objectId}/alerts")
 def get_alerts_for_object(
     objectId: str,
