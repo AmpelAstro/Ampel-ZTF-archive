@@ -71,7 +71,10 @@ def get_cutouts(
     candid: int,
     archive: ArchiveDB = Depends(get_archive),
 ):
-    return archive.get_cutout(candid)
+    if (cutouts := archive.get_cutout(candid)):
+        return cutouts
+    else:
+        raise HTTPException(status_code=404)
 
 
 @app.get("/object/{objectId}/alerts")
