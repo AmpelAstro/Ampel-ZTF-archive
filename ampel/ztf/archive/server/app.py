@@ -1,5 +1,6 @@
 from ampel.ztf.archive.server.models import AlertChunk
 import secrets
+from base64 import b64encode
 from functools import lru_cache
 from typing import Optional
 
@@ -72,7 +73,7 @@ def get_cutouts(
     archive: ArchiveDB = Depends(get_archive),
 ):
     if (cutouts := archive.get_cutout(candid)):
-        return cutouts
+        return {k: b64encode(v) for k,v in cutouts.items()}
     else:
         raise HTTPException(status_code=404)
 
