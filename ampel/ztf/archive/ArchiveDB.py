@@ -234,6 +234,8 @@ class ArchiveDB(ArchiveDBClient):
                 self._alert_id_column,
                 func.row_number().over(order_by=order).label('row_number')
             ]
+        ).select_from(
+            self._alert_id_column.table.join(self._meta.tables['candidate'])
         ).where(condition).alias('numbered')
         alert_id, row_number = numbered.columns
         block = func.div(row_number-1, block_size)

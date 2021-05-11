@@ -600,4 +600,9 @@ def test_topic_to_read_queue(alert_archive):
     assert [alert["candid"] for alert in db.get_chunk_from_queue(group)] == candids[2:]
     assert [alert["candid"] for alert in db.get_chunk_from_queue(group)] == []
 
+def test_cone_search(alert_archive):
+    db = ArchiveDB(alert_archive)
+    group = secrets.token_urlsafe()
+    alerts = list(db.get_alerts_in_cone(0, 0, 1,  with_history=False, with_cutouts=False, group_name=group))
+    assert len(alerts) == 0
     
