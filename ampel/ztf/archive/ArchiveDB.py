@@ -627,7 +627,7 @@ class ArchiveDB(ArchiveDBClient):
         with self._engine.connect() as conn:
             return conn.execute(select([func.count(self._alert_id_column)])).fetchone()[0]
 
-    def get_alert(self, candid: int, with_history: bool=True, with_cutouts: bool=False):
+    def get_alert(self, candid: int, *, with_history: bool=True, with_cutouts: bool=False):
         """
         Retrieve an alert from the archive database
     
@@ -665,7 +665,7 @@ class ArchiveDB(ArchiveDBClient):
 
 
     def get_alerts_for_object(
-        self, objectId: str, jd_start: Optional[float]=None, jd_end: Optional[float]=None, with_history: bool=False, with_cutouts: bool=False
+        self, objectId: str, *, jd_start: Optional[float]=None, jd_end: Optional[float]=None, with_history: bool=False, with_cutouts: bool=False
     ):
         """
         Retrieve alerts from the archive database by ID
@@ -701,7 +701,7 @@ class ArchiveDB(ArchiveDBClient):
 
 
     def get_photopoints_for_object(
-        self, objectId: str, programid: Optional[int]=None, jd_start: Optional[float]=None, jd_end: Optional[float]=None
+        self, objectId: str, *, programid: Optional[int]=None, jd_start: Optional[float]=None, jd_end: Optional[float]=None
     ):
         """
         Retrieve unique photopoints from the archive database by object ID.
@@ -737,7 +737,7 @@ class ArchiveDB(ArchiveDBClient):
             return None
 
 
-    def get_alerts(self, candids, with_history=True, with_cutouts=False):
+    def get_alerts(self, candids, *, with_history=True, with_cutouts=False):
         """
         Retrieve alerts from the archive database by ID
     
@@ -773,7 +773,7 @@ class ArchiveDB(ArchiveDBClient):
         return and_(*conditions), jd.asc()
 
     def get_alerts_in_time_range(
-        self, jd_min: float, jd_max: float, programid: Optional[int]=None, with_history: bool=True, with_cutouts: bool=False,
+        self, *, jd_start: float, jd_end: float, programid: Optional[int]=None, with_history: bool=True, with_cutouts: bool=False,
         group_name: str=None, block_size: int=5000, max_blocks: Optional[int]=None
     ):
         """
@@ -787,7 +787,7 @@ class ArchiveDB(ArchiveDBClient):
             results of the query among clients in the same group.
         :param block_size: partition results in chunks with this many alerts
         """
-        condition, order = self._time_range_condition(programid, jd_min, jd_max)
+        condition, order = self._time_range_condition(programid, jd_start, jd_end)
 
         with self._engine.connect() as conn:
             yield from self._fetch_alerts_with_condition(
@@ -832,12 +832,13 @@ class ArchiveDB(ArchiveDBClient):
 
     def get_alerts_in_cone(
         self,
+        *,
         ra: float,
         dec: float,
         radius: float,
         programid: Optional[int]=None,
-        jd_min: Optional[float]=None,
-        jd_max: Optional[float]=None,
+        jd_start: Optional[float]=None,
+        jd_end: Optional[float]=None,
         with_history: bool=False,
         with_cutouts: bool=False,
         group_name: Optional[str]=None,
@@ -856,7 +857,7 @@ class ArchiveDB(ArchiveDBClient):
         :param with_cutout: return alert with cutout images
         
         """
-        condition, order = self._cone_search_condition(ra, dec, radius, programid, jd_min, jd_max)
+        condition, order = self._cone_search_condition(ra, dec, radius, programid, jd_start, jd_end)
 
         with self._engine.connect() as conn:
             yield from self._fetch_alerts_with_condition(

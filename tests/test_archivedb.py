@@ -508,14 +508,14 @@ def test_archive_object(alert_generator, empty_archive):
     sec = 1 / (24 * 3600.0)
     reco_jds = [
         a["candidate"]["jd"]
-        for a in db.get_alerts_in_time_range(min(jds) - sec, max(jds) + sec)
+        for a in db.get_alerts_in_time_range(jd_start=min(jds) - sec, jd_end=max(jds) + sec)
     ]
     assert reco_jds == jds
 
     reco_candids = [
         a["candid"]
         for a in db.get_alerts_in_cone(
-            alerts[0]["candidate"]["ra"], alerts[0]["candidate"]["dec"], 2.0
+            ra=alerts[0]["candidate"]["ra"], dec=alerts[0]["candidate"]["dec"], radius=2.0
         )
     ]
     assert alerts[0]["candid"] in reco_candids
@@ -526,7 +526,7 @@ def test_archive_object(alert_generator, empty_archive):
 
 def test_partitioned_read_single(alert_archive):
     db = ArchiveDB(alert_archive)
-    alerts = db.get_alerts_in_time_range(0, 1e8, group_name="testy")
+    alerts = db.get_alerts_in_time_range(jd_start=0, jd_end=1e8, group_name="testy")
     l = list((alert["candid"] for alert in alerts))
     assert len(l) == 10
 
@@ -543,12 +543,12 @@ def test_partitioned_read_double(alert_archive):
         (
             alert["candid"]
             for alert in itertools.islice(
-                db1.get_alerts_in_time_range(0, 1e8, **kwargs), 5
+                db1.get_alerts_in_time_range(jd_start=0, jd_end=1e8, **kwargs), 5
             )
         )
     )
     l2 = list(
-        (alert["candid"] for alert in db2.get_alerts_in_time_range(0, 1e8, **kwargs))
+        (alert["candid"] for alert in db2.get_alerts_in_time_range(jd_start=0, jd_end=1e8, **kwargs))
     )
 
     assert set(l1).intersection(l2) == {
@@ -603,6 +603,6 @@ def test_topic_to_read_queue(alert_archive):
 def test_cone_search(alert_archive):
     db = ArchiveDB(alert_archive)
     group = secrets.token_urlsafe()
-    alerts = list(db.get_alerts_in_cone(0, 0, 1,  with_history=False, with_cutouts=False, group_name=group))
+    alerts = list(db.get_alerts_in_cone(ra=0, dec=0, radius=1,  with_history=False, with_cutouts=False, group_name=group))
     assert len(alerts) == 0
     
