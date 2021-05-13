@@ -64,7 +64,9 @@ def get_alert(
     with_cutouts: bool = False,
     archive: ArchiveDB = Depends(get_archive),
 ):
-    return archive.get_alert(candid, with_history, with_cutouts)
+    return archive.get_alert(
+        candid, with_history=with_history, with_cutouts=with_cutouts
+    )
 
 
 @app.get("/cutouts/{candid}")
@@ -72,8 +74,8 @@ def get_cutouts(
     candid: int,
     archive: ArchiveDB = Depends(get_archive),
 ):
-    if (cutouts := archive.get_cutout(candid)):
-        return {k: b64encode(v) for k,v in cutouts.items()}
+    if cutouts := archive.get_cutout(candid):
+        return {k: b64encode(v) for k, v in cutouts.items()}
     else:
         raise HTTPException(status_code=404)
 
@@ -89,7 +91,11 @@ def get_alerts_for_object(
     auth: bool = Depends(authorized),
 ):
     return archive.get_alerts_for_object(
-        objectId, jd_start, jd_end, with_history, with_cutouts
+        objectId,
+        jd_start=jd_start,
+        jd_end=jd_end,
+        with_history=with_history,
+        with_cutouts=with_cutouts,
     )
 
 
@@ -102,7 +108,9 @@ def get_photopoints_for_object(
     archive: ArchiveDB = Depends(get_archive),
     auth: bool = Depends(authorized),
 ):
-    return archive.get_photopoints_for_object(objectId, programid, jd_start, jd_end)
+    return archive.get_photopoints_for_object(
+        objectId, programid=programid, jd_start=jd_start, jd_end=jd_end
+    )
 
 
 @app.get("/alerts/time_range", response_model=AlertChunk)
@@ -126,8 +134,8 @@ def get_alerts_in_time_range(
         resume_token = secrets.token_urlsafe(32)
     chunk = list(
         archive.get_alerts_in_time_range(
-            jd_min=jd_start,
-            jd_max=jd_end,
+            jd_start=jd_start,
+            jd_end=jd_end,
             programid=programid,
             with_history=with_history,
             with_cutouts=with_cutouts,
@@ -175,8 +183,8 @@ def get_alerts_in_cone(
             ra=ra,
             dec=dec,
             radius=radius,
-            jd_min=jd_start,
-            jd_max=jd_end,
+            jd_start=jd_start,
+            jd_end=jd_end,
             programid=programid,
             with_history=with_history,
             with_cutouts=with_cutouts,
