@@ -194,7 +194,7 @@ class ArchiveDB(ArchiveDBClient):
                 if selection.stop is not None:
                     conditions.append(row_number <= selection.stop)
                 if selection.step is not None:
-                    conditions.append(row_number % selection.step == 1)
+                    conditions.append((row_number-1) % selection.step == 0)
                 where = and_(*conditions)
             else:
                 where = sqlalchemy.true()

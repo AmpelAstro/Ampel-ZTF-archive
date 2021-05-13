@@ -582,7 +582,8 @@ def test_create_topic(alert_archive):
         assert row
         assert len(row["alert_ids"]) == 3
 
-def test_topic_to_read_queue(alert_archive):
+@pytest.mark.parametrize("selection", [slice(None), slice(None,None,1)])
+def test_topic_to_read_queue(alert_archive, selection):
     candids = [595147624915010001, 595193335915010017, 595211874215015018]
     db = ArchiveDB(alert_archive)
     topic = secrets.token_urlsafe()
@@ -592,7 +593,7 @@ def test_topic_to_read_queue(alert_archive):
         candids,
         "the bird is the word",
     )
-    queue_info = db.create_read_queue_from_topic(topic, group, 2)
+    queue_info = db.create_read_queue_from_topic(topic, group, 2, selection)
     assert queue_info["chunks"] == 2
     assert queue_info["items"] == 3
 
