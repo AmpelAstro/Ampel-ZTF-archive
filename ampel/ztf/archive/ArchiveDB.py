@@ -8,7 +8,7 @@
 # Last Modified By  : Jakob van Santen <jakob.van.santen@desy.de>
 
 import json
-from typing import Any, Dict, Tuple, Optional, List
+from typing import Any, Dict, Tuple, Optional, List, TYPE_CHECKING
 
 from sqlalchemy import select, update, and_, bindparam
 from sqlalchemy.engine.base import Connection
@@ -18,6 +18,9 @@ from sqlalchemy.exc import IntegrityError
 import sqlalchemy, collections
 
 from ampel.ztf.archive.ArchiveDBClient import ArchiveDBClient
+
+if TYPE_CHECKING:
+    from sqlalchemy.sql.visitors import Visitable
 
 import logging
 log = logging.getLogger('ampel.ztf.archive')
@@ -195,7 +198,7 @@ class ArchiveDB(ArchiveDBClient):
                     conditions.append(row_number <= selection.stop)
                 if selection.step is not None:
                     conditions.append((row_number-1) % selection.step == 0)
-                where = and_(*conditions)
+                where: Visitable = and_(*conditions)
             else:
                 where = sqlalchemy.true()
             
