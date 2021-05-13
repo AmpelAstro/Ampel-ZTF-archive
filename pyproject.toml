@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "ampel-ztf-archive"
-version = "0.7.1"
+version = "0.7.2"
 description = "ZTF alert archive for the Ampel system"
 authors = [
     "Jakob van Santen <jakob.van.santen@desy.de>",

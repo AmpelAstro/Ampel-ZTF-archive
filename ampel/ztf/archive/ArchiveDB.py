@@ -184,34 +184,36 @@ class ArchiveDB(ArchiveDBClient):
             numbered = select([
                 unnested.c.alert_id,
                 func.row_number().over(order_by='alert_id').label('row_number')
-            ])
+            ]).alias()
+            alert_id, row_number = numbered.columns
             if selection != slice(None):
-                r = numbered.c.row_number
                 conditions = []
                 # NB: row_number is 1-indexed
                 if selection.start is not None:
-                    conditions.append(r > selection.start)
+                    conditions.append(row_number > selection.start)
                 if selection.stop is not None:
-                    conditions.append(r <= selection.stop)
+                    conditions.append(row_number <= selection.stop)
                 if selection.step is not None:
-                    conditions.append(r % selection.step == 1)
-                alert_id, row_number = numbered.where(and_(*conditions)).alias().columns
+                    conditions.append(row_number % selection.step == 1)
+                where = and_(*conditions)
             else:
-                alert_id, row_number = numbered.alias().columns
+                where = sqlalchemy.true()
             
             block = func.div(row_number-(1+(selection.start or 0)), block_size*(selection.step or 1))
-            
-            conn.execute(
-                Queue.insert().from_select(
-                    [Queue.c.group_id, Queue.c.alert_ids],
-                    select(
-                        [
-                            group_id,
-                            func.array_agg(alert_id)
-                        ]
-                    ).group_by(block).order_by(block)
+
+            q = Queue.insert().from_select(
+                [Queue.c.group_id, Queue.c.alert_ids],
+                select(
+                    [
+                        group_id,
+                        func.array_agg(alert_id)
+                    ]
                 )
+                .where(where)
+                .group_by(block).order_by(block)
             )
+            
+            conn.execute(q)
             col = Queue.c.alert_ids
             return conn.execute(select(
                 [
