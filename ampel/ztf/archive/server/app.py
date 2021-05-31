@@ -1,3 +1,4 @@
+import sqlalchemy
 from ampel.ztf.archive.server.models import AlertChunk
 import secrets
 from base64 import b64encode
@@ -5,6 +6,7 @@ from functools import lru_cache
 from typing import Optional
 
 from fastapi import FastAPI, Depends, Query, HTTPException, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
@@ -211,7 +213,16 @@ def create_topic(
     Create a new persistent collection of alerts
     """
     name = secrets.token_urlsafe()
-    archive.create_topic(name, topic.candids, topic.description)
+    try:
+        archive.create_topic(name, topic.candids, topic.description)
+    except sqlalchemy.exc.IntegrityError:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "msg": "Topic did not match any alerts. Are you sure these are valid candidate ids?",
+                "topic": jsonable_encoder(topic),
+            },
+        )
     return name
 
 

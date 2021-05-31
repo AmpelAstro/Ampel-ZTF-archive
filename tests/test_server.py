@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 
 import httpx
 import pytest
+from fastapi import status
 from ampel.ztf.archive.ArchiveDB import ArchiveDB
 from ampel.ztf.archive.server.settings import Settings
 
@@ -147,6 +148,20 @@ async def test_read_topic(integration_client: httpx.AsyncClient, integration_app
     response.raise_for_status()
     assert [alert["candid"] for alert in response.json()["alerts"]] == candids
     assert response.json()["chunks_remaining"] == 0
+
+
+@pytest.mark.asyncio
+async def test_create_topic_with_bad_ids(
+    integration_client: httpx.AsyncClient, integration_app
+):
+    candids = [1, 2, 3]
+    description = "these are not the candids you're looking for"
+    response = await integration_client.post(
+        "/topics", json={"description": description, "candids": candids}
+    )
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    detail = response.json()
+    assert set(detail["detail"].keys()) == {"msg", "topic"}
 
 
 @pytest.mark.asyncio
