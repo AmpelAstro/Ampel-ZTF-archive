@@ -13,6 +13,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from .settings import Settings
 from .models import (
     AlertChunk,
+    AlertCutouts,
     AlertQuery,
     StreamDescription,
     Topic,
@@ -28,6 +29,10 @@ app = FastAPI(
     description="Query ZTF alerts issued by IPAC",
     version="1.0.0",
     root_path=settings.root_path,
+    openapi_tags=[
+        {"name": "alerts", "description": "Retrieve alerts"},
+        {"name": "cutouts", "description": "Retrieve image cutouts for alerts"},
+    ],
 )
 
 app.add_middleware(GZipMiddleware, minimum_size=1000)
@@ -71,7 +76,7 @@ def get_alert(
     )
 
 
-@app.get("/cutouts/{candid}")
+@app.get("/cutouts/{candid}", tags=["cutouts"], response_model=AlertCutouts)
 def get_cutouts(
     candid: int,
     archive: ArchiveDB = Depends(get_archive),

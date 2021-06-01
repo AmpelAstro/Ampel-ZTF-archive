@@ -46,3 +46,11 @@ class AlertQuery(BaseModel):
     chunk_size: int = Field(
         100,  gte=0, lte=10000, description="Number of alerts per chunk"
     )
+
+class AlertCutouts(BaseModel):
+    """
+    Images are gzipped FITS files, b64 encoded
+    """
+    template: str
+    science: str
+    difference: str
