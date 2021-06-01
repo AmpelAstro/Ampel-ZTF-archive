@@ -26,8 +26,18 @@ def mocked_app(monkeypatch: "MonkeyPatch", mocker: "MockerFixture"):
 
 
 @pytest.fixture
-def mock_db(mocked_app):
-    return mocked_app.ArchiveDB()
+def mock_db(mocked_app, alert_generator):
+    db =  mocked_app.ArchiveDB()
+    alert = next(alert_generator())
+    # remove cutouts (not valid JSON strings)
+    for k in list(alert.keys()):
+        if k.startswith("cutout"):
+            del alert[k]
+    # add fake drbversion to pre-drb alert
+    alert["candidate"]["drbversion"] = "0.0"
+    db.get_alert.return_value = alert
+    db.get_alerts_for_object.return_value = [alert]
+    return db
 
 
 @pytest.fixture

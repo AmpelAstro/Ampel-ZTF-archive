@@ -1,6 +1,7 @@
 
 from typing import List, Dict, Any, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, conint, constr
+
 
 class AlertChunk(BaseModel):
     resume_token: str
@@ -55,5 +56,203 @@ class AlertCutouts(BaseModel):
     science: str
     difference: str
 
+# Generated from tests/test-data/schema_3.3.json
+# 1. Convert avro to json-schema with https://json-schema-validator.herokuapp.com/avro.jsp
+# 2. Convert json-schema to pydantic with datamodel-codegen --input schema_3.3.json --output alert --use-schema-description
+
+class Candidate(BaseModel):
+    """
+    avro alert schema
+    """
+
+    jd: float
+    fid: conint(ge=-2147483648, le=2147483647)
+    pid: conint(ge=-9223372036854775808, le=9223372036854775808)
+    diffmaglim: Optional[float]
+    pdiffimfilename: Optional[str]
+    programpi: Optional[str]
+    programid: conint(ge=-2147483648, le=2147483647)
+    candid: conint(ge=-9223372036854775808, le=9223372036854775808)
+    isdiffpos: str
+    tblid: Optional[conint(ge=-9223372036854775808, le=9223372036854775808)]
+    nid: Optional[conint(ge=-2147483648, le=2147483647)]
+    rcid: Optional[conint(ge=-2147483648, le=2147483647)]
+    field: Optional[conint(ge=-2147483648, le=2147483647)]
+    xpos: Optional[float]
+    ypos: Optional[float]
+    ra: float
+    dec: float
+    magpsf: float
+    sigmapsf: float
+    chipsf: Optional[float]
+    magap: Optional[float]
+    sigmagap: Optional[float]
+    distnr: Optional[float]
+    magnr: Optional[float]
+    sigmagnr: Optional[float]
+    chinr: Optional[float]
+    sharpnr: Optional[float]
+    sky: Optional[float]
+    magdiff: Optional[float]
+    fwhm: Optional[float]
+    classtar: Optional[float]
+    mindtoedge: Optional[float]
+    magfromlim: Optional[float]
+    seeratio: Optional[float]
+    aimage: Optional[float]
+    bimage: Optional[float]
+    aimagerat: Optional[float]
+    bimagerat: Optional[float]
+    elong: Optional[float]
+    nneg: Optional[conint(ge=-2147483648, le=2147483647)]
+    nbad: Optional[conint(ge=-2147483648, le=2147483647)]
+    rb: Optional[float]
+    ssdistnr: Optional[float]
+    ssmagnr: Optional[float]
+    ssnamenr: Optional[str]
+    sumrat: Optional[float]
+    magapbig: Optional[float]
+    sigmagapbig: Optional[float]
+    ranr: float
+    decnr: float
+    sgmag1: Optional[float]
+    srmag1: Optional[float]
+    simag1: Optional[float]
+    szmag1: Optional[float]
+    sgscore1: Optional[float]
+    distpsnr1: Optional[float]
+    ndethist: conint(ge=-2147483648, le=2147483647)
+    ncovhist: conint(ge=-2147483648, le=2147483647)
+    jdstarthist: Optional[float]
+    jdendhist: Optional[float]
+    scorr: Optional[float]
+    tooflag: Optional[conint(ge=-2147483648, le=2147483647)]
+    objectidps1: Optional[conint(ge=-9223372036854775808, le=9223372036854775808)]
+    objectidps2: Optional[conint(ge=-9223372036854775808, le=9223372036854775808)]
+    sgmag2: Optional[float]
+    srmag2: Optional[float]
+    simag2: Optional[float]
+    szmag2: Optional[float]
+    sgscore2: Optional[float]
+    distpsnr2: Optional[float]
+    objectidps3: Optional[conint(ge=-9223372036854775808, le=9223372036854775808)]
+    sgmag3: Optional[float]
+    srmag3: Optional[float]
+    simag3: Optional[float]
+    szmag3: Optional[float]
+    sgscore3: Optional[float]
+    distpsnr3: Optional[float]
+    nmtchps: conint(ge=-2147483648, le=2147483647)
+    rfid: conint(ge=-9223372036854775808, le=9223372036854775808)
+    jdstartref: float
+    jdendref: float
+    nframesref: conint(ge=-2147483648, le=2147483647)
+    rbversion: str
+    dsnrms: Optional[float]
+    ssnrms: Optional[float]
+    dsdiff: Optional[float]
+    magzpsci: Optional[float]
+    magzpsciunc: Optional[float]
+    magzpscirms: Optional[float]
+    nmatches: conint(ge=-2147483648, le=2147483647)
+    clrcoeff: Optional[float]
+    clrcounc: Optional[float]
+    zpclrcov: Optional[float]
+    zpmed: Optional[float]
+    clrmed: Optional[float]
+    clrrms: Optional[float]
+    neargaia: Optional[float]
+    neargaiabright: Optional[float]
+    maggaia: Optional[float]
+    maggaiabright: Optional[float]
+    exptime: Optional[float]
+    drb: Optional[float]
+    drbversion: str
+
+
+class PrvCandidate(BaseModel):
+    """
+    avro alert schema
+    """
+
+    jd: float
+    fid: conint(ge=-2147483648, le=2147483647)
+    pid: conint(ge=-9223372036854775808, le=9223372036854775808)
+    diffmaglim: Optional[float]
+    pdiffimfilename: Optional[str]
+    programpi: Optional[str]
+    programid: conint(ge=-2147483648, le=2147483647)
+    candid: Optional[conint(ge=-9223372036854775808, le=9223372036854775808)]
+    isdiffpos: Optional[str]
+    tblid: Optional[conint(ge=-9223372036854775808, le=9223372036854775808)]
+    nid: Optional[conint(ge=-2147483648, le=2147483647)]
+    rcid: Optional[conint(ge=-2147483648, le=2147483647)]
+    field: Optional[conint(ge=-2147483648, le=2147483647)]
+    xpos: Optional[float]
+    ypos: Optional[float]
+    ra: Optional[float]
+    dec: Optional[float]
+    magpsf: Optional[float]
+    sigmapsf: Optional[float]
+    chipsf: Optional[float]
+    magap: Optional[float]
+    sigmagap: Optional[float]
+    distnr: Optional[float]
+    magnr: Optional[float]
+    sigmagnr: Optional[float]
+    chinr: Optional[float]
+    sharpnr: Optional[float]
+    sky: Optional[float]
+    magdiff: Optional[float]
+    fwhm: Optional[float]
+    classtar: Optional[float]
+    mindtoedge: Optional[float]
+    magfromlim: Optional[float]
+    seeratio: Optional[float]
+    aimage: Optional[float]
+    bimage: Optional[float]
+    aimagerat: Optional[float]
+    bimagerat: Optional[float]
+    elong: Optional[float]
+    nneg: Optional[conint(ge=-2147483648, le=2147483647)]
+    nbad: Optional[conint(ge=-2147483648, le=2147483647)]
+    rb: Optional[float]
+    ssdistnr: Optional[float]
+    ssmagnr: Optional[float]
+    ssnamenr: Optional[str]
+    sumrat: Optional[float]
+    magapbig: Optional[float]
+    sigmagapbig: Optional[float]
+    ranr: Optional[float]
+    decnr: Optional[float]
+    scorr: Optional[float]
+    magzpsci: Optional[float]
+    magzpsciunc: Optional[float]
+    magzpscirms: Optional[float]
+    clrcoeff: Optional[float]
+    clrcounc: Optional[float]
+    rbversion: str
+
+
+class Cutout(BaseModel):
+    """
+    avro alert schema
+    """
+
+    fileName: str
+    stampData: str
+
 class Alert(BaseModel):
-    ...
+    """
+    avro alert schema for ZTF (www.ztf.caltech.edu)
+    """
+
+    schemavsn: str
+    publisher: str
+    objectId: str
+    candid: conint(ge=-9223372036854775808, le=9223372036854775808)
+    candidate: Candidate
+    prv_candidates: Optional[List[PrvCandidate]]
+    cutoutScience: Optional[Cutout]
+    cutoutTemplate: Optional[Cutout]
+    cutoutDifference: Optional[Cutout]
