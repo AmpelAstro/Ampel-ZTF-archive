@@ -40,6 +40,10 @@ app = FastAPI(
         {"name": "cutouts", "description": "Retrieve image cutouts for alerts"},
         {"name": "search", "description": "Search for alerts"},
         {"name": "stream", "description": "Read a result set concurrently"},
+        {
+            "name": "topic",
+            "description": "A topic is a persistent collection of alerts, specified by candidate id. This can be used e.g. to store a pre-selected sample of alerts for analysis.",
+        },
     ],
 )
 
@@ -72,7 +76,7 @@ def authorized(credentials: HTTPBasicCredentials = Depends(security)):
     return True
 
 
-@app.get("/alert/{candid}", response_model=Alert)
+@app.get("/alert/{candid}", tags=["alerts"], response_model=Alert)
 def get_alert(
     candid: int,
     with_history: bool = True,
@@ -152,7 +156,7 @@ def get_photopoints_for_object(
     )
 
 
-@app.get("/alerts/time_range", tag=["search"], response_model=AlertChunk)
+@app.get("/alerts/time_range", tags=["search"], response_model=AlertChunk)
 def get_alerts_in_time_range(
     jd_start: float = Query(..., description="Earliest observation jd"),
     jd_end: float = Query(..., description="Latest observation jd"),
@@ -282,7 +286,8 @@ def create_stream_from_topic(
     archive: ArchiveDB = Depends(get_archive),
 ):
     """
-    Create a stream of alerts from the given persistent topic
+    Create a stream of alerts from the given persistent topic.  The resulting
+    resume_token can be used to read the stream concurrently from multiple clients.
     """
     name = secrets.token_urlsafe()
     try:
