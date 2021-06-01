@@ -277,7 +277,7 @@ def get_topic(
 
 @app.post(
     "/streams/from_topic",
-    tags=["topic", "search", "stream"],
+    tags=["topic", "stream"],
     response_model=StreamDescription,
     status_code=201,
 )
