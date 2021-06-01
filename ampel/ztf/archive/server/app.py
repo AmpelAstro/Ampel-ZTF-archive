@@ -195,7 +195,7 @@ def get_alerts_in_time_range(
     )
 
 
-@app.get("/alerts/cone_search", tags=["search", "stream"], response_model=AlertChunk)
+@app.get("/alerts/cone_search", tags=["search"], response_model=AlertChunk)
 def get_alerts_in_cone(
     ra: float = Query(
         ..., description="Right ascension of field center in degrees (J2000)"
