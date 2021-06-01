@@ -1,6 +1,6 @@
 
-from typing import List, Dict, Any, Optional
-from pydantic import BaseModel, Field, conint, constr
+from typing import List, Dict, Any, Literal, Optional
+from pydantic import BaseModel, Field
 
 
 class AlertChunk(BaseModel):
@@ -66,18 +66,18 @@ class Candidate(BaseModel):
     """
 
     jd: float
-    fid: conint(ge=-2147483648, le=2147483647)
-    pid: conint(ge=-9223372036854775808, le=9223372036854775808)
+    fid: int
+    pid: int
     diffmaglim: Optional[float]
     pdiffimfilename: Optional[str]
     programpi: Optional[str]
-    programid: conint(ge=-2147483648, le=2147483647)
-    candid: conint(ge=-9223372036854775808, le=9223372036854775808)
+    programid: Literal[1,2,3]
+    candid: int
     isdiffpos: str
-    tblid: Optional[conint(ge=-9223372036854775808, le=9223372036854775808)]
-    nid: Optional[conint(ge=-2147483648, le=2147483647)]
-    rcid: Optional[conint(ge=-2147483648, le=2147483647)]
-    field: Optional[conint(ge=-2147483648, le=2147483647)]
+    tblid: int
+    nid: Optional[int]
+    rcid: Optional[int]
+    field: Optional[int]
     xpos: Optional[float]
     ypos: Optional[float]
     ra: float
@@ -104,8 +104,8 @@ class Candidate(BaseModel):
     aimagerat: Optional[float]
     bimagerat: Optional[float]
     elong: Optional[float]
-    nneg: Optional[conint(ge=-2147483648, le=2147483647)]
-    nbad: Optional[conint(ge=-2147483648, le=2147483647)]
+    nneg: Optional[int]
+    nbad: Optional[int]
     rb: Optional[float]
     ssdistnr: Optional[float]
     ssmagnr: Optional[float]
@@ -121,32 +121,32 @@ class Candidate(BaseModel):
     szmag1: Optional[float]
     sgscore1: Optional[float]
     distpsnr1: Optional[float]
-    ndethist: conint(ge=-2147483648, le=2147483647)
-    ncovhist: conint(ge=-2147483648, le=2147483647)
+    ndethist: int
+    ncovhist: int
     jdstarthist: Optional[float]
     jdendhist: Optional[float]
     scorr: Optional[float]
-    tooflag: Optional[conint(ge=-2147483648, le=2147483647)]
-    objectidps1: Optional[conint(ge=-9223372036854775808, le=9223372036854775808)]
-    objectidps2: Optional[conint(ge=-9223372036854775808, le=9223372036854775808)]
+    tooflag: Optional[int]
+    objectidps1: Optional[int]
+    objectidps2: Optional[int]
     sgmag2: Optional[float]
     srmag2: Optional[float]
     simag2: Optional[float]
     szmag2: Optional[float]
     sgscore2: Optional[float]
     distpsnr2: Optional[float]
-    objectidps3: Optional[conint(ge=-9223372036854775808, le=9223372036854775808)]
+    objectidps3: Optional[int]
     sgmag3: Optional[float]
     srmag3: Optional[float]
     simag3: Optional[float]
     szmag3: Optional[float]
     sgscore3: Optional[float]
     distpsnr3: Optional[float]
-    nmtchps: conint(ge=-2147483648, le=2147483647)
-    rfid: conint(ge=-9223372036854775808, le=9223372036854775808)
+    nmtchps: int
+    rfid: int
     jdstartref: float
     jdendref: float
-    nframesref: conint(ge=-2147483648, le=2147483647)
+    nframesref: int
     rbversion: str
     dsnrms: Optional[float]
     ssnrms: Optional[float]
@@ -154,7 +154,7 @@ class Candidate(BaseModel):
     magzpsci: Optional[float]
     magzpsciunc: Optional[float]
     magzpscirms: Optional[float]
-    nmatches: conint(ge=-2147483648, le=2147483647)
+    nmatches: int
     clrcoeff: Optional[float]
     clrcounc: Optional[float]
     zpclrcov: Optional[float]
@@ -176,18 +176,18 @@ class PrvCandidate(BaseModel):
     """
 
     jd: float
-    fid: conint(ge=-2147483648, le=2147483647)
-    pid: conint(ge=-9223372036854775808, le=9223372036854775808)
+    fid: int
+    pid: int
     diffmaglim: Optional[float]
     pdiffimfilename: Optional[str]
     programpi: Optional[str]
-    programid: conint(ge=-2147483648, le=2147483647)
-    candid: Optional[conint(ge=-9223372036854775808, le=9223372036854775808)]
+    programid: int
+    candid: Optional[int]
     isdiffpos: Optional[str]
-    tblid: Optional[conint(ge=-9223372036854775808, le=9223372036854775808)]
-    nid: Optional[conint(ge=-2147483648, le=2147483647)]
-    rcid: Optional[conint(ge=-2147483648, le=2147483647)]
-    field: Optional[conint(ge=-2147483648, le=2147483647)]
+    tblid: Optional[int]
+    nid: Optional[int]
+    rcid: Optional[int]
+    field: Optional[int]
     xpos: Optional[float]
     ypos: Optional[float]
     ra: Optional[float]
@@ -214,8 +214,8 @@ class PrvCandidate(BaseModel):
     aimagerat: Optional[float]
     bimagerat: Optional[float]
     elong: Optional[float]
-    nneg: Optional[conint(ge=-2147483648, le=2147483647)]
-    nbad: Optional[conint(ge=-2147483648, le=2147483647)]
+    nneg: Optional[int]
+    nbad: Optional[int]
     rb: Optional[float]
     ssdistnr: Optional[float]
     ssmagnr: Optional[float]
@@ -250,7 +250,7 @@ class Alert(BaseModel):
     schemavsn: str
     publisher: str
     objectId: str
-    candid: conint(ge=-9223372036854775808, le=9223372036854775808)
+    candid: int
     candidate: Candidate
     prv_candidates: Optional[List[PrvCandidate]]
     cutoutScience: Optional[Cutout]
