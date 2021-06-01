@@ -1,9 +1,10 @@
+from pydantic.fields import Field
 import sqlalchemy
 from ampel.ztf.archive.server.models import AlertChunk
 import secrets
 from base64 import b64encode
 from functools import lru_cache
-from typing import Optional
+from typing import List, Literal, Optional
 
 from fastapi import FastAPI, Depends, Query, HTTPException, status
 from fastapi.encoders import jsonable_encoder
@@ -12,6 +13,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from .settings import Settings
 from .models import (
+    Alert,
     AlertChunk,
     AlertCutouts,
     AlertQuery,
@@ -31,7 +33,13 @@ app = FastAPI(
     root_path=settings.root_path,
     openapi_tags=[
         {"name": "alerts", "description": "Retrieve alerts"},
+        {
+            "name": "photopoints",
+            "description": "Retrieve de-duplicated detections and upper limits",
+        },
         {"name": "cutouts", "description": "Retrieve image cutouts for alerts"},
+        {"name": "search", "description": "Search for alerts"},
+        {"name": "stream", "description": "Read a result set concurrently"},
     ],
 )
 
@@ -64,13 +72,16 @@ def authorized(credentials: HTTPBasicCredentials = Depends(security)):
     return True
 
 
-@app.get("/alert/{candid}")
+@app.get("/alert/{candid}", response_model=Alert)
 def get_alert(
     candid: int,
     with_history: bool = True,
     with_cutouts: bool = False,
     archive: ArchiveDB = Depends(get_archive),
 ):
+    """
+    Get a single alert by candidate id.
+    """
     return archive.get_alert(
         candid, with_history=with_history, with_cutouts=with_cutouts
     )
@@ -87,16 +98,27 @@ def get_cutouts(
         raise HTTPException(status_code=404)
 
 
-@app.get("/object/{objectId}/alerts")
+@app.get("/object/{objectId}/alerts", tags=["alerts"], response_model=List[Alert])
 def get_alerts_for_object(
-    objectId: str,
-    jd_start: Optional[float] = None,
-    jd_end: Optional[float] = None,
-    with_history: bool = False,
-    with_cutouts: bool = False,
+    objectId: str = Field(..., description="ZTF object name"),
+    jd_start: Optional[float] = Query(
+        None, description="minimum Julian Date of observation"
+    ),
+    jd_end: Optional[float] = Query(
+        None, description="maximum Julian Date of observation"
+    ),
+    with_history: bool = Query(
+        False, description="Include previous detections and upper limits"
+    ),
+    with_cutouts: bool = Query(
+        False, description="Include image cutouts (if available)"
+    ),
     archive: ArchiveDB = Depends(get_archive),
     auth: bool = Depends(authorized),
 ):
+    """
+    Get all alerts for the given object.
+    """
     return archive.get_alerts_for_object(
         objectId,
         jd_start=jd_start,
@@ -106,21 +128,31 @@ def get_alerts_for_object(
     )
 
 
-@app.get("/object/{objectId}/photopoints")
+@app.get("/object/{objectId}/photopoints", tags=["photopoints"], response_model=Alert)
 def get_photopoints_for_object(
-    objectId: str,
-    programid: Optional[int] = None,
-    jd_start: Optional[float] = None,
-    jd_end: Optional[float] = None,
+    objectId: str = Field(..., description="ZTF object name"),
+    programid: Optional[Literal[1, 2, 3]] = Query(
+        None, description="ZTF observing program for which to return photopoints"
+    ),
+    jd_start: Optional[float] = Query(
+        None, description="minimum Julian Date of observation"
+    ),
+    jd_end: Optional[float] = Query(
+        None, description="maximum Julian Date of observation"
+    ),
     archive: ArchiveDB = Depends(get_archive),
     auth: bool = Depends(authorized),
 ):
+    """
+    Get all detections and upper limits for the given object, consolidated into
+    a single alert packet.
+    """
     return archive.get_photopoints_for_object(
         objectId, programid=programid, jd_start=jd_start, jd_end=jd_end
     )
 
 
-@app.get("/alerts/time_range", response_model=AlertChunk)
+@app.get("/alerts/time_range", tag=["search"], response_model=AlertChunk)
 def get_alerts_in_time_range(
     jd_start: float = Query(..., description="Earliest observation jd"),
     jd_end: float = Query(..., description="Latest observation jd"),
@@ -159,7 +191,7 @@ def get_alerts_in_time_range(
     )
 
 
-@app.get("/alerts/cone_search", response_model=AlertChunk)
+@app.get("/alerts/cone_search", tags=["search", "stream"], response_model=AlertChunk)
 def get_alerts_in_cone(
     ra: float = Query(
         ..., description="Right ascension of field center in degrees (J2000)"
@@ -208,7 +240,7 @@ def get_alerts_in_cone(
     )
 
 
-@app.post("/topics/", status_code=201)
+@app.post("/topics/", tags=["topic"], status_code=201)
 def create_topic(
     topic: Topic,
     archive: ArchiveDB = Depends(get_archive),
@@ -231,7 +263,7 @@ def create_topic(
     return name
 
 
-@app.get("/topic/{topic}", response_model=TopicDescription)
+@app.get("/topic/{topic}", tags=["topic"], response_model=TopicDescription)
 def get_topic(
     topic: str,
     archive: ArchiveDB = Depends(get_archive),
@@ -239,7 +271,12 @@ def get_topic(
     return {"topic": topic, **archive.get_topic_info(topic)}
 
 
-@app.post("/streams/from_topic", response_model=StreamDescription, status_code=201)
+@app.post(
+    "/streams/from_topic",
+    tags=["topic", "search", "stream"],
+    response_model=StreamDescription,
+    status_code=201,
+)
 def create_stream_from_topic(
     query: TopicQuery,
     archive: ArchiveDB = Depends(get_archive),
@@ -264,7 +301,12 @@ def create_stream_from_topic(
     }
 
 
-@app.post("/streams/from_query", response_model=StreamDescription, status_code=201)
+@app.post(
+    "/streams/from_query",
+    tags=["search", "stream"],
+    response_model=StreamDescription,
+    status_code=201,
+)
 def create_stream_from_query(
     query: AlertQuery,
     archive: ArchiveDB = Depends(get_archive),
@@ -303,7 +345,7 @@ def create_stream_from_query(
     }
 
 
-@app.get("/stream/{resume_token}/chunk", response_model=AlertChunk)
+@app.get("/stream/{resume_token}/chunk", tags=["stream"], response_model=AlertChunk)
 def stream_get_chunk(
     resume_token: str,
     with_history: bool = True,

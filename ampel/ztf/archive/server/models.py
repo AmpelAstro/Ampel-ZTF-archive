@@ -54,3 +54,6 @@ class AlertCutouts(BaseModel):
     template: str
     science: str
     difference: str
+
+class Alert(BaseModel):
+    ...
