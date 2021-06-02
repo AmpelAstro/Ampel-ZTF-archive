@@ -179,7 +179,7 @@ class Candidate(BaseModel):
     maggaiabright: Optional[float]
     exptime: Optional[float]
     drb: Optional[float]
-    drbversion: str
+    drbversion: Optional[str]
 
 
 class PrvCandidate(BaseModel):
@@ -243,7 +243,7 @@ class PrvCandidate(BaseModel):
     magzpscirms: Optional[float]
     clrcoeff: Optional[float]
     clrcounc: Optional[float]
-    rbversion: str
+    rbversion: Optional[str]
 
 
 class Cutout(BaseModel):
