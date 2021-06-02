@@ -260,8 +260,8 @@ class Alert(BaseModel):
     avro alert schema for ZTF (www.ztf.caltech.edu)
     """
 
-    schemavsn: str
-    publisher: str
+    schemavsn: str = "3.3"
+    publisher: str = "Ampel"
     objectId: str
     candid: int
     candidate: Candidate
