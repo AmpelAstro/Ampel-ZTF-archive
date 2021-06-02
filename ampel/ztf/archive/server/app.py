@@ -76,7 +76,12 @@ def authorized(credentials: HTTPBasicCredentials = Depends(security)):
     return True
 
 
-@app.get("/alert/{candid}", tags=["alerts"], response_model=Alert)
+@app.get(
+    "/alert/{candid}",
+    tags=["alerts"],
+    response_model=Alert,
+    response_model_exclude_none=True,
+)
 def get_alert(
     candid: int,
     with_history: bool = True,
@@ -102,7 +107,12 @@ def get_cutouts(
         raise HTTPException(status_code=404)
 
 
-@app.get("/object/{objectId}/alerts", tags=["alerts"], response_model=List[Alert])
+@app.get(
+    "/object/{objectId}/alerts",
+    tags=["alerts"],
+    response_model=List[Alert],
+    response_model_exclude_none=True,
+)
 def get_alerts_for_object(
     objectId: str = Field(..., description="ZTF object name"),
     jd_start: Optional[float] = Query(
@@ -132,7 +142,12 @@ def get_alerts_for_object(
     )
 
 
-@app.get("/object/{objectId}/photopoints", tags=["photopoints"], response_model=Alert)
+@app.get(
+    "/object/{objectId}/photopoints",
+    tags=["photopoints"],
+    response_model=Alert,
+    response_model_exclude_none=True,
+)
 def get_photopoints_for_object(
     objectId: str = Field(..., description="ZTF object name"),
     programid: Optional[Literal[1, 2, 3]] = Query(
@@ -156,7 +171,12 @@ def get_photopoints_for_object(
     )
 
 
-@app.get("/alerts/time_range", tags=["search"], response_model=AlertChunk)
+@app.get(
+    "/alerts/time_range",
+    tags=["search"],
+    response_model=AlertChunk,
+    response_model_exclude_none=True,
+)
 def get_alerts_in_time_range(
     jd_start: float = Query(..., description="Earliest observation jd"),
     jd_end: float = Query(..., description="Latest observation jd"),
@@ -195,7 +215,12 @@ def get_alerts_in_time_range(
     )
 
 
-@app.get("/alerts/cone_search", tags=["search"], response_model=AlertChunk)
+@app.get(
+    "/alerts/cone_search",
+    tags=["search"],
+    response_model=AlertChunk,
+    response_model_exclude_none=True,
+)
 def get_alerts_in_cone(
     ra: float = Query(
         ..., description="Right ascension of field center in degrees (J2000)"
@@ -350,7 +375,12 @@ def create_stream_from_query(
     }
 
 
-@app.get("/stream/{resume_token}/chunk", tags=["stream"], response_model=AlertChunk)
+@app.get(
+    "/stream/{resume_token}/chunk",
+    tags=["stream"],
+    response_model=AlertChunk,
+    response_model_exclude_none=True,
+)
 def stream_get_chunk(
     resume_token: str,
     with_history: bool = True,
