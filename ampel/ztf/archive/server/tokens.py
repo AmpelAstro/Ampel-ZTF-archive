@@ -11,8 +11,8 @@ from fastapi.security.http import HTTPAuthorizationCredentials
 from .settings import settings
 from .db import get_archive
 
-bearer = HTTPBearer()
-
+user_bearer = HTTPBearer(scheme_name="Ampel API token")
+token_bearer = HTTPBearer(scheme_name="ZTF archive access token")
 
 class User(BaseModel):
 
@@ -25,7 +25,7 @@ class TokenRequest(BaseModel):
     token: str
 
 
-async def get_user(auth: HTTPAuthorizationCredentials = Depends(bearer)) -> User:
+async def get_user(auth: HTTPAuthorizationCredentials = Depends(user_bearer)) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -58,7 +58,7 @@ def find_access_token(db: ArchiveDB, token: str) -> bool:
         return bool(cursor.fetchone())
 
 async def verify_access_token(
-    auth: HTTPAuthorizationCredentials = Depends(bearer), db=Depends(get_archive)
+    auth: HTTPAuthorizationCredentials = Depends(token_bearer), db=Depends(get_archive)
 ) -> bool:
     if not find_access_token(db, auth.credentials):
         raise HTTPException(
