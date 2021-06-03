@@ -2,11 +2,11 @@ import secrets
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
+import jwt
 import httpx
 import pytest
 from fastapi import status
 from ampel.ztf.archive.ArchiveDB import ArchiveDB
-from ampel.ztf.archive.server.settings import Settings
 
 if TYPE_CHECKING:
     from _pytest.monkeypatch import MonkeyPatch
@@ -15,19 +15,30 @@ if TYPE_CHECKING:
 DEFAULT = object()
 
 
+class BearerAuth(httpx.Auth):
+    def __init__(self, token):
+        self.token = token
+
+    def auth_flow(self, request):
+        request.headers["Authorization"] = f"Bearer {self.token}"
+        yield request
+
+
 @pytest.fixture
 def mocked_app(monkeypatch: "MonkeyPatch", mocker: "MockerFixture"):
     monkeypatch.setenv("AUTH_USER", "yogi")
     monkeypatch.setenv("AUTH_PASSWORD", "bear")
     from ampel.ztf.archive.server import app
+    from ampel.ztf.archive.server.settings import settings
+    from ampel.ztf.archive.server import db
 
-    mocker.patch.object(app, "ArchiveDB")
+    mocker.patch.object(db, "ArchiveDB")
     yield app
 
 
 @pytest.fixture
 def mock_db(mocked_app, alert_generator):
-    db =  mocked_app.ArchiveDB()
+    db = mocked_app.get_archive()
     alert = next(alert_generator())
     # remove cutouts (not valid JSON strings)
     for k in list(alert.keys()):
@@ -37,7 +48,8 @@ def mock_db(mocked_app, alert_generator):
     alert["candidate"]["drbversion"] = "0.0"
     db.get_alert.return_value = alert
     db.get_alerts_for_object.return_value = [alert]
-    return db
+    yield db
+    mocked_app.get_archive.cache_clear()
 
 
 @pytest.fixture
@@ -52,8 +64,10 @@ async def mock_client(mocked_app):
 def integration_app(monkeypatch: "MonkeyPatch", alert_archive):
     monkeypatch.setenv("AUTH_USER", "yogi")
     monkeypatch.setenv("AUTH_PASSWORD", "bear")
-    monkeypatch.setenv("ARCHIVE_URI", alert_archive)
-    monkeypatch.setattr("ampel.ztf.archive.server.app.settings", Settings())
+    monkeypatch.setattr(
+        "ampel.ztf.archive.server.settings.settings.archive_uri", alert_archive
+    )
+
     from ampel.ztf.archive.server import app
 
     assert app.settings.archive_uri == alert_archive
@@ -67,7 +81,16 @@ async def integration_client(integration_app):
     async with httpx.AsyncClient(
         app=integration_app.app,
         base_url="http://test",
-        auth=httpx.BasicAuth("yogi", "bear"),
+    ) as client:
+        yield client
+
+
+@pytest.fixture
+async def authed_integration_client(integration_app, access_token):
+    async with httpx.AsyncClient(
+        app=integration_app.app,
+        base_url="http://test",
+        auth=BearerAuth(access_token),
     ) as client:
         yield client
 
@@ -82,20 +105,54 @@ async def test_get_alert(mock_client: httpx.AsyncClient, mock_db: MagicMock):
 
 @pytest.mark.parametrize(
     "auth,status",
-    [(DEFAULT, 200), (None, 401), (httpx.BasicAuth("pickanick", "basket"), 401)],
+    [
+        (DEFAULT, 200),
+        (None, status.HTTP_403_FORBIDDEN),
+        (BearerAuth, status.HTTP_401_UNAUTHORIZED),
+    ],
 )
 @pytest.mark.asyncio
 async def test_basic_auth(
-    mock_client: httpx.AsyncClient, mock_db: MagicMock, auth, status
+    mock_client: httpx.AsyncClient,
+    mock_db: MagicMock,
+    auth,
+    status,
+    mocker,
 ):
-    kwargs = {} if auth is DEFAULT else {"auth": auth}
+    mocker.patch("ampel.ztf.archive.server.tokens.find_access_token").return_value = (
+        auth is not BearerAuth
+    )
+    kwargs = {}
+    if auth is DEFAULT or auth is BearerAuth:
+        kwargs["auth"] = BearerAuth("tokeytoken")
+    elif auth is None:
+        kwargs["auth"] = None
     response = await mock_client.get("/object/thingamajig/alerts", **kwargs)
     assert response.status_code == status
 
 
+@pytest.mark.parametrize(
+    "auth,status",
+    [(DEFAULT, status.HTTP_200_OK), (BearerAuth, status.HTTP_401_UNAUTHORIZED)],
+)
 @pytest.mark.asyncio
-async def test_create_stream(integration_client: httpx.AsyncClient, integration_app):
-    response = await integration_client.post("/streams/from_query", json={})
+async def test_get_photopoints(
+    authed_integration_client: httpx.AsyncClient,
+    auth,
+    status,
+):
+    kwargs = {} if auth is DEFAULT else {"auth": BearerAuth("badtoken")}
+    response = await authed_integration_client.get(
+        "/object/ZTF18abaqwse/photopoints", **kwargs
+    )
+    assert response.status_code == status
+    if auth is DEFAULT:
+        assert len(response.json()["prv_candidates"]) == 48
+
+
+@pytest.mark.asyncio
+async def test_create_stream(authed_integration_client: httpx.AsyncClient, integration_app):
+    response = await authed_integration_client.post("/streams/from_query", json={})
     assert response.status_code == 201
     body = response.json()
     assert body["chunks"] > 0
@@ -104,8 +161,11 @@ async def test_create_stream(integration_client: httpx.AsyncClient, integration_
 
 
 @pytest.mark.asyncio
-async def test_read_stream(integration_client: httpx.AsyncClient, integration_app):
-    response = await integration_client.post("/streams/from_query", json={})
+async def test_read_stream(
+    integration_client: httpx.AsyncClient,
+    authed_integration_client: httpx.AsyncClient,
+):
+    response = await authed_integration_client.post("/streams/from_query", json={})
     assert response.status_code == 201
     body = response.json()
 
@@ -129,11 +189,14 @@ async def test_read_stream(integration_client: httpx.AsyncClient, integration_ap
 
 
 @pytest.mark.asyncio
-async def test_read_topic(integration_client: httpx.AsyncClient, integration_app):
+async def test_read_topic(
+    integration_client: httpx.AsyncClient,
+    authed_integration_client: httpx.AsyncClient,
+):
 
     candids = [595147624915010001, 595193335915010017, 595211874215015018]
     description = "the bird is the word"
-    response = await integration_client.post(
+    response = await authed_integration_client.post(
         "/topics", json={"description": description, "candids": candids}
     )
     assert response.status_code == 201
@@ -162,11 +225,11 @@ async def test_read_topic(integration_client: httpx.AsyncClient, integration_app
 
 @pytest.mark.asyncio
 async def test_create_topic_with_bad_ids(
-    integration_client: httpx.AsyncClient, integration_app
+    authed_integration_client: httpx.AsyncClient, integration_app
 ):
     candids = [1, 2, 3]
     description = "these are not the candids you're looking for"
-    response = await integration_client.post(
+    response = await authed_integration_client.post(
         "/topics", json={"description": description, "candids": candids}
     )
     assert response.status_code == status.HTTP_400_BAD_REQUEST
@@ -182,3 +245,75 @@ async def test_read_invalid_topic(
         "/streams/from_topic", json={"topic": secrets.token_urlsafe()}
     )
     assert response.status_code == 404
+
+
+@pytest.fixture
+def test_user():
+    from ampel.ztf.archive.server.tokens import User
+
+    return User(name="flerpyherp", orgs=[], teams=[])
+
+
+@pytest.fixture
+def user_token(test_user):
+    from ampel.ztf.archive.server.settings import settings
+
+    return jwt.encode(
+        test_user.dict(), settings.jwt_secret_key, algorithm=settings.jwt_algorithm
+    )
+
+
+@pytest.mark.asyncio
+@pytest.fixture
+async def access_token(
+    integration_client: httpx.AsyncClient,
+    integration_app,
+    user_token: str,
+    test_user,
+):
+    response = await integration_client.post("/tokens", auth=BearerAuth(user_token))
+    assert response.status_code == 201
+    return response.json()
+
+
+@pytest.mark.asyncio
+async def test_create_token(
+    integration_app,
+    access_token: str,
+):
+    db: ArchiveDB = integration_app.get_archive()
+    with db._engine.connect() as conn:
+        Token = db._meta.tables["access_token"]
+        cursor = conn.execute(Token.select().where(Token.c.id == access_token))
+        assert len(cursor.fetchall()) == 1
+
+
+@pytest.mark.asyncio
+async def test_delete_token(
+    integration_client: httpx.AsyncClient,
+    integration_app,
+    user_token: str,
+    access_token: str,
+):
+    response = await integration_client.post(
+        "/tokens/delete", auth=BearerAuth(user_token), json={"token": access_token}
+    )
+    assert response.status_code == 204
+    token = response.json()
+    db: ArchiveDB = integration_app.get_archive()
+    with db._engine.connect() as conn:
+        Token = db._meta.tables["access_token"]
+        cursor = conn.execute(Token.select().where(Token.c.id == token))
+        assert len(cursor.fetchall()) == 0
+
+
+@pytest.mark.asyncio
+async def test_list_tokens(
+    integration_client: httpx.AsyncClient,
+    user_token: str,
+    access_token: str,
+):
+    response = await integration_client.get("/tokens", auth=BearerAuth(user_token))
+    assert response.status_code == 200
+    tokens = response.json()
+    assert any(token["id"] == access_token for token in tokens)

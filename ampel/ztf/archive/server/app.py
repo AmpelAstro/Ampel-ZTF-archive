@@ -3,7 +3,6 @@ import sqlalchemy
 from ampel.ztf.archive.server.models import AlertChunk
 import secrets
 from base64 import b64encode
-from functools import lru_cache
 from typing import List, Literal, Optional
 
 from fastapi import FastAPI, Depends, Query, HTTPException, status
@@ -11,7 +10,9 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
-from .settings import Settings
+from .settings import settings
+from .db import get_archive
+from .tokens import router as token_router, verify_access_token
 from .models import (
     Alert,
     AlertChunk,
@@ -23,8 +24,6 @@ from .models import (
     TopicQuery,
 )
 from ampel.ztf.archive.ArchiveDB import ArchiveDB, GroupNotFoundError
-
-settings = Settings()
 
 app = FastAPI(
     title="ZTF Alert Archive Service",
@@ -49,32 +48,7 @@ app = FastAPI(
 
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-
-@lru_cache(maxsize=1)
-def get_archive():
-    return ArchiveDB(settings.archive_uri)
-
-
-security = HTTPBasic()
-
-
-def authorized(credentials: HTTPBasicCredentials = Depends(security)):
-    correct_username = secrets.compare_digest(
-        credentials.username,
-        settings.auth_user,
-    )
-    correct_password = secrets.compare_digest(
-        credentials.password,
-        settings.auth_password,
-    )
-    if not (correct_username and correct_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username",
-            headers={"WWW-Authenticate": "Basic"},
-        )
-    return True
-
+app.include_router(token_router, prefix="/tokens")
 
 @app.get(
     "/alert/{candid}",
@@ -128,7 +102,7 @@ def get_alerts_for_object(
         False, description="Include image cutouts (if available)"
     ),
     archive: ArchiveDB = Depends(get_archive),
-    auth: bool = Depends(authorized),
+    auth: bool = Depends(verify_access_token),
 ):
     """
     Get all alerts for the given object.
@@ -160,7 +134,7 @@ def get_photopoints_for_object(
         None, description="maximum Julian Date of observation"
     ),
     archive: ArchiveDB = Depends(get_archive),
-    auth: bool = Depends(authorized),
+    auth: bool = Depends(verify_access_token),
 ):
     """
     Get all detections and upper limits for the given object, consolidated into
@@ -191,7 +165,7 @@ def get_alerts_in_time_range(
         description="Identifier of a previous query to continue. This token expires after 24 hours.",
     ),
     archive: ArchiveDB = Depends(get_archive),
-    auth: bool = Depends(authorized),
+    auth: bool = Depends(verify_access_token),
 ) -> AlertChunk:
     if resume_token is None:
         resume_token = secrets.token_urlsafe(32)
@@ -242,7 +216,7 @@ def get_alerts_in_cone(
         description="Identifier of a previous query to continue. This token expires after 24 hours.",
     ),
     archive: ArchiveDB = Depends(get_archive),
-    auth: bool = Depends(authorized),
+    auth: bool = Depends(verify_access_token),
 ) -> AlertChunk:
     if resume_token is None:
         resume_token = secrets.token_urlsafe(32)
@@ -273,7 +247,7 @@ def get_alerts_in_cone(
 def create_topic(
     topic: Topic,
     archive: ArchiveDB = Depends(get_archive),
-    auth: bool = Depends(authorized),
+    auth: bool = Depends(verify_access_token),
 ):
     """
     Create a new persistent collection of alerts
@@ -340,7 +314,7 @@ def create_stream_from_topic(
 def create_stream_from_query(
     query: AlertQuery,
     archive: ArchiveDB = Depends(get_archive),
-    auth: bool = Depends(authorized),
+    auth: bool = Depends(verify_access_token),
 ):
     """
     Create a stream of alerts from the given query. The resulting resume_token
