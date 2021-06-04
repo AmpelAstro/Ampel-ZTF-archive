@@ -3,10 +3,11 @@ BEGIN;
 CREATE EXTENSION pgcrypto;
 
 CREATE TABLE access_token (
-  id uuid NOT NULL DEFAULT gen_random_uuid(),
-  created TIMESTAMP DEFAULT now(),
+  token_id SERIAL NOT NULL,
   owner TEXT NOT NULL,
-  PRIMARY KEY (id)
+  created TIMESTAMP NOT NULL DEFAULT now(),
+  token uuid NOT NULL DEFAULT gen_random_uuid() UNIQUE,
+  PRIMARY KEY (token_id)
 );
 
 -- GRANT SELECT, INSERT, UPDATE, DELETE on access_token TO GROUP readers;

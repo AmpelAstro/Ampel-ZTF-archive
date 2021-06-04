@@ -151,7 +151,9 @@ async def test_get_photopoints(
 
 
 @pytest.mark.asyncio
-async def test_create_stream(authed_integration_client: httpx.AsyncClient, integration_app):
+async def test_create_stream(
+    authed_integration_client: httpx.AsyncClient, integration_app
+):
     response = await authed_integration_client.post("/streams/from_query", json={})
     assert response.status_code == 201
     body = response.json()
@@ -284,7 +286,7 @@ async def test_create_token(
     db: ArchiveDB = integration_app.get_archive()
     with db._engine.connect() as conn:
         Token = db._meta.tables["access_token"]
-        cursor = conn.execute(Token.select().where(Token.c.id == access_token))
+        cursor = conn.execute(Token.select().where(Token.c.token == access_token))
         assert len(cursor.fetchall()) == 1
 
 
@@ -295,15 +297,19 @@ async def test_delete_token(
     user_token: str,
     access_token: str,
 ):
-    response = await integration_client.post(
-        "/tokens/delete", auth=BearerAuth(user_token), json={"token": access_token}
+    tokens = (
+        await integration_client.get("/tokens", auth=BearerAuth(user_token))
+    ).json()
+    token_id = next(t["token_id"] for t in tokens if t["token"] == access_token)
+    response = await integration_client.delete(
+        f"/tokens/{token_id}", auth=BearerAuth(user_token)
     )
     assert response.status_code == 204
     token = response.json()
     db: ArchiveDB = integration_app.get_archive()
     with db._engine.connect() as conn:
         Token = db._meta.tables["access_token"]
-        cursor = conn.execute(Token.select().where(Token.c.id == token))
+        cursor = conn.execute(Token.select().where(Token.c.token == token))
         assert len(cursor.fetchall()) == 0
 
 
@@ -316,4 +322,4 @@ async def test_list_tokens(
     response = await integration_client.get("/tokens", auth=BearerAuth(user_token))
     assert response.status_code == 200
     tokens = response.json()
-    assert any(token["id"] == access_token for token in tokens)
+    assert any(token["token"] == access_token for token in tokens)
