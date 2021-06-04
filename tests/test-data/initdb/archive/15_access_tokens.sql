@@ -10,7 +10,7 @@ CREATE TABLE access_token (
   PRIMARY KEY (token_id)
 );
 
--- GRANT SELECT, INSERT, UPDATE, DELETE on access_token TO GROUP readers;
+-- GRANT SELECT, INSERT, DELETE on access_token TO GROUP readers;
 -- GRANT SELECT, USAGE on SEQUENCE access_token_token_id_seq TO GROUP readers;
 
 COMMIT;
