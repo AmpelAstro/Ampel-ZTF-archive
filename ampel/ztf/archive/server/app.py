@@ -47,7 +47,10 @@ app = FastAPI(
         {
             "name": "tokens",
             "description": "Manage persistent tokens",
-            "externalDocs": "https://ampel.zeuthen.desy.de/live/dashboard/tokens",
+            "externalDocs": {
+                "description": "Authentication dashboard",
+                "url": "https://ampel.zeuthen.desy.de/live/dashboard/tokens",
+            },
         },
     ],
 )
