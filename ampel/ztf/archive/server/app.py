@@ -44,6 +44,11 @@ app = FastAPI(
             "name": "topic",
             "description": "A topic is a persistent collection of alerts, specified by candidate id. This can be used e.g. to store a pre-selected sample of alerts for analysis.",
         },
+        {
+            "name": "tokens",
+            "description": "Manage persistent tokens",
+            "externalDocs": "https://ampel.zeuthen.desy.de/live/dashboard/tokens",
+        },
     ],
 )
 
@@ -57,6 +62,7 @@ app.add_middleware(
 )
 
 app.include_router(token_router, prefix="/tokens")
+
 
 @app.get(
     "/alert/{candid}",

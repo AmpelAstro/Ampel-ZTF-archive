@@ -72,7 +72,7 @@ async def verify_access_token(
     return True
 
 
-router = APIRouter()
+router = APIRouter(tags=["tokens"])
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
