@@ -8,6 +8,7 @@ from typing import List, Literal, Optional
 from fastapi import FastAPI, Depends, Query, HTTPException, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from .settings import settings
@@ -47,6 +48,13 @@ app = FastAPI(
 )
 
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:8080"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(token_router, prefix="/tokens")
 
