@@ -26,8 +26,7 @@ class BearerAuth(httpx.Auth):
 
 @pytest.fixture
 def mocked_app(monkeypatch: "MonkeyPatch", mocker: "MockerFixture"):
-    monkeypatch.setenv("AUTH_USER", "yogi")
-    monkeypatch.setenv("AUTH_PASSWORD", "bear")
+    monkeypatch.setenv("ALLOWED_IDENTITIES", '["someorg","someorg/a-team"]')
     from ampel.ztf.archive.server import app
     from ampel.ztf.archive.server.settings import settings
     from ampel.ztf.archive.server import db
@@ -62,8 +61,7 @@ async def mock_client(mocked_app):
 
 @pytest.fixture
 def integration_app(monkeypatch: "MonkeyPatch", alert_archive):
-    monkeypatch.setenv("AUTH_USER", "yogi")
-    monkeypatch.setenv("AUTH_PASSWORD", "bear")
+    monkeypatch.setenv("ALLOWED_IDENTITIES", '["someorg","someorg/a-team"]')
     monkeypatch.setattr(
         "ampel.ztf.archive.server.settings.settings.archive_uri", alert_archive
     )
@@ -253,7 +251,7 @@ async def test_read_invalid_topic(
 def test_user():
     from ampel.ztf.archive.server.tokens import User
 
-    return User(name="flerpyherp", orgs=[], teams=[])
+    return User(name="flerpyherp", orgs=["someorg"], teams=["someorg/a-team"])
 
 
 @pytest.fixture
@@ -323,3 +321,17 @@ async def test_list_tokens(
     assert response.status_code == 200
     tokens = response.json()
     assert any(token["token"] == access_token for token in tokens)
+
+
+@pytest.mark.asyncio
+async def test_forbidden_identity(
+    integration_client: httpx.AsyncClient,
+    user_token: str,
+    access_token: str,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(
+        "ampel.ztf.archive.server.tokens.settings.allowed_identities", {"none", "such"}
+    )
+    response = await integration_client.get("/tokens", auth=BearerAuth(user_token))
+    assert response.status_code == status.HTTP_403_FORBIDDEN

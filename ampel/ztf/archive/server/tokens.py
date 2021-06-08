@@ -1,3 +1,4 @@
+from functools import cached_property
 import sqlalchemy
 from ampel.ztf.archive.ArchiveDB import ArchiveDB, select
 from typing import List
@@ -21,6 +22,10 @@ class User(BaseModel):
     orgs: List[str]
     teams: List[str]
 
+    @property
+    def identities(self) -> List[str]:
+        return [self.name] + self.orgs + self.teams
+
 
 class TokenRequest(BaseModel):
     token: str
@@ -40,6 +45,8 @@ async def get_user(auth: HTTPAuthorizationCredentials = Depends(user_bearer)) ->
         )
         try:
             token_data = User(**payload)
+            if not settings.allowed_identities.intersection(token_data.identities):
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
             return token_data
         except ValidationError:
             raise credentials_exception

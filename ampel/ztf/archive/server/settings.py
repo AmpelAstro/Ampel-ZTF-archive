@@ -26,11 +26,10 @@ class Settings(BaseSettings):
     jwt_secret_key: str = Field(secrets.token_urlsafe(64), env="JWT_SECRET_KEY")
     jwt_algorithm: str = Field("HS256", env="JWT_ALGORITHM")
     allowed_identities: Set[str] = Field(
-        set(),
+        {"AmpelProject"},
         env="ALLOWED_IDENTITIES",
         description="Usernames, teams, and orgs allowed to create persistent tokens",
     )
-    super_user: str = Field("jvansanten", env="SUPER_USER")
 
     class Config:
         env_file = ".env"
