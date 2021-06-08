@@ -166,7 +166,7 @@ class Candidate(BaseModel):
     magzpsci: Optional[float]
     magzpsciunc: Optional[float]
     magzpscirms: Optional[float]
-    nmatches: int
+    nmatches: Optional[int]
     clrcoeff: Optional[float]
     clrcounc: Optional[float]
     zpclrcov: Optional[float]
