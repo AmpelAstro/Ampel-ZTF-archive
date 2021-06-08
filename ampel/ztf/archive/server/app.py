@@ -29,7 +29,7 @@ from ampel.ztf.archive.ArchiveDB import ArchiveDB, GroupNotFoundError
 app = FastAPI(
     title="ZTF Alert Archive Service",
     description="Query ZTF alerts issued by IPAC",
-    version="1.0.0",
+    version="2.0.0",
     root_path=settings.root_path,
     openapi_tags=[
         {"name": "alerts", "description": "Retrieve alerts"},
