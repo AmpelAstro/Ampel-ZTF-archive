@@ -20,7 +20,7 @@ SHELL ["conda", "run", "--prefix", "/venv", "/bin/bash", "-c"]
 RUN pip install -r requirements.txt && \
   pip install --no-deps dist/*.whl
 
-FROM gcr.io/distroless/base-debian10
+FROM gcr.io/distroless/base-debian10:debug
 
 # Set up venv
 ENV PATH="/venv/bin:$PATH"
@@ -28,4 +28,4 @@ ENV PATH="/venv/bin:$PATH"
 # Copy the source code into the distroless image
 COPY --from=build-env /venv /venv
 
-CMD ["uvicorn", "ampel.ztf.archive.server.app:app"]
+CMD ["-c", "/venv/bin/uvicorn ampel.ztf.archive.server.app:app"]
