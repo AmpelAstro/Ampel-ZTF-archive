@@ -259,6 +259,53 @@ def get_alerts_in_cone(
         alerts=chunk,
     )
 
+@app.get(
+    "/alerts/healpix",
+    tags=["search"],
+    response_model=AlertChunk,
+    response_model_exclude_none=True,
+)
+def get_alerts_in_healpix_pixel(
+    nside: Literal[64] = Query(64, description="NSide of (nested) HEALpix grid"),
+    ipix: int = Query(
+        ..., description="Pixel index"
+    ),
+    jd_start: float = Query(..., description="Earliest observation jd"),
+    jd_end: float = Query(..., description="Latest observation jd"),
+    with_history: bool = False,
+    with_cutouts: bool = False,
+    chunk_size: int = Query(
+        100, gt=0, lte=10000, description="Number of alerts to return per page"
+    ),
+    resume_token: Optional[str] = Query(
+        None,
+        description="Identifier of a previous query to continue. This token expires after 24 hours.",
+    ),
+    archive: ArchiveDB = Depends(get_archive),
+    auth: bool = Depends(verify_access_token),
+) -> AlertChunk:
+    if resume_token is None:
+        resume_token = secrets.token_urlsafe(32)
+    chunk = list(
+        archive.get_alerts_in_healpix(
+            nside=nside,
+            ipix=ipix,
+            jd_start=jd_start,
+            jd_end=jd_end,
+            with_history=with_history,
+            with_cutouts=with_cutouts,
+            group_name=resume_token,
+            block_size=chunk_size,
+            max_blocks=1,
+        )
+    )
+    return AlertChunk(
+        resume_token=resume_token,
+        chunk_size=chunk_size,
+        chunks_remaining=archive.get_remaining_chunks(resume_token),
+        alerts=chunk,
+    )
+
 
 @app.post("/topics/", tags=["topic"], status_code=201)
 def create_topic(
