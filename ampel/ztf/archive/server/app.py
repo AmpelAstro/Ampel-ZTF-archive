@@ -26,9 +26,19 @@ from .models import (
 )
 from ampel.ztf.archive.ArchiveDB import ArchiveDB, GroupNotFoundError
 
+DESCRIPTION = """
+Query ZTF alerts issued by IPAC
+
+## Authorization
+
+Some endpoints require an authorization token.
+You can create a *ZTF archive access token* using the "Archive tokens" tab on the [Ampel dashboard](https://ampel.zeuthen.desy.de/live/dashboard/tokens).
+These tokens are persistent, and associated with your GitHub username.
+"""
+
 app = FastAPI(
     title="ZTF Alert Archive Service",
-    description="Query ZTF alerts issued by IPAC",
+    description=DESCRIPTION,
     version="2.0.0",
     root_path=settings.root_path,
     openapi_tags=[
