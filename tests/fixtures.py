@@ -1,5 +1,6 @@
 import itertools
 import json
+import secrets
 import subprocess
 import tarfile
 from pathlib import Path
@@ -9,8 +10,11 @@ from os.path import dirname, join
 import pytest
 import fastavro
 
+POSTGRES_IMAGE = "ampelproject/postgres:10.18"
+
 @pytest.fixture(scope="session")
 def archive():
+    password = secrets.token_hex()
     container = None
     try:
         container = (
@@ -23,6 +27,8 @@ def archive():
                     "-e",
                     "POSTGRES_USER=ampel",
                     "-e",
+                    f"POSTGRES_PASSWORD={password}",
+                    "-e",
                     "POSTGRES_DB=ztfarchive",
                     "-e",
                     "ARCHIVE_READ_USER=archive-readonly",
@@ -31,7 +37,7 @@ def archive():
                     "-P",
                     "-v",
                     f"{str(Path(__file__).parent/'test-data'/'initdb'/'archive')}:/docker-entrypoint-initdb.d",
-                    "postgres:10.6",
+                    POSTGRES_IMAGE,
                 ],
             )
             .decode()
@@ -44,17 +50,17 @@ def archive():
                 "run",
                 "--link",
                 f"{container}:postgres",
-                "postgres:10.6",
+                POSTGRES_IMAGE,
                 "sh",
                 "-c",
-                "for _ in $(seq 1 60); do if pg_isready -U ampel -h ${POSTGRES_PORT_5432_TCP_ADDR} -p ${POSTGRES_PORT_5432_TCP_PORT}; then break; fi; sleep 1; done",
+                "for _ in $(seq 1 60); do if pg_isready -U ampel -p "+password+" -h ${POSTGRES_PORT_5432_TCP_ADDR} -p ${POSTGRES_PORT_5432_TCP_PORT}; then break; fi; sleep 1; done",
             ]
         )
         info = subprocess.check_output(["docker", "inspect", container]).decode()
         port = json.loads(info)[0]["NetworkSettings"]["Ports"]["5432/tcp"][0][
             "HostPort"
         ]
-        yield f"postgresql://ampel@localhost:{port}/ztfarchive"
+        yield f"postgresql://ampel:{password}@localhost:{port}/ztfarchive"
     finally:
         if container is not None:
             subprocess.check_call(
