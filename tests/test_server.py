@@ -29,9 +29,10 @@ def mocked_app(monkeypatch: "MonkeyPatch", mocker: "MockerFixture"):
     monkeypatch.setenv("ALLOWED_IDENTITIES", '["someorg","someorg/a-team"]')
     from ampel.ztf.archive.server import app
     from ampel.ztf.archive.server.settings import settings
-    from ampel.ztf.archive.server import db
+    from ampel.ztf.archive.server import db, tokens
 
     mocker.patch.object(db, "ArchiveDB")
+    mocker.patch.object(tokens, "find_access_token", side_effect=lambda *args: True)
     yield app
 
 
@@ -54,7 +55,9 @@ def mock_db(mocked_app, alert_generator):
 @pytest.fixture
 async def mock_client(mocked_app):
     async with httpx.AsyncClient(
-        app=mocked_app.app, base_url="http://test", auth=httpx.BasicAuth("yogi", "bear")
+        app=mocked_app.app,
+        base_url="http://test",
+        auth=BearerAuth("blah"),
     ) as client:
         yield client
 
@@ -127,6 +130,18 @@ async def test_basic_auth(
         kwargs["auth"] = None
     response = await mock_client.get("/object/thingamajig/alerts", **kwargs)
     assert response.status_code == status
+
+
+@pytest.mark.asyncio
+async def test_get_healpix(mock_client: httpx.AsyncClient, mock_db: MagicMock):
+    params = {"ipix": [1, 2], "jd_start": 0, "jd_end": 1}
+    response = await mock_client.get("/alerts/healpix", params=params)
+    response.raise_for_status()
+    assert mock_db.get_alerts_in_healpix.call_count == 1
+    assert (
+        mock_db.get_alerts_in_healpix.call_args.kwargs | params
+        == mock_db.get_alerts_in_healpix.call_args.kwargs
+    ), "kwargs contain supplied params"
 
 
 @pytest.mark.parametrize(

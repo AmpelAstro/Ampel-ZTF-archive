@@ -8,11 +8,17 @@
 # Last Modified By  : Jakob van Santen <jakob.van.santen@desy.de>
 
 import json
+import math
 from typing import Any, Dict, Literal, Tuple, Optional, List, TYPE_CHECKING, Union
 
-from sqlalchemy import select, update, and_, bindparam
+from sqlalchemy import select, update, and_, or_, bindparam
 from sqlalchemy.engine.base import Connection
-from sqlalchemy.sql.elements import BooleanClauseList, ClauseElement, ColumnClause, UnaryExpression
+from sqlalchemy.sql.elements import (
+    BooleanClauseList,
+    ClauseElement,
+    ColumnClause,
+    UnaryExpression,
+)
 from sqlalchemy.sql.expression import func, literal_column, Select, Alias
 from sqlalchemy.sql.schema import Table
 from sqlalchemy.exc import IntegrityError
@@ -847,17 +853,46 @@ class ArchiveDB(ArchiveDBClient):
         jd_min: float,
         jd_max: float,
     ) -> Tuple[BooleanClauseList, UnaryExpression]:
-        Candidate = self.get_table('candidate')
+        Candidate = self.get_table("candidate")
     
-        pix = func.healpix_ang2ipix_nest(nside, Candidate.c.ra, Candidate.c.dec)
+        pix = func.healpix_ang2ipix_nest(64, Candidate.c.ra, Candidate.c.dec)
 
-        in_range = and_(
-            pix == ipix if isinstance(ipix, int) else pix.in_(ipix),
-            Candidate.c.jd >= jd_min,
-            Candidate.c.jd < jd_max,
+        if not (nside <= 8192 and nside >= 1 and math.log2(nside).is_integer()):
+            raise ValueError("nside must be >= 1, <= 8192, and a power of 2")
+        elif nside == 64:
+            # native resolution; use indices verbatim
+            in_pixels = pix == ipix if isinstance(ipix, int) else pix.in_(ipix)
+        elif nside > 64:
+            # higher resolution; filter by (indexed) native pixel and provided subpixel
+            subpix = func.healpix_ang2ipix_nest(nside, Candidate.c.ra, Candidate.c.dec)
+            scale = (nside // 64) ** 2
+            isuperpix = (
+                ipix // scale
+                if isinstance(ipix, int)
+                else list(set([p // scale for p in ipix]))
+            )
+            in_pixels = and_(
+                pix == isuperpix
+                if isinstance(isuperpix, int)
+                else subpix.in_(isuperpix),
+                subpix == ipix if isinstance(ipix, int) else subpix.in_(ipix),
+            )
+        elif nside < 64:
+            # lower resolution: treat provided superpixels as the ranges of native
+            # pixels they contain
+            scale = (64 // nside) ** 2
+            nside = 64
+            in_pixels = or_(
+                *(
+                    and_(pix >= i * scale, pix < (i + 1) * scale)
+                    for i in ([ipix] if isinstance(ipix, int) else ipix)
+                )
         )
         
-        return in_range, Candidate.c.jd.asc()
+        return (
+            and_(in_pixels, Candidate.c.jd >= jd_min, Candidate.c.jd < jd_max),
+            Candidate.c.jd.asc(),
+        )
 
     def get_alerts_in_cone(
         self,

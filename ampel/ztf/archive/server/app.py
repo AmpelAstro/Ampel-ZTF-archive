@@ -269,6 +269,7 @@ def get_alerts_in_cone(
         alerts=chunk,
     )
 
+
 @app.get(
     "/alerts/healpix",
     tags=["search"],
@@ -276,10 +277,10 @@ def get_alerts_in_cone(
     response_model_exclude_none=True,
 )
 def get_alerts_in_healpix_pixel(
-    nside: Literal[64] = Query(64, description="NSide of (nested) HEALpix grid"),
-    ipix: int = Query(
-        ..., description="Pixel index"
-    ),
+    nside: Literal[
+        1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192
+    ] = Query(64, description="NSide of (nested) HEALpix grid"),
+    ipix: List[int] = Query(..., description="Pixel index"),
     jd_start: float = Query(..., description="Earliest observation jd"),
     jd_end: float = Query(..., description="Latest observation jd"),
     with_history: bool = False,
