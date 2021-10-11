@@ -9,7 +9,7 @@
 
 import json
 import math
-from typing import Any, Dict, Literal, Tuple, Optional, List, TYPE_CHECKING, Union
+from typing import Any, Dict, Tuple, Optional, List, TYPE_CHECKING, Union
 
 from sqlalchemy import select, update, and_, or_, bindparam
 from sqlalchemy.engine.base import Connection
@@ -874,7 +874,7 @@ class ArchiveDB(ArchiveDBClient):
             in_pixels = and_(
                 pix == isuperpix
                 if isinstance(isuperpix, int)
-                else subpix.in_(isuperpix),
+                else pix.in_(isuperpix),
                 subpix == ipix if isinstance(ipix, int) else subpix.in_(ipix),
             )
         elif nside < 64:
