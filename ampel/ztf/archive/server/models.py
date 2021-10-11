@@ -169,7 +169,7 @@ class Candidate(BaseModel):
     jdstartref: float
     jdendref: float
     nframesref: int
-    rbversion: str
+    rbversion: Optional[str]
     dsnrms: Optional[float]
     ssnrms: Optional[float]
     dsdiff: Optional[float]
