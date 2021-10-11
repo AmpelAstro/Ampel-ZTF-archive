@@ -278,8 +278,8 @@ def get_alerts_in_cone(
 )
 def get_alerts_in_healpix_pixel(
     nside: Literal[
-        1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192
-    ] = Query(64, description="NSide of (nested) HEALpix grid"),
+        "1", "2", "4", "8", "16", "32", "64", "128", "256", "512", "1024", "2048", "4096", "8192"
+    ] = Query("64", description="NSide of (nested) HEALpix grid"),
     ipix: List[int] = Query(..., description="Pixel index"),
     jd_start: float = Query(..., description="Earliest observation jd"),
     jd_end: float = Query(..., description="Latest observation jd"),
@@ -299,7 +299,7 @@ def get_alerts_in_healpix_pixel(
         resume_token = secrets.token_urlsafe(32)
     chunk = list(
         archive.get_alerts_in_healpix(
-            nside=nside,
+            nside=int(nside),
             ipix=ipix,
             jd_start=jd_start,
             jd_end=jd_end,
