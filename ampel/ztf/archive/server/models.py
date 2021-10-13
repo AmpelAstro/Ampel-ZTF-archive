@@ -265,11 +265,6 @@ class Cutout(BaseModel):
     fileName: str
     stampData: bytes
 
-    class Config:
-        json_encoders = {
-            bytes: lambda v: b64encode(v).decode()
-        }
-
 
 class Alert(BaseModel):
     """
@@ -286,8 +281,18 @@ class Alert(BaseModel):
     cutoutTemplate: Optional[Cutout]
     cutoutDifference: Optional[Cutout]
 
+    class Config:
+        json_encoders = {
+            bytes: lambda v: b64encode(v).decode()
+        }
+
 
 class AlertChunk(BaseModel):
     resume_token: str
     chunks_remaining: int
     alerts: List[Alert]
+
+    class Config:
+        json_encoders = {
+            bytes: lambda v: b64encode(v).decode()
+        }
