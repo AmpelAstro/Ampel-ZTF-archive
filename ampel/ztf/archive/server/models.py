@@ -1,3 +1,4 @@
+from base64 import b64encode
 from typing import List, Dict, Any, Literal, Optional
 from pydantic import BaseModel, Field, validator, root_validator
 
@@ -262,7 +263,12 @@ class Cutout(BaseModel):
     """
 
     fileName: str
-    stampData: str
+    stampData: bytes
+
+    class Config:
+        json_encoders = {
+            bytes: lambda v: b64encode(v).decode()
+        }
 
 
 class Alert(BaseModel):
