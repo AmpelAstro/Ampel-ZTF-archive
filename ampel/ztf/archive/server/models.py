@@ -1,5 +1,10 @@
+from base64 import b64encode
 from typing import List, Dict, Any, Literal, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator, root_validator
+
+class StrictModel(BaseModel):
+    class Config:
+        extra = "forbid"
 
 
 class StreamDescription(BaseModel):
@@ -21,7 +26,7 @@ class TopicDescription(BaseModel):
     size: int
 
 
-class TopicQuery(BaseModel):
+class TopicQuery(StrictModel):
     topic: str
     chunk_size: int = Field(
         100, gte=100, lte=10000, description="Number of alerts per chunk"
@@ -31,7 +36,7 @@ class TopicQuery(BaseModel):
     step: Optional[int] = Field(None, gt=0)
 
 
-class ConeConstraint(BaseModel):
+class ConeConstraint(StrictModel):
     ra: float = Field(
         ..., description="Right ascension of field center in degrees (J2000)"
     )
@@ -39,22 +44,28 @@ class ConeConstraint(BaseModel):
         ..., description="Declination of field center in degrees (J2000)"
     )
     radius: float = Field(
-        ..., gt=0, lt=180, description="Radius of search cone in degrees"
+        ..., gt=0, lt=10, description="Radius of search cone in degrees"
     )
 
 
-class TimeConstraint(BaseModel):
+class TimeConstraint(StrictModel):
     lt: Optional[float] = Field(None)
     gt: Optional[float] = Field(None)
 
 
-class AlertQuery(BaseModel):
+class AlertQuery(StrictModel):
     cone: Optional[ConeConstraint] = None
     jd: TimeConstraint = TimeConstraint()
     programid: Optional[int] = None
     chunk_size: int = Field(
         100, gte=0, lte=10000, description="Number of alerts per chunk"
     )
+
+    @root_validator
+    def at_least_one_constraint(cls, values):
+        if not {"cone", "jd"}.intersection(values.keys()):
+            raise ValueError(f"At least one constraint (cone or jd) must be specified")
+        return values
 
 
 class AlertCutouts(BaseModel):
@@ -252,7 +263,7 @@ class Cutout(BaseModel):
     """
 
     fileName: str
-    stampData: str
+    stampData: bytes
 
 
 class Alert(BaseModel):
@@ -270,8 +281,18 @@ class Alert(BaseModel):
     cutoutTemplate: Optional[Cutout]
     cutoutDifference: Optional[Cutout]
 
+    class Config:
+        json_encoders = {
+            bytes: lambda v: b64encode(v).decode()
+        }
+
 
 class AlertChunk(BaseModel):
     resume_token: str
     chunks_remaining: int
     alerts: List[Alert]
+
+    class Config:
+        json_encoders = {
+            bytes: lambda v: b64encode(v).decode()
+        }

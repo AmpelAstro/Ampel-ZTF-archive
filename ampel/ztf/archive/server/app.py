@@ -3,15 +3,17 @@ import sqlalchemy
 from ampel.ztf.archive.server.models import AlertChunk
 import secrets
 from base64 import b64encode
-from functools import lru_cache
 from typing import List, Literal, Optional
 
 from fastapi import FastAPI, Depends, Query, HTTPException, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
-from .settings import Settings
+from .settings import settings
+from .db import get_archive
+from .tokens import router as token_router, verify_access_token
 from .models import (
     Alert,
     AlertChunk,
@@ -24,12 +26,20 @@ from .models import (
 )
 from ampel.ztf.archive.ArchiveDB import ArchiveDB, GroupNotFoundError
 
-settings = Settings()
+DESCRIPTION = """
+Query ZTF alerts issued by IPAC
+
+## Authorization
+
+Some endpoints require an authorization token.
+You can create a *ZTF archive access token* using the "Archive tokens" tab on the [Ampel dashboard](https://ampel.zeuthen.desy.de/live/dashboard/tokens).
+These tokens are persistent, and associated with your GitHub username.
+"""
 
 app = FastAPI(
     title="ZTF Alert Archive Service",
-    description="Query ZTF alerts issued by IPAC",
-    version="1.0.0",
+    description=DESCRIPTION,
+    version="2.0.0",
     root_path=settings.root_path,
     openapi_tags=[
         {"name": "alerts", "description": "Retrieve alerts"},
@@ -44,36 +54,27 @@ app = FastAPI(
             "name": "topic",
             "description": "A topic is a persistent collection of alerts, specified by candidate id. This can be used e.g. to store a pre-selected sample of alerts for analysis.",
         },
+        {
+            "name": "tokens",
+            "description": "Manage persistent authentication tokens",
+            "externalDocs": {
+                "description": "Authentication dashboard",
+                "url": "https://ampel.zeuthen.desy.de/live/dashboard/tokens",
+            },
+        },
     ],
 )
 
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:8080"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-
-@lru_cache(maxsize=1)
-def get_archive():
-    return ArchiveDB(settings.archive_uri)
-
-
-security = HTTPBasic()
-
-
-def authorized(credentials: HTTPBasicCredentials = Depends(security)):
-    correct_username = secrets.compare_digest(
-        credentials.username,
-        settings.auth_user,
-    )
-    correct_password = secrets.compare_digest(
-        credentials.password,
-        settings.auth_password,
-    )
-    if not (correct_username and correct_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username",
-            headers={"WWW-Authenticate": "Basic"},
-        )
-    return True
+app.include_router(token_router, prefix="/tokens")
 
 
 @app.get(
@@ -128,7 +129,7 @@ def get_alerts_for_object(
         False, description="Include image cutouts (if available)"
     ),
     archive: ArchiveDB = Depends(get_archive),
-    auth: bool = Depends(authorized),
+    auth: bool = Depends(verify_access_token),
 ):
     """
     Get all alerts for the given object.
@@ -160,7 +161,7 @@ def get_photopoints_for_object(
         None, description="maximum Julian Date of observation"
     ),
     archive: ArchiveDB = Depends(get_archive),
-    auth: bool = Depends(authorized),
+    auth: bool = Depends(verify_access_token),
 ):
     """
     Get all detections and upper limits for the given object, consolidated into
@@ -191,7 +192,7 @@ def get_alerts_in_time_range(
         description="Identifier of a previous query to continue. This token expires after 24 hours.",
     ),
     archive: ArchiveDB = Depends(get_archive),
-    auth: bool = Depends(authorized),
+    auth: bool = Depends(verify_access_token),
 ) -> AlertChunk:
     if resume_token is None:
         resume_token = secrets.token_urlsafe(32)
@@ -242,7 +243,7 @@ def get_alerts_in_cone(
         description="Identifier of a previous query to continue. This token expires after 24 hours.",
     ),
     archive: ArchiveDB = Depends(get_archive),
-    auth: bool = Depends(authorized),
+    auth: bool = Depends(verify_access_token),
 ) -> AlertChunk:
     if resume_token is None:
         resume_token = secrets.token_urlsafe(32)
@@ -269,11 +270,59 @@ def get_alerts_in_cone(
     )
 
 
+@app.get(
+    "/alerts/healpix",
+    tags=["search"],
+    response_model=AlertChunk,
+    response_model_exclude_none=True,
+)
+def get_alerts_in_healpix_pixel(
+    nside: Literal[
+        "1", "2", "4", "8", "16", "32", "64", "128", "256", "512", "1024", "2048", "4096", "8192"
+    ] = Query("64", description="NSide of (nested) HEALpix grid"),
+    ipix: List[int] = Query(..., description="Pixel index"),
+    jd_start: float = Query(..., description="Earliest observation jd"),
+    jd_end: float = Query(..., description="Latest observation jd"),
+    with_history: bool = False,
+    with_cutouts: bool = False,
+    chunk_size: int = Query(
+        100, gt=0, lte=10000, description="Number of alerts to return per page"
+    ),
+    resume_token: Optional[str] = Query(
+        None,
+        description="Identifier of a previous query to continue. This token expires after 24 hours.",
+    ),
+    archive: ArchiveDB = Depends(get_archive),
+    auth: bool = Depends(verify_access_token),
+) -> AlertChunk:
+    if resume_token is None:
+        resume_token = secrets.token_urlsafe(32)
+    chunk = list(
+        archive.get_alerts_in_healpix(
+            nside=int(nside),
+            ipix=ipix,
+            jd_start=jd_start,
+            jd_end=jd_end,
+            with_history=with_history,
+            with_cutouts=with_cutouts,
+            group_name=resume_token,
+            block_size=chunk_size,
+            max_blocks=1,
+        )
+    )
+    return AlertChunk(
+        resume_token=resume_token,
+        chunk_size=chunk_size,
+        chunks_remaining=archive.get_remaining_chunks(resume_token),
+        alerts=chunk,
+    )
+
+
 @app.post("/topics/", tags=["topic"], status_code=201)
 def create_topic(
     topic: Topic,
     archive: ArchiveDB = Depends(get_archive),
-    auth: bool = Depends(authorized),
+    auth: bool = Depends(verify_access_token),
 ):
     """
     Create a new persistent collection of alerts
@@ -340,7 +389,7 @@ def create_stream_from_topic(
 def create_stream_from_query(
     query: AlertQuery,
     archive: ArchiveDB = Depends(get_archive),
-    auth: bool = Depends(authorized),
+    auth: bool = Depends(verify_access_token),
 ):
     """
     Create a stream of alerts from the given query. The resulting resume_token

@@ -2,8 +2,12 @@ import pytest
 import os
 import secrets
 import time
+import operator
 from math import isnan
 from collections import defaultdict
+from sqlalchemy.sql.elements import BindParameter
+
+from sqlalchemy.sql.sqltypes import Binary
 
 from ampel.ztf.archive.ArchiveDB import ArchiveDB
 from ampel.ztf.t0.ArchiveUpdater import ArchiveUpdater
@@ -12,6 +16,7 @@ from sqlalchemy import select, create_engine, MetaData
 import sqlalchemy
 from sqlalchemy.sql.functions import count
 from sqlalchemy.exc import SAWarning
+from sqlalchemy.sql.expression import BooleanClauseList, BinaryExpression, Function
 import warnings
 
 from collections.abc import Iterable
@@ -606,4 +611,28 @@ def test_cone_search(alert_archive):
     group = secrets.token_urlsafe()
     alerts = list(db.get_alerts_in_cone(ra=0, dec=0, radius=1,  with_history=False, with_cutouts=False, group_name=group))
     assert len(alerts) == 0
+
+@pytest.mark.parametrize("nside", [32, 64, 128])
+def test_healpix_search(empty_archive, nside):
+    db = ArchiveDB(empty_archive)
+    group = secrets.token_urlsafe()
+    ipix = 13
+    condition, order = db._healpix_search_condition(nside, ipix, -1, 1)
+    assert isinstance(condition, BooleanClauseList)
+    assert condition.operator == operator.and_
+
+    ops = []
+    if nside == 64:
+        ops.append(condition.get_children()[0])
+    else:
+        ops.extend(condition.get_children()[0].get_children())
+
+    nsides = []
+    for op in ops:
+        assert isinstance(op, BinaryExpression)    
+        assert isinstance(func := op.get_children()[0], Function)
+        assert func.name == "healpix_ang2ipix_nest"
+        assert isinstance(arg := func.clauses.get_children()[0], BindParameter)
+        nsides.append(arg.value)
+    assert any([n == 64 for n in nsides]), "pixel lookups used indexed expression at least once"
     

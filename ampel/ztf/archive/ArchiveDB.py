@@ -8,12 +8,19 @@
 # Last Modified By  : Jakob van Santen <jakob.van.santen@desy.de>
 
 import json
-from typing import Any, Dict, Tuple, Optional, List, TYPE_CHECKING
+import math
+from typing import Any, Dict, Tuple, Optional, List, TYPE_CHECKING, Union
 
-from sqlalchemy import select, update, and_, bindparam
+from sqlalchemy import select, update, and_, or_, bindparam
 from sqlalchemy.engine.base import Connection
-from sqlalchemy.sql.elements import BooleanClauseList, ClauseElement, ColumnClause, UnaryExpression
-from sqlalchemy.sql.expression import func
+from sqlalchemy.sql.elements import (
+    BooleanClauseList,
+    ClauseElement,
+    ColumnClause,
+    UnaryExpression,
+)
+from sqlalchemy.sql.expression import func, literal_column, Select, Alias
+from sqlalchemy.sql.schema import Table
 from sqlalchemy.exc import IntegrityError
 import sqlalchemy, collections
 
@@ -43,15 +50,19 @@ class ArchiveDB(ArchiveDBClient):
         """
         super().__init__(*args, **kwargs)
         self._alert_id_column = self.get_alert_id_column()
+        self._table_mapping = {}
 
     def _get_alert_column(self, name: str) -> ColumnClause:
         if 'alert' in self._meta.tables and name in self._meta.tables['alert'].c:
             return getattr(self._meta.tables['alert'].c, name)
         else:
-            return getattr(self._meta.tables['candidate'].c, name)
+            return getattr(self.get_table('candidate').c, name)
 
     def get_alert_id_column(self):
         return self._meta.tables['alert'].c.alert_id
+
+    def get_table(self, name: str) -> Table:
+        return self._meta.tables[self._table_mapping.get(name, name)]
 
     @classmethod
     def instance(cls, *args, **kwargs) -> 'ArchiveDB':
@@ -457,7 +468,7 @@ class ArchiveDB(ArchiveDBClient):
         meta = self._meta
         PrvCandidate = meta.tables['prv_candidate']
         UpperLimit = meta.tables['upper_limit']
-        Candidate = meta.tables['candidate']
+        Candidate = self.get_table('candidate')
         Alert = meta.tables['alert']
         Pivot = meta.tables['alert_prv_candidate_pivot']
         UpperLimitPivot = meta.tables['alert_upper_limit_pivot']
@@ -467,7 +478,7 @@ class ArchiveDB(ArchiveDBClient):
 
         alert = (
             select([Alert.c.alert_id] + without_keys(Alert))
-            .select_from(Alert.join(Candidate))
+            .select_from(Alert.join(Candidate, Alert.c.alert_id==Candidate.c.alert_id))
             .where(condition)
             .order_by(order)
             .alias()
@@ -813,7 +824,7 @@ class ArchiveDB(ArchiveDBClient):
         from sqlalchemy import func
         from sqlalchemy.sql.expression import BinaryExpression
         Alert = self._meta.tables['alert']
-        Candidate = self._meta.tables['candidate']
+        Candidate = self.get_table('candidate')
     
         center = func.ll_to_earth(dec, ra)
         box = func.earth_box(center, radius)
@@ -834,6 +845,54 @@ class ArchiveDB(ArchiveDBClient):
             in_range = and_(in_range, self._get_alert_column('programid') == programid)
         
         return in_range, Alert.c.jd.asc()
+    
+    def _healpix_search_condition(
+        self,
+        nside: int,
+        ipix: Union[int, List[int]],
+        jd_min: float,
+        jd_max: float,
+    ) -> Tuple[BooleanClauseList, UnaryExpression]:
+        Candidate = self.get_table("candidate")
+    
+        pix = func.healpix_ang2ipix_nest(64, Candidate.c.ra, Candidate.c.dec)
+
+        if not (nside <= 8192 and nside >= 1 and math.log2(nside).is_integer()):
+            raise ValueError("nside must be >= 1, <= 8192, and a power of 2")
+        elif nside == 64:
+            # native resolution; use indices verbatim
+            in_pixels = pix == ipix if isinstance(ipix, int) else pix.in_(ipix)
+        elif nside > 64:
+            # higher resolution; filter by (indexed) native pixel and provided subpixel
+            subpix = func.healpix_ang2ipix_nest(nside, Candidate.c.ra, Candidate.c.dec)
+            scale = (nside // 64) ** 2
+            isuperpix = (
+                ipix // scale
+                if isinstance(ipix, int)
+                else list(set([p // scale for p in ipix]))
+            )
+            in_pixels = and_(
+                pix == isuperpix
+                if isinstance(isuperpix, int)
+                else pix.in_(isuperpix),
+                subpix == ipix if isinstance(ipix, int) else subpix.in_(ipix),
+            )
+        elif nside < 64:
+            # lower resolution: treat provided superpixels as the ranges of native
+            # pixels they contain
+            scale = (64 // nside) ** 2
+            nside = 64
+            in_pixels = or_(
+                *(
+                    and_(pix >= i * scale, pix < (i + 1) * scale)
+                    for i in ([ipix] if isinstance(ipix, int) else ipix)
+                )
+        )
+        
+        return (
+            and_(in_pixels, Candidate.c.jd >= jd_min, Candidate.c.jd < jd_max),
+            Candidate.c.jd.asc(),
+        )
 
     def get_alerts_in_cone(
         self,
@@ -863,6 +922,39 @@ class ArchiveDB(ArchiveDBClient):
         
         """
         condition, order = self._cone_search_condition(ra, dec, radius, programid, jd_start, jd_end)
+
+        with self._engine.connect() as conn:
+            yield from self._fetch_alerts_with_condition(
+                conn, condition, order,
+                with_history=with_history, with_cutouts=with_cutouts,
+                group_name=group_name, block_size=block_size, max_blocks=max_blocks,
+            )
+
+    def get_alerts_in_healpix(
+        self,
+        *,
+        nside: int,
+        ipix: Union[int, List[int]],
+        jd_start: float,
+        jd_end: float,
+        with_history: bool=False,
+        with_cutouts: bool=False,
+        group_name: Optional[str]=None,
+        block_size: int=5000,
+        max_blocks: Optional[int]=None,
+    ):
+        """
+        Retrieve alerts by HEALpix pixel
+
+        :param nside: nside of (nested) HEALPix grid
+        :param ipix: pixel index
+        :param jd_start: minimum JD of exposure start
+        :param jd_end: maximum JD of exposure start
+        :param with_history: return alert with previous detections and upper limits
+        :param with_cutout: return alert with cutout images
+        
+        """
+        condition, order = self._healpix_search_condition(nside, ipix, jd_start, jd_end)
 
         with self._engine.connect() as conn:
             yield from self._fetch_alerts_with_condition(

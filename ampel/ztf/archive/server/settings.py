@@ -1,4 +1,6 @@
-from typing import Optional, TYPE_CHECKING
+import secrets
+
+from typing import Optional, Set, TYPE_CHECKING
 
 from pydantic import (
     AnyHttpUrl,
@@ -18,9 +20,19 @@ else:
 
 class Settings(BaseSettings):
     root_path: str = Field("", env="ROOT_PATH")
-    archive_uri: Optional[PostgresUrl] = Field("postgresql://localhost:5432/ztfarchive", env="ARCHIVE_URI")
-    auth_user: str = Field(..., env="AUTH_USER")
-    auth_password: str = Field(..., env="AUTH_PASSWORD")
+    archive_uri: Optional[PostgresUrl] = Field(
+        "postgresql://localhost:5432/ztfarchive", env="ARCHIVE_URI"
+    )
+    jwt_secret_key: str = Field(secrets.token_urlsafe(64), env="JWT_SECRET_KEY")
+    jwt_algorithm: str = Field("HS256", env="JWT_ALGORITHM")
+    allowed_identities: Set[str] = Field(
+        {"AmpelProject"},
+        env="ALLOWED_IDENTITIES",
+        description="Usernames, teams, and orgs allowed to create persistent tokens",
+    )
 
     class Config:
         env_file = ".env"
+
+
+settings = Settings()
