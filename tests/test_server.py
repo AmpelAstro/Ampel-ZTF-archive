@@ -1,12 +1,19 @@
+from contextlib import contextmanager
+import io
 import secrets
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
+from ampel.ztf.archive.server.db import get_archive, get_archive_updater
+from ampel.ztf.archive.server.s3 import get_object, get_s3_bucket
+from fastapi.security import http
+import fastavro
 
 import jwt
 import httpx
 import pytest
 from fastapi import status
 from ampel.ztf.archive.ArchiveDB import ArchiveDB
+from tests.fixtures import walk_tarball
 
 if TYPE_CHECKING:
     from _pytest.monkeypatch import MonkeyPatch
@@ -25,15 +32,22 @@ class BearerAuth(httpx.Auth):
 
 
 @pytest.fixture
-def mocked_app(monkeypatch: "MonkeyPatch", mocker: "MockerFixture"):
+def mocked_app(monkeypatch: "MonkeyPatch", mocker: "MockerFixture", mock_s3_bucket):
     monkeypatch.setenv("ALLOWED_IDENTITIES", '["someorg","someorg/a-team"]')
     from ampel.ztf.archive.server import app
     from ampel.ztf.archive.server.settings import settings
     from ampel.ztf.archive.server import db, tokens
 
     mocker.patch.object(db, "ArchiveDB")
-    mocker.patch.object(tokens, "find_access_token", side_effect=lambda *args: True)
+    mocker.patch.object(db, "ArchiveUpdater")
+    mocker.patch.object(
+        tokens, "find_access_token", side_effect=lambda *args: {"role": "writer"}
+    )
+    get_archive.cache_clear()
+    get_archive_updater.cache_clear()
     yield app
+    get_archive.cache_clear()
+    get_archive_updater.cache_clear()
 
 
 @pytest.fixture
@@ -63,15 +77,19 @@ async def mock_client(mocked_app):
 
 
 @pytest.fixture
-def integration_app(monkeypatch: "MonkeyPatch", alert_archive):
-    monkeypatch.setenv("ALLOWED_IDENTITIES", '["someorg","someorg/a-team"]')
+def integration_app(monkeypatch: "MonkeyPatch", alert_archive, localstack_s3_bucket):
     monkeypatch.setattr(
         "ampel.ztf.archive.server.settings.settings.archive_uri", alert_archive
+    )
+    monkeypatch.setattr(
+        "ampel.ztf.archive.server.settings.settings.allowed_identities",
+        {"someorg", "someorg/a-team"},
     )
 
     from ampel.ztf.archive.server import app
 
     assert app.settings.archive_uri == alert_archive
+    assert app.settings.allowed_identities == {"someorg", "someorg/a-team"}
     app.get_archive.cache_clear()
     yield app
     app.get_archive.cache_clear()
@@ -86,14 +104,50 @@ async def integration_client(integration_app):
         yield client
 
 
+@contextmanager
+def set_token_role(token: str, role: str):
+    db = get_archive()
+    Token = db._meta.tables["access_token"]
+    with db._engine.connect() as conn:
+        prev_role = conn.execute(
+            Token.select().where(Token.c.token == token)
+        ).fetchone()["role"]
+        try:
+            conn.execute(
+                Token.update(values={"role": role}).where(Token.c.token == token)
+            )
+            yield
+        finally:
+            conn.execute(
+                Token.update(values={"role": prev_role}).where(Token.c.token == token)
+            )
+
+
 @pytest.fixture
-async def authed_integration_client(integration_app, access_token):
+def write_token(integration_app, access_token):
+    with set_token_role(access_token, "writer"):
+        yield access_token
+
+
+@pytest.fixture
+async def authed_integration_client(integration_app, write_token):
     async with httpx.AsyncClient(
         app=integration_app.app,
         base_url="http://test",
-        auth=BearerAuth(access_token),
+        auth=BearerAuth(write_token),
     ) as client:
         yield client
+
+
+def test_parse_json_from_env(monkeypatch):
+    """
+    JSON gets parsed from env variables
+    """
+    from ampel.ztf.archive.server.settings import Settings
+
+    assert Settings().allowed_identities != {"someorg", "someorg/a-team"}
+    monkeypatch.setenv("ALLOWED_IDENTITIES", '["someorg","someorg/a-team"]')
+    assert Settings().allowed_identities == {"someorg", "someorg/a-team"}
 
 
 @pytest.mark.asyncio
@@ -102,6 +156,61 @@ async def test_get_alert(mock_client: httpx.AsyncClient, mock_db: MagicMock):
     response.raise_for_status()
     assert mock_db.get_alert.called_once
     assert mock_db.get_alert.call_args.args[0] == 123
+
+
+# metafixture as suggested in https://github.com/pytest-dev/pytest/issues/349#issuecomment-189370273
+@pytest.fixture(params=["mock_client", "authed_integration_client"])
+def client(request):
+    yield request.getfixturevalue(request.param)
+
+
+@pytest.fixture
+async def put_alert(client: httpx.AsyncClient, alert_tarball):
+    for fo in walk_tarball(alert_tarball):
+        payload = fo.read()
+        reader = fastavro.reader(io.BytesIO(payload))
+        alert = next(reader)
+        candid = alert["candid"]
+        response = await client.put(f"/alert/{candid}", content=payload)
+        response.raise_for_status()
+        yield alert
+        break
+
+
+@pytest.mark.asyncio
+async def test_put_alert_unauthorized(integration_client: httpx.AsyncClient):
+    response = await integration_client.put("/alert/0", content=b"")
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.asyncio
+async def test_put_malformed_alert(mock_client: httpx.AsyncClient):
+    response = await mock_client.put("/alert/0", content=b"")
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    assert response.headers["x-exception"] == "cannot read header - is it an avro file?"
+
+
+@pytest.mark.asyncio
+async def test_put_alert(put_alert):
+    candid = put_alert["candid"]
+    blob = get_object(get_s3_bucket(), f"{candid}.avro")
+    reader = fastavro.reader(io.BytesIO(blob))
+    content = next(reader)
+    assert content["candid"] == candid
+    assert set(content.keys()) == {
+        "candid",
+        "cutoutScience",
+        "cutoutTemplate",
+        "cutoutDifference",
+    }
+    assert content == {k: v for k, v in put_alert.items() if k in content}
+
+
+@pytest.mark.asyncio
+async def test_get_cutouts(client: httpx.AsyncClient, put_alert):
+    candid = put_alert["candid"]
+    response = await client.get(f"/cutouts/{candid}")
+    response.raise_for_status()
 
 
 @pytest.mark.parametrize(

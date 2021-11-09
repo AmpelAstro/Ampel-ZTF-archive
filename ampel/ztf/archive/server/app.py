@@ -1,20 +1,26 @@
-from ampel.ztf.archive.server.skymap import deres
+import io
+import time
+from ampel.ztf.archive.server.cutouts import repack_alert
+from ampel.ztf.t0.ArchiveUpdater import ArchiveUpdater
 from pydantic.fields import Field
 import sqlalchemy
 from ampel.ztf.archive.server.models import AlertChunk
 import secrets
+import fastavro
 from base64 import b64encode
-from typing import List, Literal, Optional
+from typing import TYPE_CHECKING, List, Literal, Optional
 
-from fastapi import FastAPI, Depends, Query, HTTPException, status
+from fastapi import FastAPI, Depends, Request, Query, HTTPException, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.concurrency import run_in_threadpool
 
 from .settings import settings
-from .db import get_archive
-from .tokens import router as token_router, verify_access_token
+from .db import get_archive, get_archive_updater
+from .s3 import get_object, get_s3_bucket
+from .tokens import router as token_router, verify_access_token, verify_write_token
 from .models import (
     Alert,
     AlertChunk,
@@ -27,6 +33,11 @@ from .models import (
     TopicQuery,
 )
 from ampel.ztf.archive.ArchiveDB import ArchiveDB, GroupNotFoundError
+from ampel.ztf.archive.server.skymap import deres
+
+if TYPE_CHECKING:
+    from mypy_boto3_s3.service_resource import Bucket
+
 
 DESCRIPTION = """
 Query ZTF alerts issued by IPAC
@@ -99,13 +110,59 @@ def get_alert(
     )
 
 
-@app.get("/cutouts/{candid}", tags=["cutouts"], response_model=AlertCutouts)
-def get_cutouts(
+@app.put(
+    "/alert/{candid}",
+    tags=["alerts"],
+    response_model_exclude_none=True,
+)
+async def put_alert(
     candid: int,
-    archive: ArchiveDB = Depends(get_archive),
+    request: Request,
+    archive: ArchiveUpdater = Depends(get_archive_updater),
+    s3=Depends(get_s3_bucket),
+    auth: bool = Depends(verify_write_token),
 ):
-    if cutouts := archive.get_cutout(candid):
-        return {k: b64encode(v) for k, v in cutouts.items()}
+    data: bytes = await request.body()
+    try:
+        reader = fastavro.reader(io.BytesIO(data))
+    except ValueError as exc:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, headers={"x-exception": str(exc)}
+        )
+    try:
+        content, schema = next(reader), reader.writer_schema
+    except StopIteration as exc:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, headers={"x-exception": str(exc)}
+        )
+
+    await run_in_threadpool(
+        archive.insert_alert,
+        {k: v for k, v in content.items() if not k.startswith("cutout")},
+        schema,
+        0,
+        int(1e6 * time.time()),
+    )
+    if any(k.startswith("cutout") for k in content):
+        await run_in_threadpool(
+            s3.put_object,
+            Key=f'{content["candid"]}.avro',
+            Body=repack_alert(content),
+        )
+
+
+@app.get("/cutouts/{candid}", tags=["cutouts"], response_model=AlertCutouts)
+def get_cutouts(candid: int, s3: "Bucket" = Depends(get_s3_bucket)):
+    blob = get_object(s3, f"{candid}.avro")
+    if cutouts := next(fastavro.reader(io.BytesIO(blob))):
+        return {
+            "candid": cutouts["candid"],
+            **{
+                k[6:].lower(): b64encode(v["stampData"])
+                for k, v in cutouts.items()
+                if k.startswith("cutout")
+            },
+        }
     else:
         raise HTTPException(status_code=404)
 

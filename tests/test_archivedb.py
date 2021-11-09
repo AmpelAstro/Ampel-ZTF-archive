@@ -634,12 +634,12 @@ def test_cone_search(alert_archive):
 
 
 @pytest.mark.parametrize("nside", [32, 64, 128])
-def test_healpix_search(empty_archive, nside: int) -> None:
+@pytest.mark.parametrize("ipix", [13, [13]])
+def test_healpix_search(empty_archive, nside, ipix):
     db = ArchiveDB(empty_archive)
     group = secrets.token_urlsafe()
-    ipix = 13
     condition, order = db._healpix_search_condition(
-        pixels={nside: [ipix]}, jd_min=-1, jd_max=1
+        pixels={nside: ipix}, jd_min=-1, jd_max=1
     )
     assert isinstance(condition, BooleanClauseList)
     assert condition.operator == operator.and_

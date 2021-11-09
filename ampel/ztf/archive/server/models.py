@@ -96,7 +96,6 @@ class AlertCutouts(BaseModel):
     """
     Images are gzipped FITS files, b64 encoded
     """
-
     template: str
     science: str
     difference: str

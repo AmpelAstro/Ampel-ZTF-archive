@@ -1,19 +1,31 @@
 import itertools
 import json
+import os
 import secrets
 import subprocess
 import tarfile
 from pathlib import Path
 from os import environ
 from os.path import dirname, join
+from ampel.ztf.archive.server.s3 import get_s3_bucket
+import httpx
 
 import pytest
+from moto import mock_s3
 import fastavro
 
 POSTGRES_IMAGE = "ampelproject/postgres:10.18"
+LOCALSTACK_IMAGE = "localstack/localstack:0.12.19.1"
+
 
 @pytest.fixture(scope="session")
-def archive():
+def integration(pytestconfig):
+    if not pytestconfig.getoption("--integration"):
+        raise pytest.skip("integration tests require --integration flag")
+
+
+@pytest.fixture(scope="session")
+def archive(integration):
     password = secrets.token_hex()
     container = None
     try:
@@ -53,7 +65,9 @@ def archive():
                 POSTGRES_IMAGE,
                 "sh",
                 "-c",
-                "for _ in $(seq 1 60); do if pg_isready -U ampel -p "+password+" -h ${POSTGRES_PORT_5432_TCP_ADDR} -p ${POSTGRES_PORT_5432_TCP_PORT}; then break; fi; sleep 1; done",
+                "for _ in $(seq 1 60); do if pg_isready -U ampel -p "
+                + password
+                + " -h ${POSTGRES_PORT_5432_TCP_ADDR} -p ${POSTGRES_PORT_5432_TCP_PORT}; then break; fi; sleep 1; done",
             ]
         )
         info = subprocess.check_output(["docker", "inspect", container]).decode()
@@ -61,6 +75,53 @@ def archive():
             "HostPort"
         ]
         yield f"postgresql://ampel:{password}@localhost:{port}/ztfarchive"
+    finally:
+        if container is not None:
+            subprocess.check_call(
+                ["docker", "stop", container], stdout=subprocess.DEVNULL
+            )
+
+
+@pytest.fixture(scope="session")
+def localstack_s3(integration):
+    container = None
+    try:
+        container = (
+            subprocess.check_output(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    "-d",
+                    "-e",
+                    "SERVICES=s3",
+                    "-P",
+                    LOCALSTACK_IMAGE,
+                ],
+            )
+            .decode()
+            .strip()
+        )
+        info = subprocess.check_output(["docker", "inspect", container]).decode()
+        port = json.loads(info)[0]["NetworkSettings"]["Ports"]["4566/tcp"][0][
+            "HostPort"
+        ]
+
+        def raise_on_4xx_5xx(response):
+            response.raise_for_status()
+
+        client = httpx.Client(event_hooks={"response": [raise_on_4xx_5xx]})
+        for _ in range(100):
+            try:
+                if (
+                    client.get(f"http://localhost:{port}").json()["services"]["s3"]
+                    == "running"
+                ):
+                    break
+            except:
+                raise
+
+        yield f"http://localhost:{port}/s3"
     finally:
         if container is not None:
             subprocess.check_call(
@@ -94,6 +155,7 @@ def empty_archive(archive):
 @pytest.fixture
 def alert_archive(empty_archive, alert_generator):
     from ampel.ztf.t0.ArchiveUpdater import ArchiveUpdater
+
     updater = ArchiveUpdater(empty_archive)
     from itertools import islice
 
@@ -131,3 +193,37 @@ def alert_generator(alert_tarball):
                 yield alert
 
     return alerts
+
+
+@pytest.fixture(scope="module")
+def aws_credentials():
+    os.environ["AWS_ACCESS_KEY_ID"] = "KEY"
+    os.environ["AWS_SECRET_ACCESS_KEY"] = "SEEKRIT"
+
+
+@pytest.fixture
+def mock_s3_bucket(aws_credentials):
+    from ampel.ztf.archive.server.settings import settings
+
+    get_s3_bucket.cache_clear()
+    with mock_s3():
+        bucket = get_s3_bucket()
+        bucket.create()
+        yield bucket
+    get_s3_bucket.cache_clear()
+
+
+@pytest.fixture
+def localstack_s3_bucket(aws_credentials, localstack_s3, monkeypatch):
+    from ampel.ztf.archive.server.settings import settings
+
+    monkeypatch.setattr(settings, "s3_endpoint_url", localstack_s3)
+    get_s3_bucket.cache_clear()
+    yield get_s3_bucket()
+    get_s3_bucket.cache_clear()
+
+
+# metafixture as suggested in https://github.com/pytest-dev/pytest/issues/349#issuecomment-189370273
+@pytest.fixture(params=["mock_s3_bucket", "localstack_s3_bucket"])
+def s3_bucket(request):
+    yield request.getfixturevalue(request.param)
