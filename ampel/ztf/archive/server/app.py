@@ -39,7 +39,7 @@ These tokens are persistent, and associated with your GitHub username.
 app = FastAPI(
     title="ZTF Alert Archive Service",
     description=DESCRIPTION,
-    version="2.0.0",
+    version="2.1.0",
     root_path=settings.root_path,
     openapi_tags=[
         {"name": "alerts", "description": "Retrieve alerts"},
@@ -271,6 +271,36 @@ def get_alerts_in_cone(
         alerts=chunk,
     )
 
+@app.get(
+    "/objects/cone_search",
+    tags=["search"],
+)
+def get_objects_in_cone(
+    ra: float = Query(
+        ..., description="Right ascension of field center in degrees (J2000)"
+    ),
+    dec: float = Query(
+        ..., description="Declination of field center in degrees (J2000)"
+    ),
+    radius: float = Query(..., description="radius of search field in degrees"),
+    jd_start: float = Query(..., description="Earliest observation jd"),
+    jd_end: float = Query(..., description="Latest observation jd"),
+    programid: Optional[int] = None,
+    archive: ArchiveDB = Depends(get_archive),
+    auth: bool = Depends(verify_access_token),
+) -> List[str]:
+    chunk = list(
+        archive.get_objects_in_cone(
+            ra=ra,
+            dec=dec,
+            radius=radius,
+            jd_start=jd_start,
+            jd_end=jd_end,
+            programid=programid,
+        )
+    )
+    return chunk
+
 
 @app.get(
     "/alerts/healpix",
@@ -401,12 +431,12 @@ def create_stream_from_query(
     """
     if query.cone:
         condition, order = archive._cone_search_condition(
-            query.cone.ra,
-            query.cone.dec,
-            query.cone.radius,
-            query.programid,
-            query.jd.gt,
-            query.jd.lt,
+            ra=query.cone.ra,
+            dec=query.cone.dec,
+            radius=query.cone.radius,
+            programid=query.programid,
+            jd_min=query.jd.gt,
+            jd_max=query.jd.lt,
         )
     else:
         condition, order = archive._time_range_condition(

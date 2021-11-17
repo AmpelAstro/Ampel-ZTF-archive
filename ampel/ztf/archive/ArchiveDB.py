@@ -21,7 +21,7 @@ from sqlalchemy.sql.elements import (
     UnaryExpression,
 )
 from sqlalchemy.sql.expression import func, literal_column, Select, Alias
-from sqlalchemy.sql.schema import Table
+from sqlalchemy.sql.schema import Column, Table
 from sqlalchemy.exc import IntegrityError
 import sqlalchemy, collections
 
@@ -533,6 +533,31 @@ class ArchiveDB(ArchiveDBClient):
                 # it.
                 transaction.commit()
 
+    def _build_base_alert_query(
+        self,
+        columns: List[Column],
+        condition,
+        *,
+        order: List[UnaryExpression] = [],
+        distinct: bool = False,
+    ):
+        meta = self._meta
+        Candidate = self.get_table("candidate")
+        Alert = meta.tables["alert"]
+
+        alert_base = (
+            select(columns)
+            .select_from(
+                Alert.join(Candidate, Alert.c.alert_id == Candidate.c.alert_id)
+            )
+            .where(condition)
+            .order_by(*(([Alert.c.objectId.asc()] if distinct else []) + order))
+        )
+        if distinct:
+            return alert_base.distinct(Alert.c.objectId)
+        else:
+            return alert_base
+
     def _build_alert_query(
         self,
         condition,
@@ -560,16 +585,11 @@ class ArchiveDB(ArchiveDBClient):
 
         json_agg = lambda table: func.json_agg(literal_column('"' + table.name + '"'))
 
-        alert_base = (
-            select([Alert.c.alert_id] + without_keys(Alert))
-            .select_from(
-                Alert.join(Candidate, Alert.c.alert_id == Candidate.c.alert_id)
-            )
-            .where(condition)
-            .order_by(*(([Alert.c.objectId.asc()] if distinct else []) + order))
-        )
-        alert = (
-            alert_base.distinct(Alert.c.objectId) if distinct else alert_base
+        alert = self._build_base_alert_query(
+            [Alert.c.alert_id] + without_keys(Alert),
+            condition,
+            order=order,
+            distinct=distinct,
         ).alias()
 
         candidate = (
@@ -579,8 +599,6 @@ class ArchiveDB(ArchiveDBClient):
         )
 
         query = alert.join(candidate.lateral(), true())
-
-        # print(query)
 
         if with_history:
             # unpack the array of keys from the bridge table in order to perform a normal join
@@ -896,7 +914,7 @@ class ArchiveDB(ArchiveDBClient):
         programid: Optional[int] = None,
         jd_start: Optional[float] = None,
         jd_end: Optional[float] = None,
-    ) -> Tuple[BooleanClauseList, UnaryExpression]:
+    ) -> Tuple[BooleanClauseList, List[UnaryExpression]]:
         jd = self._get_alert_column("jd")
 
         conditions: List[ClauseElement] = []
@@ -907,7 +925,7 @@ class ArchiveDB(ArchiveDBClient):
         if programid is not None:
             conditions.insert(0, self._get_alert_column("programid") == programid)
 
-        return and_(*conditions), jd.asc()
+        return and_(*conditions), [jd.asc()]
 
     def get_alerts_in_time_range(
         self,
@@ -938,7 +956,7 @@ class ArchiveDB(ArchiveDBClient):
             yield from self._fetch_alerts_with_condition(
                 conn,
                 condition,
-                [order],
+                order,
                 with_history=with_history,
                 with_cutouts=with_cutouts,
                 group_name=group_name,
@@ -1087,6 +1105,48 @@ class ArchiveDB(ArchiveDBClient):
                 block_size=block_size,
                 max_blocks=max_blocks,
             )
+
+    def get_objects_in_cone(
+        self,
+        *,
+        ra: float,
+        dec: float,
+        radius: float,
+        programid: Optional[int] = None,
+        jd_start: Optional[float] = None,
+        jd_end: Optional[float] = None,
+    ):
+        """
+        Retrieve the set of objectIds with alerts in the given cone
+
+        :param ra: right ascension of search field center in degrees (J2000)
+        :param dec: declination of search field center in degrees (J2000)
+        :param radius: radius of search field in degrees
+        :param programid: programid to query
+        :param jd_start: minimum JD of exposure start
+        :param jd_end: maximum JD of exposure start
+
+        """
+        condition, orders = self._cone_search_condition(
+            ra=ra,
+            dec=dec,
+            radius=radius,
+            programid=programid,
+            jd_min=jd_start,
+            jd_max=jd_end,
+            latest=True,
+        )
+
+        with self._engine.connect() as conn:
+            for row in conn.execute(
+                self._build_base_alert_query(
+                    [self._meta.tables["alert"].c.objectId],
+                    condition,
+                    order=orders,
+                    distinct=True,
+                )
+            ):
+                yield row["objectId"]
 
     def get_alerts_in_healpix(
         self,
