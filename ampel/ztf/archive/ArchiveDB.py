@@ -9,7 +9,7 @@
 
 import json
 import math
-from typing import Any, Dict, Tuple, Optional, List, TYPE_CHECKING, Union
+from typing import Any, Dict, Sequence, Tuple, Optional, List, TYPE_CHECKING, Union
 
 from sqlalchemy import select, update, and_, or_, bindparam
 from sqlalchemy.engine.base import Connection
@@ -17,6 +17,7 @@ from sqlalchemy.sql.elements import (
     BooleanClauseList,
     ClauseElement,
     ColumnClause,
+    ColumnElement,
     UnaryExpression,
 )
 from sqlalchemy.sql.expression import func, literal_column, Select, Alias
@@ -260,7 +261,9 @@ class ArchiveDB(ArchiveDBClient):
                 Groups.delete().where(Groups.c.group_name.like(pattern))
             )
 
-    def _populate_read_queue(self, conn, group_id, block_size, condition, order):
+    def _populate_read_queue(
+        self, conn, group_id, block_size, condition, order: List[UnaryExpression] = []
+    ):
         Queue = self._meta.tables["read_queue"]
         numbered = (
             select(
@@ -299,7 +302,7 @@ class ArchiveDB(ArchiveDBClient):
         self,
         conn: Connection,
         condition: BooleanClauseList,
-        order: ClauseElement,
+        order: List[UnaryExpression],
         group_name: str,
         block_size: int,
     ) -> Tuple[int, int]:
@@ -380,7 +383,9 @@ class ArchiveDB(ArchiveDBClient):
         self,
         conn,
         condition,
-        order=None,
+        order: List[UnaryExpression] = [],
+        *,
+        distinct: bool = False,
         with_history=False,
         with_cutouts=False,
         group_name=None,
@@ -390,6 +395,11 @@ class ArchiveDB(ArchiveDBClient):
         """ """
 
         if group_name is not None:
+            if distinct:
+                # TODO
+                raise NotImplementedError(
+                    "latest sorting is not implemented for queues"
+                )
             group_id, _ = self._create_read_queue(
                 conn, condition, order, group_name, block_size
             )
@@ -416,13 +426,16 @@ class ArchiveDB(ArchiveDBClient):
                 self._alert_id_column.in_(
                     select([func.unnest(popped_item.c.alert_ids)])
                 ),
-                None,
-                with_history,
-                with_cutouts,
+                with_history=with_history,
+                with_cutouts=with_cutouts,
             )
         else:
             alert_query = self._build_alert_query(
-                condition, order, with_history, with_cutouts
+                condition,
+                order=order,
+                distinct=distinct,
+                with_history=with_history,
+                with_cutouts=with_cutouts,
             )
 
         while True:
@@ -506,9 +519,8 @@ class ArchiveDB(ArchiveDBClient):
                 self._alert_id_column.in_(
                     select([func.unnest(popped_item.c.alert_ids)])
                 ),
-                None,
-                with_history,
-                with_cutouts,
+                with_history=with_history,
+                with_cutouts=with_cutouts,
             )
             with conn.begin() as transaction:
                 for result in conn.execute(alert_query):
@@ -522,7 +534,13 @@ class ArchiveDB(ArchiveDBClient):
                 transaction.commit()
 
     def _build_alert_query(
-        self, condition, order=None, with_history=True, with_cutouts=False
+        self,
+        condition,
+        *,
+        order: List[UnaryExpression] = [],
+        distinct: bool = False,
+        with_history: bool = True,
+        with_cutouts: bool = False,
     ):
         """
         Build a query whose results _mostly_ match the structure of the orginal
@@ -542,15 +560,17 @@ class ArchiveDB(ArchiveDBClient):
 
         json_agg = lambda table: func.json_agg(literal_column('"' + table.name + '"'))
 
-        alert = (
+        alert_base = (
             select([Alert.c.alert_id] + without_keys(Alert))
             .select_from(
                 Alert.join(Candidate, Alert.c.alert_id == Candidate.c.alert_id)
             )
             .where(condition)
-            .order_by(order)
-            .alias()
+            .order_by(*(([Alert.c.objectId.asc()] if distinct else []) + order))
         )
+        alert = (
+            alert_base.distinct(Alert.c.objectId) if distinct else alert_base
+        ).alias()
 
         candidate = (
             select([json_agg(Candidate).cast(JSON)[0].label("candidate")])
@@ -559,6 +579,8 @@ class ArchiveDB(ArchiveDBClient):
         )
 
         query = alert.join(candidate.lateral(), true())
+
+        # print(query)
 
         if with_history:
             # unpack the array of keys from the bridge table in order to perform a normal join
@@ -801,7 +823,7 @@ class ArchiveDB(ArchiveDBClient):
             yield from self._fetch_alerts_with_condition(
                 conn,
                 in_range,
-                Alert.c.jd.asc(),
+                [Alert.c.jd.asc()],
                 with_history=with_history,
                 with_cutouts=with_cutouts,
             )
@@ -916,7 +938,7 @@ class ArchiveDB(ArchiveDBClient):
             yield from self._fetch_alerts_with_condition(
                 conn,
                 condition,
-                order,
+                [order],
                 with_history=with_history,
                 with_cutouts=with_cutouts,
                 group_name=group_name,
@@ -926,13 +948,15 @@ class ArchiveDB(ArchiveDBClient):
 
     def _cone_search_condition(
         self,
+        *,
         ra: float,
         dec: float,
         radius: float,
         programid: Optional[int] = None,
         jd_min: Optional[float] = None,
         jd_max: Optional[float] = None,
-    ) -> Tuple[BooleanClauseList, UnaryExpression]:
+        latest: bool = False,
+    ) -> Tuple[BooleanClauseList, List[UnaryExpression]]:
         from sqlalchemy import func
         from sqlalchemy.sql.expression import BinaryExpression
 
@@ -957,15 +981,20 @@ class ArchiveDB(ArchiveDBClient):
         if isinstance(programid, int):
             in_range = and_(in_range, self._get_alert_column("programid") == programid)
 
-        return in_range, Alert.c.jd.asc()
+        return in_range, [Alert.c.jd.asc()] if not latest else [
+            Alert.c.jd.desc(),
+            Alert.c.candid.desc(),  # NB: reprocessed points may have identical jds; break ties with candid
+        ]
 
     def _healpix_search_condition(
         self,
+        *,
         nside: int,
         ipix: Union[int, List[int]],
         jd_min: float,
         jd_max: float,
-    ) -> Tuple[BooleanClauseList, UnaryExpression]:
+        latest: bool = False,
+    ) -> Tuple[BooleanClauseList, List[UnaryExpression]]:
         Candidate = self.get_table("candidate")
 
         pix = func.healpix_ang2ipix_nest(64, Candidate.c.ra, Candidate.c.dec)
@@ -1002,7 +1031,9 @@ class ArchiveDB(ArchiveDBClient):
 
         return (
             and_(in_pixels, Candidate.c.jd >= jd_min, Candidate.c.jd < jd_max),
-            Candidate.c.jd.asc(),
+            [Candidate.c.jd.asc()]
+            if not latest
+            else [Candidate.c.jd.desc(), Candidate.c.candid.desc()],
         )
 
     def get_alerts_in_cone(
@@ -1014,6 +1045,7 @@ class ArchiveDB(ArchiveDBClient):
         programid: Optional[int] = None,
         jd_start: Optional[float] = None,
         jd_end: Optional[float] = None,
+        latest: bool = False,
         with_history: bool = False,
         with_cutouts: bool = False,
         group_name: Optional[str] = None,
@@ -1028,21 +1060,29 @@ class ArchiveDB(ArchiveDBClient):
         :param radius: radius of search field in degrees
         :param jd_start: minimum JD of exposure start
         :param jd_end: maximum JD of exposure start
+        :param latest: return only the latest alert for each objectId
         :param with_history: return alert with previous detections and upper limits
         :param with_cutout: return alert with cutout images
 
         """
-        condition, order = self._cone_search_condition(
-            ra, dec, radius, programid, jd_start, jd_end
+        condition, orders = self._cone_search_condition(
+            ra=ra,
+            dec=dec,
+            radius=radius,
+            programid=programid,
+            jd_min=jd_start,
+            jd_max=jd_end,
+            latest=latest,
         )
 
         with self._engine.connect() as conn:
             yield from self._fetch_alerts_with_condition(
                 conn,
                 condition,
-                order,
+                orders,
                 with_history=with_history,
                 with_cutouts=with_cutouts,
+                distinct=latest,
                 group_name=group_name,
                 block_size=block_size,
                 max_blocks=max_blocks,
@@ -1055,6 +1095,7 @@ class ArchiveDB(ArchiveDBClient):
         ipix: Union[int, List[int]],
         jd_start: float,
         jd_end: float,
+        latest: bool = False,
         with_history: bool = False,
         with_cutouts: bool = False,
         group_name: Optional[str] = None,
@@ -1072,13 +1113,16 @@ class ArchiveDB(ArchiveDBClient):
         :param with_cutout: return alert with cutout images
 
         """
-        condition, order = self._healpix_search_condition(nside, ipix, jd_start, jd_end)
+        condition, orders = self._healpix_search_condition(
+            nside=nside, ipix=ipix, jd_min=jd_start, jd_max=jd_end, latest=latest
+        )
 
         with self._engine.connect() as conn:
             yield from self._fetch_alerts_with_condition(
                 conn,
                 condition,
-                order,
+                orders,
+                distinct=latest,
                 with_history=with_history,
                 with_cutouts=with_cutouts,
                 group_name=group_name,

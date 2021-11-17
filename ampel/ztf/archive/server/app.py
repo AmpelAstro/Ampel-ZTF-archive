@@ -233,6 +233,7 @@ def get_alerts_in_cone(
     jd_start: float = Query(..., description="Earliest observation jd"),
     jd_end: float = Query(..., description="Latest observation jd"),
     programid: Optional[int] = None,
+    latest: bool = Query(False, description="Return only the latest alert for each objectId"),
     with_history: bool = False,
     with_cutouts: bool = False,
     chunk_size: int = Query(
@@ -254,6 +255,7 @@ def get_alerts_in_cone(
             radius=radius,
             jd_start=jd_start,
             jd_end=jd_end,
+            latest=latest,
             programid=programid,
             with_history=with_history,
             with_cutouts=with_cutouts,
@@ -283,6 +285,7 @@ def get_alerts_in_healpix_pixel(
     ipix: List[int] = Query(..., description="Pixel index"),
     jd_start: float = Query(..., description="Earliest observation jd"),
     jd_end: float = Query(..., description="Latest observation jd"),
+    latest: bool = Query(False, description="Return only the latest alert for each objectId"),
     with_history: bool = False,
     with_cutouts: bool = False,
     chunk_size: int = Query(
@@ -303,6 +306,7 @@ def get_alerts_in_healpix_pixel(
             ipix=ipix,
             jd_start=jd_start,
             jd_end=jd_end,
+            latest=latest,
             with_history=with_history,
             with_cutouts=with_cutouts,
             group_name=resume_token,
