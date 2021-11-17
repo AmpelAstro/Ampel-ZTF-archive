@@ -144,6 +144,24 @@ async def test_get_healpix(mock_client: httpx.AsyncClient, mock_db: MagicMock):
     ), "kwargs contain supplied params"
 
 
+@pytest.mark.asyncio
+async def test_get_healpix_skymap(mock_client: httpx.AsyncClient, mock_db: MagicMock):
+    query = {
+        "nside": 4,
+        "pixels": [0, 56, 79, 81]
+        + list(range(10 * 16, 11 * 16))
+        + list(range(4 * 4, 5 * 4)),
+    }
+    response = await mock_client.post("/alerts/healpix/skymap", json=query)
+    response.raise_for_status()
+    assert mock_db.get_alerts_in_healpix.call_count == 1
+    assert mock_db.get_alerts_in_healpix.call_args.kwargs["pixels"] == {
+        1: [10],
+        2: [4],
+        4: [0, 56, 79, 81],
+    }, "map is decomposed into superpixels"
+
+
 @pytest.mark.parametrize(
     "auth,status",
     [(DEFAULT, status.HTTP_200_OK), (BearerAuth, status.HTTP_401_UNAUTHORIZED)],

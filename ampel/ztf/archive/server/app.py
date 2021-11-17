@@ -1,3 +1,4 @@
+from ampel.ztf.archive.server.skymap import deres
 from pydantic.fields import Field
 import sqlalchemy
 from ampel.ztf.archive.server.models import AlertChunk
@@ -19,6 +20,7 @@ from .models import (
     AlertChunk,
     AlertCutouts,
     AlertQuery,
+    HEALpixMapQuery,
     StreamDescription,
     Topic,
     TopicDescription,
@@ -233,7 +235,9 @@ def get_alerts_in_cone(
     jd_start: float = Query(..., description="Earliest observation jd"),
     jd_end: float = Query(..., description="Latest observation jd"),
     programid: Optional[int] = None,
-    latest: bool = Query(False, description="Return only the latest alert for each objectId"),
+    latest: bool = Query(
+        False, description="Return only the latest alert for each objectId"
+    ),
     with_history: bool = False,
     with_cutouts: bool = False,
     chunk_size: int = Query(
@@ -270,6 +274,7 @@ def get_alerts_in_cone(
         chunks_remaining=archive.get_remaining_chunks(resume_token),
         alerts=chunk,
     )
+
 
 @app.get(
     "/objects/cone_search",
@@ -310,12 +315,27 @@ def get_objects_in_cone(
 )
 def get_alerts_in_healpix_pixel(
     nside: Literal[
-        "1", "2", "4", "8", "16", "32", "64", "128", "256", "512", "1024", "2048", "4096", "8192"
+        "1",
+        "2",
+        "4",
+        "8",
+        "16",
+        "32",
+        "64",
+        "128",
+        "256",
+        "512",
+        "1024",
+        "2048",
+        "4096",
+        "8192",
     ] = Query("64", description="NSide of (nested) HEALpix grid"),
     ipix: List[int] = Query(..., description="Pixel index"),
     jd_start: float = Query(..., description="Earliest observation jd"),
     jd_end: float = Query(..., description="Latest observation jd"),
-    latest: bool = Query(False, description="Return only the latest alert for each objectId"),
+    latest: bool = Query(
+        False, description="Return only the latest alert for each objectId"
+    ),
     with_history: bool = False,
     with_cutouts: bool = False,
     chunk_size: int = Query(
@@ -347,6 +367,39 @@ def get_alerts_in_healpix_pixel(
     return AlertChunk(
         resume_token=resume_token,
         chunk_size=chunk_size,
+        chunks_remaining=archive.get_remaining_chunks(resume_token),
+        alerts=chunk,
+    )
+
+
+@app.post(
+    "/alerts/healpix/skymap",
+    tags=["search"],
+    response_model=AlertChunk,
+    response_model_exclude_none=True,
+)
+def get_alerts_in_healpix_map(
+    query: HEALpixMapQuery,
+    archive: ArchiveDB = Depends(get_archive),
+    auth: bool = Depends(verify_access_token),
+) -> AlertChunk:
+    resume_token = query.resume_token or secrets.token_urlsafe(32)
+    chunk = list(
+        archive.get_alerts_in_healpix(
+            pixels=deres(query.nside, query.pixels),
+            jd_start=query.jd.gt,
+            jd_end=query.jd.lt,
+            latest=query.latest,
+            with_history=query.with_history,
+            with_cutouts=query.with_cutouts,
+            group_name=resume_token,
+            block_size=query.chunk_size,
+            max_blocks=1,
+        )
+    )
+    return AlertChunk(
+        resume_token=resume_token,
+        chunk_size=query.chunk_size,
         chunks_remaining=archive.get_remaining_chunks(resume_token),
         alerts=chunk,
     )

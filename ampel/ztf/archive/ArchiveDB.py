@@ -1023,15 +1023,12 @@ class ArchiveDB(ArchiveDBClient):
             Alert.c.candid.desc(),  # NB: reprocessed points may have identical jds; break ties with candid
         ]
 
-    def _healpix_search_condition(
+    def _healpix_pixel_condition(
         self,
         *,
         nside: int,
         ipix: Union[int, List[int]],
-        jd_min: float,
-        jd_max: float,
-        latest: bool = False,
-    ) -> Tuple[BooleanClauseList, List[UnaryExpression]]:
+    ) -> BooleanClauseList:
         Candidate = self.get_table("candidate")
 
         pix = func.healpix_ang2ipix_nest(64, Candidate.c.ra, Candidate.c.dec)
@@ -1066,8 +1063,29 @@ class ArchiveDB(ArchiveDBClient):
                 )
             )
 
+        return in_pixels
+
+    def _healpix_search_condition(
+        self,
+        *,
+        pixels: Dict[int, Union[int, List[int]]],
+        jd_min: float,
+        jd_max: float,
+        latest: bool = False,
+    ) -> Tuple[BooleanClauseList, List[UnaryExpression]]:
+        Candidate = self.get_table("candidate")
+
         return (
-            and_(in_pixels, Candidate.c.jd >= jd_min, Candidate.c.jd < jd_max),
+            and_(
+                or_(
+                    *(
+                        self._healpix_pixel_condition(nside=nside, ipix=ipix)
+                        for nside, ipix in pixels.items()
+                    )
+                ),
+                Candidate.c.jd >= jd_min,
+                Candidate.c.jd < jd_max,
+            ),
             [Candidate.c.jd.asc()]
             if not latest
             else [Candidate.c.jd.desc(), Candidate.c.candid.desc()],
@@ -1170,8 +1188,7 @@ class ArchiveDB(ArchiveDBClient):
     def get_alerts_in_healpix(
         self,
         *,
-        nside: int,
-        ipix: Union[int, List[int]],
+        pixels: Dict[int, Union[int, List[int]]],
         jd_start: float,
         jd_end: float,
         latest: bool = False,
@@ -1184,8 +1201,7 @@ class ArchiveDB(ArchiveDBClient):
         """
         Retrieve alerts by HEALpix pixel
 
-        :param nside: nside of (nested) HEALPix grid
-        :param ipix: pixel index
+        :param pixels: dict of nside->pixel index (nested ordering)
         :param jd_start: minimum JD of exposure start
         :param jd_end: maximum JD of exposure start
         :param with_history: return alert with previous detections and upper limits
@@ -1193,7 +1209,7 @@ class ArchiveDB(ArchiveDBClient):
 
         """
         condition, orders = self._healpix_search_condition(
-            nside=nside, ipix=ipix, jd_min=jd_start, jd_max=jd_end, latest=latest
+            pixels=pixels, jd_min=jd_start, jd_max=jd_end, latest=latest
         )
 
         with self._engine.connect() as conn:

@@ -68,6 +68,24 @@ class AlertQuery(StrictModel):
         return values
 
 
+class HEALpixMapQuery(StrictModel):
+    nside: int
+    pixels: List[int]
+    jd: TimeConstraint = TimeConstraint()
+    latest: bool = Field(
+        False, description="Return only the latest alert for each objectId"
+    )
+    with_history: bool = False
+    with_cutouts: bool = False
+    chunk_size: int = Field(
+        100, gt=0, lte=10000, description="Number of alerts to return per page"
+    )
+    resume_token: Optional[str] = Field(
+        None,
+        description="Identifier of a previous query to continue. This token expires after 24 hours.",
+    )
+
+
 class AlertCutouts(BaseModel):
     """
     Images are gzipped FITS files, b64 encoded
