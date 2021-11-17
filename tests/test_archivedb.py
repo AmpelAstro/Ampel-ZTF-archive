@@ -482,7 +482,7 @@ def test_schema_update(empty_archive, alert_with_schema):
                 assert old[k] == new[k]
 
 
-def test_archive_object(alert_generator, empty_archive):
+def test_archive_object(alert_generator, empty_archive) -> None:
     updater = ArchiveUpdater(empty_archive)
     from itertools import islice
 
@@ -613,11 +613,11 @@ def test_cone_search(alert_archive):
     assert len(alerts) == 0
 
 @pytest.mark.parametrize("nside", [32, 64, 128])
-def test_healpix_search(empty_archive, nside):
+def test_healpix_search(empty_archive, nside: int) -> None:
     db = ArchiveDB(empty_archive)
     group = secrets.token_urlsafe()
     ipix = 13
-    condition, order = db._healpix_search_condition(nside, ipix, -1, 1)
+    condition, order = db._healpix_search_condition(nside=nside, ipix=ipix, jd_min=-1, jd_max=1)
     assert isinstance(condition, BooleanClauseList)
     assert condition.operator == operator.and_
 

@@ -9,7 +9,17 @@
 
 import json
 import math
-from typing import Any, Dict, Sequence, Tuple, Optional, List, TYPE_CHECKING, Union
+from typing import (
+    Any,
+    Dict,
+    Sequence,
+    Tuple,
+    Optional,
+    List,
+    TYPE_CHECKING,
+    Union,
+    cast,
+)
 
 from sqlalchemy import select, update, and_, or_, bindparam
 from sqlalchemy.engine.base import Connection
@@ -887,7 +897,13 @@ class ArchiveDB(ArchiveDBClient):
         else:
             return None
 
-    def get_alerts(self, candids, *, with_history=True, with_cutouts=False):
+    def get_alerts(
+        self,
+        candids: List[int],
+        *,
+        with_history: bool = True,
+        with_cutouts: bool = False,
+    ):
         """
         Retrieve alerts from the archive database by ID
 
@@ -898,13 +914,16 @@ class ArchiveDB(ArchiveDBClient):
         """
         Alert = self._meta.tables["alert"]
         # mimic mysql field() function, passing the order by hand
-        order = sqlalchemy.text(",".join(("alert.candid=%d DESC" % i for i in candids)))
+        order = cast(
+            UnaryExpression,
+            sqlalchemy.text(",".join(("alert.candid=%d DESC" % i for i in candids))),
+        )
 
         with self._engine.connect() as conn:
             yield from self._fetch_alerts_with_condition(
                 conn,
                 Alert.c.candid.in_(candids),
-                order,
+                [order],
                 with_history=with_history,
                 with_cutouts=with_cutouts,
             )
