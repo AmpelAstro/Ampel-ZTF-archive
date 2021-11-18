@@ -152,7 +152,7 @@ async def put_alert(
 
 
 @app.get("/cutouts/{candid}", tags=["cutouts"], response_model=AlertCutouts)
-def get_cutouts(candid: int, s3: "Bucket" = Depends(get_s3_bucket)):
+def get_cutouts(candid: int, s3=Depends(get_s3_bucket)):
     blob = get_object(s3, f"{candid}.avro")
     if cutouts := next(fastavro.reader(io.BytesIO(blob))):
         return {
