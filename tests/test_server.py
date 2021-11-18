@@ -134,12 +134,16 @@ async def test_basic_auth(
 
 @pytest.mark.asyncio
 async def test_get_healpix(mock_client: httpx.AsyncClient, mock_db: MagicMock):
-    params = {"ipix": [1, 2], "jd_start": 0, "jd_end": 1}
-    response = await mock_client.get("/alerts/healpix", params=params)
+    ipix = [1, 2]
+    params = {"jd_start": 0, "jd_end": 1}
+    response = await mock_client.get(
+        "/alerts/healpix", params={"ipix": [1, 2], **params}
+    )
     response.raise_for_status()
     assert mock_db.get_alerts_in_healpix.call_count == 1
     assert (
-        mock_db.get_alerts_in_healpix.call_args.kwargs | params
+        mock_db.get_alerts_in_healpix.call_args.kwargs
+        | {"pixels": {64: [1, 2]}, **params}
         == mock_db.get_alerts_in_healpix.call_args.kwargs
     ), "kwargs contain supplied params"
 
