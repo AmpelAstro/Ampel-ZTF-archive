@@ -352,8 +352,7 @@ def get_alerts_in_healpix_pixel(
         resume_token = secrets.token_urlsafe(32)
     chunk = list(
         archive.get_alerts_in_healpix(
-            nside=int(nside),
-            ipix=ipix,
+            pixels={int(nside): ipix},
             jd_start=jd_start,
             jd_end=jd_end,
             latest=latest,

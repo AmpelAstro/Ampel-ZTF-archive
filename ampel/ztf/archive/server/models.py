@@ -2,6 +2,7 @@ from base64 import b64encode
 from typing import List, Dict, Any, Literal, Optional
 from pydantic import BaseModel, Field, validator, root_validator
 
+
 class StrictModel(BaseModel):
     class Config:
         extra = "forbid"
@@ -53,6 +54,11 @@ class TimeConstraint(StrictModel):
     gt: Optional[float] = Field(None)
 
 
+class StrictTimeConstraint(TimeConstraint):
+    lt: float
+    gt: float
+
+
 class AlertQuery(StrictModel):
     cone: Optional[ConeConstraint] = None
     jd: TimeConstraint = TimeConstraint()
@@ -71,7 +77,7 @@ class AlertQuery(StrictModel):
 class HEALpixMapQuery(StrictModel):
     nside: int
     pixels: List[int]
-    jd: TimeConstraint = TimeConstraint()
+    jd: StrictTimeConstraint
     latest: bool = Field(
         False, description="Return only the latest alert for each objectId"
     )
@@ -300,9 +306,7 @@ class Alert(BaseModel):
     cutoutDifference: Optional[Cutout]
 
     class Config:
-        json_encoders = {
-            bytes: lambda v: b64encode(v).decode()
-        }
+        json_encoders = {bytes: lambda v: b64encode(v).decode()}
 
 
 class AlertChunk(BaseModel):
@@ -311,6 +315,4 @@ class AlertChunk(BaseModel):
     alerts: List[Alert]
 
     class Config:
-        json_encoders = {
-            bytes: lambda v: b64encode(v).decode()
-        }
+        json_encoders = {bytes: lambda v: b64encode(v).decode()}
