@@ -151,6 +151,7 @@ async def test_get_healpix_skymap(mock_client: httpx.AsyncClient, mock_db: Magic
         "pixels": [0, 56, 79, 81]
         + list(range(10 * 16, 11 * 16))
         + list(range(4 * 4, 5 * 4)),
+        "jd": {"gt": 0, "lt": 1},
     }
     response = await mock_client.post("/alerts/healpix/skymap", json=query)
     response.raise_for_status()
