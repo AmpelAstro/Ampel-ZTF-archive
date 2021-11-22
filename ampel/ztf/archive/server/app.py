@@ -1,3 +1,4 @@
+import base64
 import io
 import time
 from ampel.ztf.archive.server.cutouts import repack_alert
@@ -8,7 +9,7 @@ from ampel.ztf.archive.server.models import AlertChunk
 import secrets
 import fastavro
 from base64 import b64encode
-from typing import TYPE_CHECKING, List, Literal, Optional
+from typing import TYPE_CHECKING, Any, List, Literal, Optional
 
 from fastapi import FastAPI, Depends, Request, Query, HTTPException, status
 from fastapi.encoders import jsonable_encoder
@@ -110,18 +111,10 @@ def get_alert(
     )
 
 
-@app.put(
-    "/alert/{candid}",
-    tags=["alerts"],
-    response_model_exclude_none=True,
-)
-async def put_alert(
-    candid: int,
-    request: Request,
-    archive: ArchiveUpdater = Depends(get_archive_updater),
-    s3=Depends(get_s3_bucket),
-    auth: bool = Depends(verify_write_token),
-):
+# NB: make deserialization depend on write auth to minimize attack surface
+async def deserialize_avro_body(
+    request: Request, auth: bool = Depends(verify_write_token)
+) -> tuple[dict[str, Any], dict[str, Any]]:
     data: bytes = await request.body()
     try:
         reader = fastavro.reader(io.BytesIO(data))
@@ -135,36 +128,86 @@ async def put_alert(
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY, headers={"x-exception": str(exc)}
         )
+    return content, schema
 
-    await run_in_threadpool(
-        archive.insert_alert,
+
+@app.put(
+    "/alert/{candid}",
+    tags=["alerts"],
+    response_model_exclude_none=True,
+)
+def put_alert(
+    candid: int,
+    content_and_schema: tuple[dict[str, Any], dict[str, Any]] = Depends(
+        deserialize_avro_body
+    ),
+    archive: ArchiveUpdater = Depends(get_archive_updater),
+    s3=Depends(get_s3_bucket),
+    auth: bool = Depends(verify_write_token),
+):
+    content, schema = content_and_schema
+
+    archive.insert_alert(
         {k: v for k, v in content.items() if not k.startswith("cutout")},
         schema,
         0,
         int(1e6 * time.time()),
     )
     if any(k.startswith("cutout") for k in content):
-        await run_in_threadpool(
-            s3.put_object,
+        s3.put_object(
             Key=f'{content["candid"]}.avro',
             Body=repack_alert(content),
         )
 
 
-@app.get("/cutouts/{candid}", tags=["cutouts"], response_model=AlertCutouts)
-def get_cutouts(candid: int, s3=Depends(get_s3_bucket)):
-    blob = get_object(s3, f"{candid}.avro")
-    if cutouts := next(fastavro.reader(io.BytesIO(blob))):
-        return {
-            "candid": cutouts["candid"],
-            **{
-                k[6:].lower(): b64encode(v["stampData"])
-                for k, v in cutouts.items()
-                if k.startswith("cutout")
-            },
-        }
-    else:
-        raise HTTPException(status_code=404)
+@app.get("/alert/{candid}/cutouts", tags=["cutouts"], response_model=AlertCutouts)
+def get_cutouts(
+    candid: int,
+    s3=Depends(get_s3_bucket),
+    auth: bool = Depends(verify_write_token),
+):
+    try:
+        blob = get_object(s3, f"{candid}.avro")
+        if cutouts := next(fastavro.reader(io.BytesIO(blob))):
+            return {
+                "candid": cutouts["candid"],
+                **{
+                    k[6:].lower(): b64encode(v["stampData"])
+                    for k, v in cutouts.items()
+                    if k.startswith("cutout")
+                },
+            }
+    except KeyError:
+        ...
+    raise HTTPException(status_code=404)
+
+
+@app.put(
+    "/alert/{candid}/cutouts",
+    tags=["alerts"],
+    response_model_exclude_none=True,
+)
+def put_alert(
+    candid: int,
+    content: AlertCutouts,
+    s3=Depends(get_s3_bucket),
+    auth: bool = Depends(verify_write_token),
+):
+    s3.put_object(
+        Key=f"{candid}.avro",
+        Body=repack_alert(
+            {
+                "candid": candid,
+                **{
+                    f"cutout{kind.capitalize()}": {
+                        "fileName": "",
+                        "stampData": base64.b64decode(payload),
+                    }
+                    for kind, payload in content.dict().items()
+                },
+            }
+        ),
+    )
 
 
 @app.get(

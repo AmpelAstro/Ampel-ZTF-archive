@@ -3,6 +3,8 @@ import io
 from typing import TYPE_CHECKING
 
 import boto3
+from botocore.exceptions import ClientError
+from starlette.status import HTTP_404_NOT_FOUND
 
 from .settings import settings
 
@@ -19,5 +21,11 @@ def get_s3_bucket() -> "Bucket":
 
 def get_object(bucket: "Bucket", key: str) -> bytes:
     buffer = io.BytesIO()
-    bucket.download_fileobj(Key=key, Fileobj=buffer)
+    try:
+        bucket.download_fileobj(Key=key, Fileobj=buffer)
+    except ClientError as err:
+        if err.response["Error"]["Code"] == str(HTTP_404_NOT_FOUND):
+            raise KeyError() from err
+        else:
+            raise
     return buffer.getvalue()

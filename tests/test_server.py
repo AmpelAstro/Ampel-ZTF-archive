@@ -13,6 +13,7 @@ import httpx
 import pytest
 from fastapi import status
 from ampel.ztf.archive.ArchiveDB import ArchiveDB
+from starlette.status import HTTP_404_NOT_FOUND
 from tests.fixtures import walk_tarball
 
 if TYPE_CHECKING:
@@ -209,8 +210,24 @@ async def test_put_alert(put_alert):
 @pytest.mark.asyncio
 async def test_get_cutouts(client: httpx.AsyncClient, put_alert):
     candid = put_alert["candid"]
-    response = await client.get(f"/cutouts/{candid}")
+    response = await client.get(f"/alert/{candid}/cutouts")
     response.raise_for_status()
+
+
+@pytest.mark.asyncio
+async def test_put_cutouts(client: httpx.AsyncClient, put_alert):
+    candid = put_alert["candid"]
+    cutouts = await client.get(f"/alert/{candid}/cutouts")
+
+    get_s3_bucket().delete_objects(Delete={"Objects": [{"Key": f"{candid}.avro"}]})
+    assert (
+        await client.get(f"/alert/{candid}/cutouts")
+    ).status_code == HTTP_404_NOT_FOUND
+
+    response = await client.put(f"/alert/{candid}/cutouts", json=cutouts.json())
+    response.raise_for_status()
+    rewritten_cutouts = await client.get(f"/alert/{candid}/cutouts")
+    assert rewritten_cutouts.json() == cutouts.json()
 
 
 @pytest.mark.parametrize(
