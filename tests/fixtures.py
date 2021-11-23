@@ -20,12 +20,16 @@ LOCALSTACK_IMAGE = "localstack/localstack:0.12.19.1"
 
 @pytest.fixture(scope="session")
 def integration(pytestconfig):
-    if not pytestconfig.getoption("--integration"):
-        raise pytest.skip("integration tests require --integration flag")
+    return pytestconfig.getoption("--integration")
 
 
 @pytest.fixture(scope="session")
 def archive(integration):
+    if "POSTGRES_URI" in os.environ:
+        yield os.environ["POSTGRES_URI"]
+        return
+    elif not integration:
+        raise pytest.skip("integration tests require --integration flag or POSTGRES_URI env var")
     password = secrets.token_hex()
     container = None
     try:
@@ -84,6 +88,11 @@ def archive(integration):
 
 @pytest.fixture(scope="session")
 def localstack_s3(integration):
+    if "LOCALSTACK_URI" in os.environ:
+        yield os.environ["LOCALSTACK_URI"]
+        return
+    elif not integration:
+        raise pytest.skip("integration tests require --integration flag or LOCALSTACK_URI env var")
     container = None
     try:
         container = (
@@ -121,7 +130,7 @@ def localstack_s3(integration):
             except:
                 raise
 
-        yield f"http://localhost:{port}/s3"
+        yield f"http://localhost:{port}"
     finally:
         if container is not None:
             subprocess.check_call(
@@ -219,7 +228,11 @@ def localstack_s3_bucket(aws_credentials, localstack_s3, monkeypatch):
 
     monkeypatch.setattr(settings, "s3_endpoint_url", localstack_s3)
     get_s3_bucket.cache_clear()
-    yield get_s3_bucket()
+    bucket = get_s3_bucket()
+    bucket.create()
+    yield bucket
+    bucket.objects.all().delete()
+    bucket.delete()
     get_s3_bucket.cache_clear()
 
 

@@ -1,7 +1,10 @@
 import base64
 import io
 import time
-from ampel.ztf.archive.server.cutouts import repack_alert
+import hashlib
+import json
+from urllib.parse import urlsplit
+from ampel.ztf.archive.server.cutouts import extract_alert, pack_records, repack_alert
 from ampel.ztf.t0.ArchiveUpdater import ArchiveUpdater
 from pydantic.fields import Field
 import sqlalchemy
@@ -20,7 +23,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from .settings import settings
 from .db import get_archive, get_archive_updater
-from .s3 import get_object, get_s3_bucket
+from .s3 import get_object, get_range, get_s3_bucket, get_url_for_key
 from .tokens import router as token_router, verify_access_token, verify_write_token
 from .models import (
     Alert,
@@ -114,7 +117,7 @@ def get_alert(
 # NB: make deserialization depend on write auth to minimize attack surface
 async def deserialize_avro_body(
     request: Request, auth: bool = Depends(verify_write_token)
-) -> tuple[dict[str, Any], dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     data: bytes = await request.body()
     try:
         reader = fastavro.reader(io.BytesIO(data))
@@ -123,7 +126,7 @@ async def deserialize_avro_body(
             status.HTTP_422_UNPROCESSABLE_ENTITY, headers={"x-exception": str(exc)}
         )
     try:
-        content, schema = next(reader), reader.writer_schema
+        content, schema = list(reader), reader.writer_schema
     except StopIteration as exc:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY, headers={"x-exception": str(exc)}
@@ -131,55 +134,62 @@ async def deserialize_avro_body(
     return content, schema
 
 
-@app.put(
-    "/alert/{candid}",
+@app.post(
+    "/alerts",
     tags=["alerts"],
     response_model_exclude_none=True,
 )
-def put_alert(
-    candid: int,
-    content_and_schema: tuple[dict[str, Any], dict[str, Any]] = Depends(
+def post_alert_chunk(
+    content_and_schema: tuple[list[dict[str, Any]], dict[str, Any]] = Depends(
         deserialize_avro_body
     ),
     archive: ArchiveUpdater = Depends(get_archive_updater),
-    s3=Depends(get_s3_bucket),
+    bucket=Depends(get_s3_bucket),
     auth: bool = Depends(verify_write_token),
 ):
-    content, schema = content_and_schema
+    alerts, schema = content_and_schema
 
-    archive.insert_alert(
-        {k: v for k, v in content.items() if not k.startswith("cutout")},
-        schema,
-        0,
-        int(1e6 * time.time()),
+    blob, ranges = pack_records(alerts, schema)
+    key = f'{hashlib.sha256(json.dumps(sorted(alert["candid"] for alert in alerts)).encode("utf-8")).hexdigest()}.avro'
+    md5 = base64.b64encode(hashlib.md5(blob).digest()).decode("utf-8")
+
+    s3_response = bucket.Object(key).put(
+        Body=blob,
+        ContentMD5=md5,
+        Metadata={"schema-name": schema["name"], "schema-version": schema["version"]},
     )
-    if any(k.startswith("cutout") for k in content):
-        s3.put_object(
-            Key=f'{content["candid"]}.avro',
-            Body=repack_alert(content),
-        )
+    assert 200 <= s3_response["ResponseMetadata"]["HTTPStatusCode"] < 300
+
+    archive.insert_alert_chunk(
+        alerts, schema, archive_uri=get_url_for_key(bucket, key), ranges=ranges
+    )
 
 
 @app.get("/alert/{candid}/cutouts", tags=["cutouts"], response_model=AlertCutouts)
 def get_cutouts(
     candid: int,
-    s3=Depends(get_s3_bucket),
-    auth: bool = Depends(verify_write_token),
+    db: ArchiveDB = Depends(get_archive),
+    bucket=Depends(get_s3_bucket),
+    auth: bool = Depends(verify_access_token),
 ):
     try:
-        blob = get_object(s3, f"{candid}.avro")
-        if cutouts := next(fastavro.reader(io.BytesIO(blob))):
-            return {
-                "candid": cutouts["candid"],
-                **{
-                    k[6:].lower(): b64encode(v["stampData"])
-                    for k, v in cutouts.items()
-                    if k.startswith("cutout")
-                },
-            }
-    except KeyError:
-        ...
-    raise HTTPException(status_code=404)
+        uri, start, end = db.get_archive_segment(candid)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=404)
+    path = urlsplit(uri).path.split("/")
+    assert path[-2] == bucket.name
+    try:
+        alert = extract_alert(candid, *get_range(bucket, path[-1], start, end))
+    except KeyError as err:
+        raise HTTPException(status_code=404) from err
+    return {
+        "candid": alert["candid"],
+        **{
+            k[6:].lower(): b64encode(v["stampData"])
+            for k, v in alert.items()
+            if k.startswith("cutout")
+        },
+    }
 
 
 @app.put(

@@ -1,11 +1,14 @@
+import base64
 from contextlib import contextmanager
 import io
 import secrets
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
+from ampel.ztf.archive.server.cutouts import extract_alert, pack_records, ALERT_SCHEMAS
 from ampel.ztf.archive.server.db import get_archive, get_archive_updater
-from ampel.ztf.archive.server.s3 import get_object, get_s3_bucket
+from ampel.ztf.archive.server.s3 import get_object, get_range, get_s3_bucket
 from fastapi.security import http
+from urllib.parse import urlsplit
 import fastavro
 
 import jwt
@@ -13,7 +16,7 @@ import httpx
 import pytest
 from fastapi import status
 from ampel.ztf.archive.ArchiveDB import ArchiveDB
-from starlette.status import HTTP_404_NOT_FOUND
+from starlette.status import HTTP_200_OK, HTTP_201_CREATED, HTTP_404_NOT_FOUND
 from tests.fixtures import walk_tarball
 
 if TYPE_CHECKING:
@@ -163,71 +166,6 @@ async def test_get_alert(mock_client: httpx.AsyncClient, mock_db: MagicMock):
 @pytest.fixture(params=["mock_client", "authed_integration_client"])
 def client(request):
     yield request.getfixturevalue(request.param)
-
-
-@pytest.fixture
-async def put_alert(client: httpx.AsyncClient, alert_tarball):
-    for fo in walk_tarball(alert_tarball):
-        payload = fo.read()
-        reader = fastavro.reader(io.BytesIO(payload))
-        alert = next(reader)
-        candid = alert["candid"]
-        response = await client.put(f"/alert/{candid}", content=payload)
-        response.raise_for_status()
-        yield alert
-        break
-
-
-@pytest.mark.asyncio
-async def test_put_alert_unauthorized(integration_client: httpx.AsyncClient):
-    response = await integration_client.put("/alert/0", content=b"")
-    assert response.status_code == status.HTTP_403_FORBIDDEN
-
-
-@pytest.mark.asyncio
-async def test_put_malformed_alert(mock_client: httpx.AsyncClient):
-    response = await mock_client.put("/alert/0", content=b"")
-    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
-    assert response.headers["x-exception"] == "cannot read header - is it an avro file?"
-
-
-@pytest.mark.asyncio
-async def test_put_alert(put_alert):
-    candid = put_alert["candid"]
-    blob = get_object(get_s3_bucket(), f"{candid}.avro")
-    reader = fastavro.reader(io.BytesIO(blob))
-    content = next(reader)
-    assert content["candid"] == candid
-    assert set(content.keys()) == {
-        "candid",
-        "cutoutScience",
-        "cutoutTemplate",
-        "cutoutDifference",
-    }
-    assert content == {k: v for k, v in put_alert.items() if k in content}
-
-
-@pytest.mark.asyncio
-async def test_get_cutouts(client: httpx.AsyncClient, put_alert):
-    candid = put_alert["candid"]
-    response = await client.get(f"/alert/{candid}/cutouts")
-    response.raise_for_status()
-
-
-@pytest.mark.asyncio
-async def test_put_cutouts(client: httpx.AsyncClient, put_alert):
-    candid = put_alert["candid"]
-    cutouts = await client.get(f"/alert/{candid}/cutouts")
-
-    get_s3_bucket().delete_objects(Delete={"Objects": [{"Key": f"{candid}.avro"}]})
-    assert (
-        await client.get(f"/alert/{candid}/cutouts")
-    ).status_code == HTTP_404_NOT_FOUND
-
-    response = await client.put(f"/alert/{candid}/cutouts", json=cutouts.json())
-    response.raise_for_status()
-    rewritten_cutouts = await client.get(f"/alert/{candid}/cutouts")
-    assert rewritten_cutouts.json() == cutouts.json()
 
 
 @pytest.mark.parametrize(
@@ -499,3 +437,159 @@ async def test_forbidden_identity(
     )
     response = await integration_client.get("/tokens", auth=BearerAuth(user_token))
     assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.fixture
+def packed_alert_chunk(
+    alert_generator,
+) -> tuple[dict, bytes, list[dict], list[tuple[int, int]]]:
+    records, schemas = zip(*alert_generator(with_schema=True))
+
+    blob, ranges = pack_records(records, schema=schemas[0])
+
+    return schemas[0], blob, records, ranges
+
+
+def test_extract_block(
+    packed_alert_chunk: tuple[dict, bytes, list[dict], list[tuple[int, int]]]
+):
+    """
+    We can read an individual block straight out of an AVRO file
+    """
+    schema, blob, records, ranges = packed_alert_chunk
+
+    for record, span in zip(records, ranges):
+        reco = extract_alert(record["candid"], io.BytesIO(blob[slice(*span)]), schema)
+        assert reco == record
+
+
+def test_extract_block_from_s3(
+    packed_alert_chunk: tuple[dict, bytes, list[dict], list[tuple[int, int]]],
+    mock_s3_bucket,
+):
+    schema, blob, records, ranges = packed_alert_chunk
+
+    bucket = get_s3_bucket()
+    obj = bucket.Object("blobsy.avro")
+    response = obj.put(
+        Body=blob,
+        Metadata={"schema-name": schema["name"], "schema-version": schema["version"]},
+    )
+
+    obj.load()
+    assert obj.metadata == {
+        "schema-name": schema["name"],
+        "schema-version": schema["version"],
+    }
+
+    for record, span in zip(records, ranges):
+        start, end = span
+        reco = extract_alert(record["candid"], *get_range(bucket, obj.key, start, end))
+        assert reco == record
+
+
+@pytest.fixture
+async def post_alert_chunk(
+    authed_integration_client: httpx.AsyncClient, alert_generator
+):
+    records, schemas = zip(*alert_generator(with_schema=True))
+
+    payload, _ = pack_records(records, schema=schemas[0])
+
+    response = await authed_integration_client.post(f"/alerts", content=payload)
+    response.raise_for_status()
+    assert response.status_code == HTTP_200_OK
+
+    return records
+
+
+def test_post_alert_chunk(mock_client: httpx.AsyncClient, mocked_app, post_alert_chunk):
+
+    bucket = get_s3_bucket()
+    objects = list(bucket.objects.all())
+    assert len(objects) == 1
+    obj = bucket.Object(objects[0].key)
+
+    call_args = mocked_app.get_archive_updater().insert_alert_chunk.call_args
+
+    assert urlsplit(call_args.kwargs["archive_uri"]).path.split("/")[-1] == obj.key
+
+
+@pytest.mark.asyncio
+async def test_get_cutouts_from_chunk(
+    authed_integration_client: httpx.AsyncClient, post_alert_chunk
+):
+    response = await authed_integration_client.get("/alert/0/cutouts")
+    assert response.status_code == HTTP_404_NOT_FOUND, "nonexistant alert not found"
+
+    response = await authed_integration_client.get(
+        f"/alert/{post_alert_chunk[0]['candid']}/cutouts"
+    )
+    assert response.status_code == HTTP_200_OK, "found alert cutouts"
+
+    bucket = get_s3_bucket()
+    objects = list(bucket.objects.all())
+    assert len(objects) == 1
+    obj = bucket.Object(objects[0].key)
+    obj.delete()
+
+    response = await authed_integration_client.get(
+        f"/alert/{post_alert_chunk[0]['candid']}/cutouts"
+    )
+    assert response.status_code == HTTP_404_NOT_FOUND, "archive blob missing"
+
+
+@pytest.mark.asyncio
+async def test_repost_alert_chunk(
+    authed_integration_client: httpx.AsyncClient, alert_generator
+):
+    records, schemas = zip(*alert_generator(with_schema=True))
+
+    payload, _ = pack_records(records, schema=schemas[0])
+
+    for _ in range(2):
+        response = await authed_integration_client.post(f"/alerts", content=payload)
+        response.raise_for_status()
+        assert response.status_code == HTTP_200_OK
+
+    bucket = get_s3_bucket()
+    objects = list(bucket.objects.all())
+    assert len(objects) == 1
+    obj = bucket.Object(objects[0].key)
+
+    db = get_archive()
+
+    ALERT_SCHEMAS.clear()
+
+    for record in records:
+        response = await authed_integration_client.get(f"/alert/{record['candid']}")
+        response.raise_for_status()
+        assert response.json()["candid"] == record["candid"]
+
+        uri, start, end = db.get_archive_segment(record["candid"])
+        assert urlsplit(uri).path.split("/")[-1] == obj.key
+        assert end - start > 0
+
+        response = await authed_integration_client.get(
+            f"/alert/{record['candid']}/cutouts"
+        )
+        response.raise_for_status()
+        cutouts = response.json()
+        assert set(cutouts.keys()) == {"template", "science", "difference"}
+        for kind, cutout in cutouts.items():
+            base64.b64encode(
+                record[f"cutout{kind.capitalize()}"]["stampData"]
+            ) == cutout
+
+
+@pytest.mark.asyncio
+async def test_post_alert_unauthorized(integration_client: httpx.AsyncClient):
+    response = await integration_client.post("/alerts", content=b"")
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.asyncio
+async def test_post_alert_malformed(mock_client: httpx.AsyncClient):
+    response = await mock_client.post("/alerts", content=b"")
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    assert response.headers["x-exception"] == "cannot read header - is it an avro file?"

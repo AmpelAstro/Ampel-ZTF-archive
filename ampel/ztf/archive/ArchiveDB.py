@@ -45,11 +45,11 @@ import logging
 log = logging.getLogger("ampel.ztf.archive")
 
 
-def without_keys(table):
+def without_keys(table, filter=lambda name: True):
     keys = set(table.primary_key.columns)
     for fk in table.foreign_keys:
         keys.update(fk.constraint.columns)
-    return [c for c in table.columns if c not in keys]
+    return [c for c in table.columns if c not in keys and filter(c.name)]
 
 
 class GroupNotFoundError(KeyError):
@@ -596,7 +596,8 @@ class ArchiveDB(ArchiveDBClient):
         json_agg = lambda table: func.json_agg(literal_column('"' + table.name + '"'))
 
         alert = self._build_base_alert_query(
-            [Alert.c.alert_id] + without_keys(Alert),
+            [Alert.c.alert_id]
+            + without_keys(Alert, lambda k: not k.startswith("avro_archive_")),
             condition,
             order=order,
             distinct=distinct,
@@ -809,6 +810,29 @@ class ArchiveDB(ArchiveDBClient):
         )
         with self._engine.connect() as conn:
             return dict(conn.execute(q).fetchall())
+
+    def get_archive_segment(self, candid):
+        """ """
+        Alert = self._meta.tables["alert"]
+        AvroArchive = self._meta.tables["avro_archive"]
+        q = (
+            select(
+                [
+                    AvroArchive.c.uri,
+                    Alert.c.avro_archive_start,
+                    Alert.c.avro_archive_end,
+                ]
+            )
+            .select_from(
+                Alert.join(
+                    AvroArchive,
+                    AvroArchive.c.avro_archive_id == Alert.c.avro_archive_id,
+                )
+            )
+            .where(Alert.c.candid == candid)
+        )
+        with self._engine.connect() as conn:
+            return conn.execute(q).fetchone()
 
     def get_alerts_for_object(
         self,
