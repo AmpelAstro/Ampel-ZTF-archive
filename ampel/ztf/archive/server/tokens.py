@@ -56,15 +56,18 @@ async def get_user(auth: HTTPAuthorizationCredentials = Depends(user_bearer)) ->
 
 def find_access_token(db: ArchiveDB, token: str) -> bool:
     Token = db._meta.tables["access_token"]
-    with db._engine.connect() as conn:
-        try:
-            cursor = conn.execute(
-                select([Token.c.token_id]).where(Token.c.token == token).limit(1)
-            )
-        except sqlalchemy.exc.DataError:
-            # e.g. invalid input syntax for type uuid
-            return False
-        return bool(cursor.fetchone())
+    try:
+        with db._engine.connect() as conn:
+            try:
+                cursor = conn.execute(
+                    select([Token.c.token_id]).where(Token.c.token == token).limit(1)
+                )
+            except sqlalchemy.exc.DataError:
+                # e.g. invalid input syntax for type uuid
+                return False
+            return bool(cursor.fetchone())
+    except sqlalchemy.exc.TimeoutError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
 
 
 async def verify_access_token(
