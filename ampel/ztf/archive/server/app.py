@@ -4,7 +4,7 @@ import sqlalchemy
 from ampel.ztf.archive.server.models import AlertChunk
 import secrets
 from base64 import b64encode
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, Union
 
 from fastapi import FastAPI, Depends, Query, HTTPException, status
 from fastapi.encoders import jsonable_encoder
@@ -473,7 +473,7 @@ def create_stream_from_topic(
     status_code=201,
 )
 def create_stream_from_query(
-    query: AlertQuery,
+    query: Union[AlertQuery, HEALpixMapQuery],
     archive: ArchiveDB = Depends(get_archive),
     auth: bool = Depends(verify_access_token),
 ):
@@ -481,20 +481,28 @@ def create_stream_from_query(
     Create a stream of alerts from the given query. The resulting resume_token
     can be used to read the stream concurrently from multiple clients.
     """
-    if query.cone:
-        condition, order = archive._cone_search_condition(
-            ra=query.cone.ra,
-            dec=query.cone.dec,
-            radius=query.cone.radius,
-            programid=query.programid,
+    if isinstance(query, AlertQuery):
+        if query.cone:
+            condition, order = archive._cone_search_condition(
+                ra=query.cone.ra,
+                dec=query.cone.dec,
+                radius=query.cone.radius,
+                programid=query.programid,
+                jd_min=query.jd.gt,
+                jd_max=query.jd.lt,
+            )
+        else:
+            condition, order = archive._time_range_condition(
+                query.programid,
+                query.jd.gt,
+                query.jd.lt,
+            )
+    else:
+        condition, order = archive._healpix_search_condition(
+            pixels=deres(query.nside, query.pixels),
             jd_min=query.jd.gt,
             jd_max=query.jd.lt,
-        )
-    else:
-        condition, order = archive._time_range_condition(
-            query.programid,
-            query.jd.gt,
-            query.jd.lt,
+            latest=query.latest,
         )
 
     with archive._engine.connect() as conn:
