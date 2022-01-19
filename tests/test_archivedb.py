@@ -1,3 +1,5 @@
+import io
+import fastavro
 import pytest
 import os
 import secrets
@@ -634,12 +636,12 @@ def test_cone_search(alert_archive):
 
 
 @pytest.mark.parametrize("nside", [32, 64, 128])
-def test_healpix_search(empty_archive, nside: int) -> None:
+@pytest.mark.parametrize("ipix", [13, [13]])
+def test_healpix_search(empty_archive, nside, ipix):
     db = ArchiveDB(empty_archive)
     group = secrets.token_urlsafe()
-    ipix = 13
     condition, order = db._healpix_search_condition(
-        pixels={nside: [ipix]}, jd_min=-1, jd_max=1
+        pixels={nside: ipix}, jd_min=-1, jd_max=1
     )
     assert isinstance(condition, BooleanClauseList)
     assert condition.operator == operator.and_
@@ -654,3 +656,53 @@ def test_healpix_search(empty_archive, nside: int) -> None:
     for op in ops:
         assert isinstance(op, BinaryExpression)
         assert op.operator is sqlalchemy.sql.operators.in_op
+
+
+@pytest.mark.parametrize("cutouts", [False, True])
+def test_seekable_avro(alert_generator, cutouts: bool):
+    """
+    We can read an individual block straight out of an AVRO file
+    """
+    from fastavro._read_py import BLOCK_READERS, BinaryDecoder
+
+    alerts = []
+    for alert, schema in alert_generator(with_schema=True):
+        if not cutouts:
+            for k in list(alert.keys()):
+                if k.startswith('cutout'):
+                    alert[k] = None
+                    pass
+        alerts.append(alert)
+    buf = io.BytesIO()
+    fastavro.writer(buf, schema, alerts, codec="deflate")
+    buf.seek(0)
+    assert buf.tell() == 0
+    reader = fastavro.block_reader(buf)
+    pos = buf.tell()
+    ranges = {}
+    for block in reader:
+        if cutouts:
+            assert block.num_records == 1
+        else:
+            assert block.num_records > 0
+        end = buf.tell()
+        for alert in block:
+            ranges[alert['candid']] = (pos, end)
+        pos = end
+
+    print(buf.tell() /  2**20)
+
+    codec = reader.metadata["avro.codec"]
+    read_block = BLOCK_READERS.get(codec)
+
+    for alert in alerts:
+        decoder = BinaryDecoder(io.BytesIO(buf.getvalue()[slice(*ranges[alert["candid"]])]))
+        assert (nrecords := decoder.read_long()) > 0
+        slicebuf = read_block(decoder)
+        for _ in range(nrecords):
+            reco = fastavro.schemaless_reader(slicebuf, reader.writer_schema)
+            if reco['candid'] == alert['candid']:
+                assert reco == alert
+                break
+        else:
+            raise ValueError(f'{alert["candid"]} not found')

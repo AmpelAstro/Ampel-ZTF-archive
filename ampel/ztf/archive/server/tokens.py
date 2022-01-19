@@ -1,7 +1,7 @@
 from functools import cached_property
 import sqlalchemy
 from ampel.ztf.archive.ArchiveDB import ArchiveDB, select
-from typing import List
+from typing import Any, List
 import jwt
 
 from pydantic import BaseModel, ValidationError
@@ -54,18 +54,18 @@ async def get_user(auth: HTTPAuthorizationCredentials = Depends(user_bearer)) ->
         raise credentials_exception
 
 
-def find_access_token(db: ArchiveDB, token: str) -> bool:
+def find_access_token(db: ArchiveDB, token: str) -> Any:
     Token = db._meta.tables["access_token"]
     try:
         with db._engine.connect() as conn:
             try:
                 cursor = conn.execute(
-                    select([Token.c.token_id]).where(Token.c.token == token).limit(1)
+                    select([Token.c.token_id, Token.c.role]).where(Token.c.token == token).limit(1)
                 )
             except sqlalchemy.exc.DataError:
                 # e.g. invalid input syntax for type uuid
-                return False
-            return bool(cursor.fetchone())
+                return None
+            return cursor.fetchone()
     except sqlalchemy.exc.TimeoutError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
 
@@ -77,6 +77,23 @@ async def verify_access_token(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return True
+
+async def verify_write_token(
+    auth: HTTPAuthorizationCredentials = Depends(token_bearer), db=Depends(get_archive)
+) -> bool:
+    if not (token := find_access_token(db, auth.credentials)):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    elif token["role"] != "writer":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied",
             headers={"WWW-Authenticate": "Bearer"},
         )
     return True

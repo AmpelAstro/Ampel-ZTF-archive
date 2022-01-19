@@ -1,6 +1,15 @@
+import base64
+from contextlib import contextmanager
+import io
 import secrets
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
+from ampel.ztf.archive.server.cutouts import extract_alert, pack_records, ALERT_SCHEMAS
+from ampel.ztf.archive.server.db import get_archive, get_archive_updater
+from ampel.ztf.archive.server.s3 import get_object, get_range, get_s3_bucket
+from fastapi.security import http
+from urllib.parse import urlsplit
+import fastavro
 
 import jwt
 import httpx
@@ -8,6 +17,8 @@ import pytest
 from fastapi import status
 from ampel.ztf.archive.ArchiveDB import ArchiveDB
 import sqlalchemy
+from starlette.status import HTTP_200_OK, HTTP_201_CREATED, HTTP_404_NOT_FOUND
+from tests.fixtures import walk_tarball
 
 if TYPE_CHECKING:
     from _pytest.monkeypatch import MonkeyPatch
@@ -26,21 +37,28 @@ class BearerAuth(httpx.Auth):
 
 
 @pytest.fixture
-def mocked_app(monkeypatch: "MonkeyPatch", mocker: "MockerFixture"):
+def mocked_app(monkeypatch: "MonkeyPatch", mocker: "MockerFixture", mock_s3_bucket):
     monkeypatch.setenv("ALLOWED_IDENTITIES", '["someorg","someorg/a-team"]')
     from ampel.ztf.archive.server import app
     from ampel.ztf.archive.server.settings import settings
     from ampel.ztf.archive.server import db
 
     mocker.patch.object(db, "ArchiveDB")
+    mocker.patch.object(db, "ArchiveUpdater")
+    get_archive.cache_clear()
+    get_archive_updater.cache_clear()
     yield app
+    get_archive.cache_clear()
+    get_archive_updater.cache_clear()
 
 
 @pytest.fixture
 def mock_auth(mocker: "MockerFixture"):
     from ampel.ztf.archive.server import tokens
 
-    mocker.patch.object(tokens, "find_access_token", side_effect=lambda *args: True)
+    mocker.patch.object(
+        tokens, "find_access_token", side_effect=lambda *args: {"role": "writer"}
+    )
     yield
 
 
@@ -58,6 +76,7 @@ def mock_db(mocked_app, alert_generator):
     db.get_alerts_for_object.return_value = [alert]
     yield db
     mocked_app.get_archive.cache_clear()
+    mocked_app.get_archive_updater.cache_clear()
 
 
 @pytest.fixture
@@ -71,18 +90,24 @@ async def mock_client(mocked_app):
 
 
 @pytest.fixture
-def integration_app(monkeypatch: "MonkeyPatch", alert_archive):
-    monkeypatch.setenv("ALLOWED_IDENTITIES", '["someorg","someorg/a-team"]')
+def integration_app(monkeypatch: "MonkeyPatch", alert_archive, localstack_s3_bucket):
     monkeypatch.setattr(
         "ampel.ztf.archive.server.settings.settings.archive_uri", alert_archive
+    )
+    monkeypatch.setattr(
+        "ampel.ztf.archive.server.settings.settings.allowed_identities",
+        {"someorg", "someorg/a-team"},
     )
 
     from ampel.ztf.archive.server import app
 
     assert app.settings.archive_uri == alert_archive
+    assert app.settings.allowed_identities == {"someorg", "someorg/a-team"}
     app.get_archive.cache_clear()
+    app.get_archive_updater.cache_clear()
     yield app
     app.get_archive.cache_clear()
+    app.get_archive_updater.cache_clear()
 
 
 @pytest.fixture
@@ -94,14 +119,50 @@ async def integration_client(integration_app):
         yield client
 
 
+@contextmanager
+def set_token_role(token: str, role: str):
+    db = get_archive()
+    Token = db._meta.tables["access_token"]
+    with db._engine.connect() as conn:
+        prev_role = conn.execute(
+            Token.select().where(Token.c.token == token)
+        ).fetchone()["role"]
+        try:
+            conn.execute(
+                Token.update(values={"role": role}).where(Token.c.token == token)
+            )
+            yield
+        finally:
+            conn.execute(
+                Token.update(values={"role": prev_role}).where(Token.c.token == token)
+            )
+
+
 @pytest.fixture
-async def authed_integration_client(integration_app, access_token):
+def write_token(integration_app, access_token):
+    with set_token_role(access_token, "writer"):
+        yield access_token
+
+
+@pytest.fixture
+async def authed_integration_client(integration_app, write_token):
     async with httpx.AsyncClient(
         app=integration_app.app,
         base_url="http://test",
-        auth=BearerAuth(access_token),
+        auth=BearerAuth(write_token),
     ) as client:
         yield client
+
+
+def test_parse_json_from_env(monkeypatch):
+    """
+    JSON gets parsed from env variables
+    """
+    from ampel.ztf.archive.server.settings import Settings
+
+    assert Settings().allowed_identities != {"someorg", "someorg/a-team"}
+    monkeypatch.setenv("ALLOWED_IDENTITIES", '["someorg","someorg/a-team"]')
+    assert Settings().allowed_identities == {"someorg", "someorg/a-team"}
 
 
 @pytest.mark.asyncio
@@ -110,6 +171,12 @@ async def test_get_alert(mock_client: httpx.AsyncClient, mock_db: MagicMock):
     response.raise_for_status()
     assert mock_db.get_alert.called_once
     assert mock_db.get_alert.call_args.args[0] == 123
+
+
+# metafixture as suggested in https://github.com/pytest-dev/pytest/issues/349#issuecomment-189370273
+@pytest.fixture(params=["mock_client", "authed_integration_client"])
+def client(request):
+    yield request.getfixturevalue(request.param)
 
 
 @pytest.mark.parametrize(
@@ -401,3 +468,163 @@ async def test_forbidden_identity(
     )
     response = await integration_client.get("/tokens", auth=BearerAuth(user_token))
     assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.fixture
+def packed_alert_chunk(
+    alert_generator,
+) -> tuple[dict, bytes, list[dict], list[tuple[int, int]]]:
+    records, schemas = zip(*alert_generator(with_schema=True))
+
+    blob, ranges = pack_records(records, schema=schemas[0])
+
+    return schemas[0], blob, records, ranges
+
+
+def test_extract_block(
+    packed_alert_chunk: tuple[dict, bytes, list[dict], list[tuple[int, int]]]
+):
+    """
+    We can read an individual block straight out of an AVRO file
+    """
+    schema, blob, records, ranges = packed_alert_chunk
+
+    for record, span in zip(records, ranges):
+        reco = extract_alert(record["candid"], io.BytesIO(blob[slice(*span)]), schema)
+        assert reco == record
+
+
+def test_extract_block_from_s3(
+    packed_alert_chunk: tuple[dict, bytes, list[dict], list[tuple[int, int]]],
+    mock_s3_bucket,
+):
+    schema, blob, records, ranges = packed_alert_chunk
+
+    bucket = get_s3_bucket()
+    obj = bucket.Object("blobsy.avro")
+    response = obj.put(
+        Body=blob,
+        Metadata={"schema-name": schema["name"], "schema-version": schema["version"]},
+    )
+
+    obj.load()
+    assert obj.metadata == {
+        "schema-name": schema["name"],
+        "schema-version": schema["version"],
+    }
+
+    for record, span in zip(records, ranges):
+        start, end = span
+        reco = extract_alert(record["candid"], *get_range(bucket, obj.key, start, end))
+        assert reco == record
+
+
+@pytest.fixture
+async def post_alert_chunk(
+    authed_integration_client: httpx.AsyncClient, alert_generator
+):
+    records, schemas = zip(*alert_generator(with_schema=True))
+
+    payload, _ = pack_records(records, schema=schemas[0])
+
+    response = await authed_integration_client.post(f"/alerts", content=payload)
+    response.raise_for_status()
+    assert response.status_code == HTTP_200_OK
+
+    return records
+
+
+def test_post_alert_chunk(
+    authed_integration_client: httpx.AsyncClient, post_alert_chunk
+):
+
+    bucket = get_s3_bucket()
+    objects = list(bucket.objects.all())
+    assert len(objects) == 1
+    obj = bucket.Object(objects[0].key)
+
+    db = get_archive_updater()
+    with db._engine.connect() as conn:
+        result = conn.execute(db._meta.tables["avro_archive"].select()).fetchall()
+        assert len(result) == 1
+        assert urlsplit(result[0]["uri"]).path.split("/")[-1] == obj.key
+
+
+@pytest.mark.asyncio
+async def test_get_cutouts_from_chunk(
+    authed_integration_client: httpx.AsyncClient, post_alert_chunk
+):
+    response = await authed_integration_client.get("/alert/0/cutouts")
+    assert response.status_code == HTTP_404_NOT_FOUND, "nonexistant alert not found"
+
+    response = await authed_integration_client.get(
+        f"/alert/{post_alert_chunk[0]['candid']}/cutouts"
+    )
+    assert response.status_code == HTTP_200_OK, "found alert cutouts"
+
+    bucket = get_s3_bucket()
+    objects = list(bucket.objects.all())
+    assert len(objects) == 1
+    obj = bucket.Object(objects[0].key)
+    obj.delete()
+
+    response = await authed_integration_client.get(
+        f"/alert/{post_alert_chunk[0]['candid']}/cutouts"
+    )
+    assert response.status_code == HTTP_404_NOT_FOUND, "archive blob missing"
+
+
+@pytest.mark.asyncio
+async def test_repost_alert_chunk(
+    authed_integration_client: httpx.AsyncClient, alert_generator
+):
+    records, schemas = zip(*alert_generator(with_schema=True))
+
+    payload, _ = pack_records(records, schema=schemas[0])
+
+    for _ in range(2):
+        response = await authed_integration_client.post(f"/alerts", content=payload)
+        response.raise_for_status()
+        assert response.status_code == HTTP_200_OK
+
+    bucket = get_s3_bucket()
+    objects = list(bucket.objects.all())
+    assert len(objects) == 1
+    obj = bucket.Object(objects[0].key)
+
+    db = get_archive()
+
+    ALERT_SCHEMAS.clear()
+
+    for record in records:
+        response = await authed_integration_client.get(f"/alert/{record['candid']}")
+        response.raise_for_status()
+        assert response.json()["candid"] == record["candid"]
+
+        uri, start, end = db.get_archive_segment(record["candid"])
+        assert urlsplit(uri).path.split("/")[-1] == obj.key
+        assert end - start > 0
+
+        response = await authed_integration_client.get(
+            f"/alert/{record['candid']}/cutouts"
+        )
+        response.raise_for_status()
+        cutouts = response.json()
+        assert set(cutouts.keys()) == {"template", "science", "difference"}
+        for kind, cutout in cutouts.items():
+            base64.b64encode(
+                record[f"cutout{kind.capitalize()}"]["stampData"]
+            ) == cutout
+
+
+@pytest.mark.asyncio
+async def test_post_alert_unauthorized(integration_client: httpx.AsyncClient):
+    response = await integration_client.post("/alerts", content=b"")
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.asyncio
+async def test_post_alert_malformed(mock_client: httpx.AsyncClient, mock_auth):
+    response = await mock_client.post("/alerts", content=b"")
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    assert response.headers["x-exception"] == "cannot read header - is it an avro file?"

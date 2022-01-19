@@ -1,0 +1,54 @@
+{
+  "type": "record",
+  "version": "3.3",
+  "name": "alert",
+  "namespace": "ztf",
+  "fields": [
+    {
+      "type": "long",
+      "name": "candid"
+    },
+    {
+      "type": [
+        {
+          "type": "record",
+          "version": "3.3",
+          "name": "cutout",
+          "namespace": "ztf.alert",
+          "fields": [
+            {
+              "type": "string",
+              "name": "fileName"
+            },
+            {
+              "type": "bytes",
+              "name": "stampData",
+              "doc": "fits.gz"
+            }
+          ],
+          "doc": "avro alert schema"
+        },
+        "null"
+      ],
+      "name": "cutoutScience",
+      "default": null
+    },
+    {
+      "type": [
+        "ztf.alert.cutout",
+        "null"
+      ],
+      "name": "cutoutTemplate",
+      "default": null
+    },
+    {
+      "type": [
+        "ztf.alert.cutout",
+        "null"
+      ],
+      "name": "cutoutDifference",
+      "default": null
+    }
+  ],
+  "doc": "avro alert schema for ZTF (www.ztf.caltech.edu)"
+}
