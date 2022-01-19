@@ -6,6 +6,14 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    services:
+      localstack:
+        image: localstack/localstack:0.12.19.1 
+        env:
+          SERVICES: s3
+        ports:
+          - 4566:4566
+
     steps:
     - uses: actions/checkout@v2
     - uses: actions/setup-python@v2
@@ -16,6 +24,8 @@ jobs:
         python -m pip install --upgrade poetry
         poetry install -E server
     - run: poetry run pytest --cov=ampel
+      env:
+        LOCALSTACK_URI: http://localhost:4566
   
   mypy:
     runs-on: ubuntu-latest
