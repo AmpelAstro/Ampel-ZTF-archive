@@ -10,7 +10,7 @@ from os.path import dirname, join
 import pytest
 import fastavro
 
-POSTGRES_IMAGE = "ampelproject/postgres:10.18"
+POSTGRES_IMAGE = "ampelproject/postgres:14.1"
 
 @pytest.fixture(scope="session")
 def archive():

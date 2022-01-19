@@ -73,10 +73,7 @@ class AlertQuery(StrictModel):
             raise ValueError(f"At least one constraint (cone or jd) must be specified")
         return values
 
-
-class HEALpixMapQuery(StrictModel):
-    nside: int
-    pixels: List[int]
+class MapQueryBase(StrictModel):
     jd: StrictTimeConstraint
     latest: bool = Field(
         False, description="Return only the latest alert for each objectId"
@@ -90,6 +87,17 @@ class HEALpixMapQuery(StrictModel):
         None,
         description="Identifier of a previous query to continue. This token expires after 24 hours.",
     )
+
+class HEALpixMapRegion(StrictModel):
+    nside: int
+    pixels: list[int]
+
+class HEALpixMapQuery(MapQueryBase, HEALpixMapRegion):
+    ...
+
+class HEALpixRegionQuery(MapQueryBase):
+    regions: list[HEALpixMapRegion] 
+    
 
 
 class AlertCutouts(BaseModel):

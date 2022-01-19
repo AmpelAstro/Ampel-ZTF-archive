@@ -21,6 +21,7 @@ from .models import (
     AlertCutouts,
     AlertQuery,
     HEALpixMapQuery,
+    HEALpixRegionQuery,
     StreamDescription,
     Topic,
     TopicDescription,
@@ -473,7 +474,7 @@ def create_stream_from_topic(
     status_code=201,
 )
 def create_stream_from_query(
-    query: Union[AlertQuery, HEALpixMapQuery],
+    query: Union[AlertQuery, HEALpixRegionQuery],
     archive: ArchiveDB = Depends(get_archive),
     auth: bool = Depends(verify_access_token),
 ):
@@ -498,15 +499,18 @@ def create_stream_from_query(
                 query.jd.lt,
             )
     else:
+        pixels: dict[int, list[int]] = {}
+        for region in query.regions:
+            pixels[region.nside] = pixels.get(region.nside, []) + region.pixels
         condition, order = archive._healpix_search_condition(
-            pixels=deres(query.nside, query.pixels),
+            pixels=pixels,
             jd_min=query.jd.gt,
             jd_max=query.jd.lt,
             latest=query.latest,
         )
 
+    name = secrets.token_urlsafe(32)
     with archive._engine.connect() as conn:
-        name = secrets.token_urlsafe(32)
         group_id, chunks = archive._create_read_queue(
             conn, condition, order, name, query.chunk_size
         )

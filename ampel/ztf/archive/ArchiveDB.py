@@ -12,7 +12,7 @@ import math
 from typing import (
     Any,
     Dict,
-    Sequence,
+    Mapping,
     Tuple,
     Optional,
     List,
@@ -21,16 +21,15 @@ from typing import (
     cast,
 )
 
-from sqlalchemy import select, update, and_, or_, bindparam
+from sqlalchemy import select, update, and_, or_
 from sqlalchemy.engine.base import Connection
 from sqlalchemy.sql.elements import (
     BooleanClauseList,
     ClauseElement,
     ColumnClause,
-    ColumnElement,
     UnaryExpression,
 )
-from sqlalchemy.sql.expression import func, literal_column, Select, Alias
+from sqlalchemy.sql.expression import func
 from sqlalchemy.sql.schema import Column, Table
 from sqlalchemy.exc import IntegrityError
 import sqlalchemy, collections
@@ -271,31 +270,52 @@ class ArchiveDB(ArchiveDBClient):
                 Groups.delete().where(Groups.c.group_name.like(pattern))
             )
 
+    def _select_alert_ids(
+        self, group_id, block_size, condition, order: List[UnaryExpression] = []
+    ):
+        """Generate a statement that selects blocks of alert_id"""
+
+        # harvest tables involved in condition
+        tables = set()
+        sqlalchemy.sql.visitors.traverse(
+            condition,
+            visitors={"column": lambda column: tables.add(column.table)},
+            opts={},
+        )
+        # join alert table only if needed
+        if self._alert_id_column.table in tables:
+            alert_id = self._alert_id_column
+            source = self._alert_id_column.table.join(self.get_table("candidate"))
+        else:
+            alert_id = self.get_table("candidate").c.alert_id
+            source = alert_id.table
+        numbered = (
+            select(
+                [
+                    alert_id,
+                    func.row_number().over(order_by=order).label("row_number"),
+                ]
+            )
+            .select_from(source)
+            .where(condition)
+            .alias("numbered")
+        )
+        alert_ids, row_number = numbered.columns
+        block = func.div(row_number - 1, block_size)
+        return (
+            select([group_id, func.array_agg(alert_ids)])
+            .group_by(block)
+            .order_by(block)
+        )
+
     def _populate_read_queue(
         self, conn, group_id, block_size, condition, order: List[UnaryExpression] = []
     ):
         Queue = self._meta.tables["read_queue"]
-        numbered = (
-            select(
-                [
-                    self._alert_id_column,
-                    func.row_number().over(order_by=order).label("row_number"),
-                ]
-            )
-            .select_from(
-                self._alert_id_column.table.join(self._meta.tables["candidate"])
-            )
-            .where(condition)
-            .alias("numbered")
-        )
-        alert_id, row_number = numbered.columns
-        block = func.div(row_number - 1, block_size)
         conn.execute(
             Queue.insert().from_select(
                 [Queue.c.group_id, Queue.c.alert_ids],
-                select([group_id, func.array_agg(alert_id)])
-                .group_by(block)
-                .order_by(block),
+                self._select_alert_ids(group_id, block_size, condition, order),
             )
         )
         col = Queue.c.alert_ids
@@ -1023,66 +1043,62 @@ class ArchiveDB(ArchiveDBClient):
             Alert.c.candid.desc(),  # NB: reprocessed points may have identical jds; break ties with candid
         ]
 
-    def _healpix_pixel_condition(
-        self,
-        *,
-        nside: int,
-        ipix: Union[int, List[int]],
-    ) -> BooleanClauseList:
-        Candidate = self.get_table("candidate")
-
-        pix = func.healpix_ang2ipix_nest(64, Candidate.c.ra, Candidate.c.dec)
-
-        if not (nside <= 8192 and nside >= 1 and math.log2(nside).is_integer()):
-            raise ValueError("nside must be >= 1, <= 8192, and a power of 2")
-        elif nside == 64:
-            # native resolution; use indices verbatim
-            in_pixels = pix == ipix if isinstance(ipix, int) else pix.in_(ipix)
-        elif nside > 64:
-            # higher resolution; filter by (indexed) native pixel and provided subpixel
-            subpix = func.healpix_ang2ipix_nest(nside, Candidate.c.ra, Candidate.c.dec)
-            scale = (nside // 64) ** 2
-            isuperpix = (
-                ipix // scale
-                if isinstance(ipix, int)
-                else list(set([p // scale for p in ipix]))
-            )
-            in_pixels = and_(
-                pix == isuperpix if isinstance(isuperpix, int) else pix.in_(isuperpix),
-                subpix == ipix if isinstance(ipix, int) else subpix.in_(ipix),
-            )
-        elif nside < 64:
-            # lower resolution: treat provided superpixels as the ranges of native
-            # pixels they contain
-            scale = (64 // nside) ** 2
-            nside = 64
-            in_pixels = or_(
-                *(
-                    and_(pix >= i * scale, pix < (i + 1) * scale)
-                    for i in ([ipix] if isinstance(ipix, int) else ipix)
-                )
-            )
-
-        return in_pixels
-
     def _healpix_search_condition(
         self,
         *,
-        pixels: Dict[int, Union[int, List[int]]],
+        pixels: Mapping[int, Union[int, List[int]]],
         jd_min: float,
         jd_max: float,
         latest: bool = False,
     ) -> Tuple[BooleanClauseList, List[UnaryExpression]]:
         Candidate = self.get_table("candidate")
 
+        conditions = []
+
+        # NB: searches against sets of pixel indices are reasonably efficient for nside=64,
+        # but target lists could become unfeasibly long for large nside. use multiranges
+        # with postgres >= 14 for a more efficient search in this case.
+        # NBB: expressing range checks as an giant OR clause can be horribly inefficient if
+        # if the pixel index is an expression, as postgres does not elide multiple evaluations
+        # of healpix_ang2ipix_nest, even though it is marked IMMUTABLE. this can result in
+        # e.g. the pixel index being calculated 300 times for every row if you have 300
+        # elements in your OR clause, which can end up dominating the runtime of the query.
+        consolidated_pixels: collections.defaultdict[int, set[int]] = collections.defaultdict(set)
+
+        # a stored column works better with parallel workers, since healpix_ang2ipix_nest
+        # is not marked parallel safe
+        pix = Candidate.c._hpx_64
+        # pix = func.healpix_ang2ipix_nest(64, Candidate.c.ra, Candidate.c.dec)
+
+        # flatten all levels with nside <= 64
+        for nside, ipix in pixels.items():
+            if not (nside <= 8192 and nside >= 1 and math.log2(nside).is_integer()):
+                raise ValueError("nside must be >= 1, <= 8192, and a power of 2")
+            elif nside <= 64:
+                scale = (64 // nside) ** 2
+                consolidated_pixels[64].update((i * scale for i in ([ipix] if isinstance(ipix, int) else ipix)))
+            else:
+                consolidated_pixels[nside].update([ipix] if isinstance(ipix, int) else ipix)
+
+        # nest pixels finer than the indexed resolution inside a check on the containing superpixels
+        for nside in consolidated_pixels:
+            if nside <= 64:
+                conditions.append(pix.in_(consolidated_pixels[nside]))
+            else:
+                scale = (nside // 64) ** 2
+                subpix = func.healpix_ang2ipix_nest(
+                    nside, Candidate.c.ra, Candidate.c.dec
+                )
+                conditions.append(
+                    and_(
+                        pix.in_(set((i // scale for i in consolidated_pixels[nside]))),
+                        subpix.in_(consolidated_pixels[nside]),
+                    )
+                )
+
         return (
             and_(
-                or_(
-                    *(
-                        self._healpix_pixel_condition(nside=nside, ipix=ipix)
-                        for nside, ipix in pixels.items()
-                    )
-                ),
+                or_(*conditions),
                 Candidate.c.jd >= jd_min,
                 Candidate.c.jd < jd_max,
             ),

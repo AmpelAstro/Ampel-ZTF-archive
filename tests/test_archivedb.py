@@ -645,7 +645,7 @@ def test_healpix_search(empty_archive, nside: int) -> None:
     assert condition.operator == operator.and_
 
     ops = []
-    if nside == 64:
+    if nside <= 64:
         ops.append(condition.get_children()[0])
     else:
         ops.extend(condition.get_children()[0].get_children())
@@ -653,10 +653,4 @@ def test_healpix_search(empty_archive, nside: int) -> None:
     nsides = []
     for op in ops:
         assert isinstance(op, BinaryExpression)
-        assert isinstance(func := op.get_children()[0], Function)
-        assert func.name == "healpix_ang2ipix_nest"
-        assert isinstance(arg := func.clauses.get_children()[0], BindParameter)
-        nsides.append(arg.value)
-    assert any(
-        [n == 64 for n in nsides]
-    ), "pixel lookups used indexed expression at least once"
+        assert op.operator is sqlalchemy.sql.operators.in_op
