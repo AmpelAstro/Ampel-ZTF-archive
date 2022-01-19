@@ -16,6 +16,8 @@ CREATE TABLE read_queue (
   FOREIGN KEY(group_id) REFERENCES read_queue_groups (group_id) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
+CREATE INDEX read_queue_group_id_key ON read_queue(group_id);
+
 -- GRANT SELECT, INSERT, UPDATE, DELETE on read_queue_groups TO GROUP readers;
 -- GRANT SELECT, INSERT, UPDATE, DELETE on read_queue TO GROUP readers;
 
