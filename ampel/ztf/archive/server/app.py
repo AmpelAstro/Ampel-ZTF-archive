@@ -57,7 +57,7 @@ These tokens are persistent, and associated with your GitHub username.
 app = FastAPI(
     title="ZTF Alert Archive Service",
     description=DESCRIPTION,
-    version="2.1.0",
+    version="3.0.0",
     root_path=settings.root_path,
     openapi_tags=[
         {"name": "alerts", "description": "Retrieve alerts"},
