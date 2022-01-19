@@ -23,7 +23,7 @@ jobs:
       run: |
         python -m pip install --upgrade poetry
         poetry install -E server
-    - run: poetry run pytest --cov=ampel
+    - run: poetry run pytest --cov=ampel --integration
       env:
         LOCALSTACK_URI: http://localhost:4566
   
