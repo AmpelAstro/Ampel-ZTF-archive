@@ -40,11 +40,18 @@ class ArchiveUpdater(ArchiveDBClient):
         with self._engine.connect() as conn:
             with conn.begin() as transaction:
 
-                archive_id = conn.execute(
-                    AvroArchive.insert()
-                    .values(uri=archive_uri)
-                    .returning(AvroArchive.c.avro_archive_id)
-                ).fetchone()[0]
+                if row := conn.execute(
+                    select([AvroArchive.c.avro_archive_id]).where(
+                        AvroArchive.c.uri == archive_uri
+                    )
+                ).fetchone():
+                    archive_id = row[0]
+                else:
+                    archive_id = conn.execute(
+                        AvroArchive.insert()
+                        .values(uri=archive_uri)
+                        .returning(AvroArchive.c.avro_archive_id)
+                    ).fetchone()[0]
 
                 for alert, span in zip(alerts, ranges):
                     self._insert_alert(
@@ -103,9 +110,7 @@ class ArchiveUpdater(ArchiveDBClient):
             ingestion_time=ingestion_time,
             **{k: v for k, v in alert.items() if k in Alert.c},
         )
-        avro_archive_fields = {
-            k: v for k, v in alert.items() if k.startswith("avro_")
-        }
+        avro_archive_fields = {k: v for k, v in alert.items() if k.startswith("avro_")}
         if avro_archive_fields:
             insert_alert = insert_alert.on_conflict_do_update(
                 index_elements=("candid", "programid"),
@@ -119,9 +124,7 @@ class ArchiveUpdater(ArchiveDBClient):
         result = conn.execute(
             insert_alert.returning(
                 Alert.c.alert_id,
-                (sqlalchemy.column("xmax") == 0).label(
-                    "inserted"
-                ),  
+                (sqlalchemy.column("xmax") == 0).label("inserted"),
             )
         ).fetchone()
 
@@ -129,7 +132,7 @@ class ArchiveUpdater(ArchiveDBClient):
         if result is None or result[1] is False:
             return False
         alert_id = result[0]
-        
+
         conn.execute(Candidate.insert(), alert_id=alert_id, **alert["candidate"])
 
         # insert cutouts if they exist
