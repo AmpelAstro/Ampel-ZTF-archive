@@ -135,24 +135,6 @@ class ArchiveUpdater(ArchiveDBClient):
 
         conn.execute(Candidate.insert(), alert_id=alert_id, **alert["candidate"])
 
-        # insert cutouts if they exist
-        prefix = "cutout"
-        cutouts = [
-            dict(
-                kind=k[len(prefix) :].lower(),
-                stampData=v["stampData"],
-                alert_id=alert_id,
-            )
-            for k, v in alert.items()
-            if k.startswith(prefix)
-            if v is not None
-        ]
-        if len(cutouts) > 0:
-            conn.execute(self._meta.tables["cutout"].insert(), cutouts)
-
-        if alert["prv_candidates"] is None or len(alert["prv_candidates"]) == 0:
-            return True
-
         # entries in prv_candidates will often be duplicated, but may also
         # be updated without warning. sort these into detections (which
         # come with unique ids) and upper limits (which don't)
