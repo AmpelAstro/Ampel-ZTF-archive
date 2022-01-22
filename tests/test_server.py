@@ -7,6 +7,7 @@ import httpx
 import pytest
 from fastapi import status
 from ampel.ztf.archive.ArchiveDB import ArchiveDB
+import sqlalchemy
 
 if TYPE_CHECKING:
     from _pytest.monkeypatch import MonkeyPatch
@@ -29,11 +30,18 @@ def mocked_app(monkeypatch: "MonkeyPatch", mocker: "MockerFixture"):
     monkeypatch.setenv("ALLOWED_IDENTITIES", '["someorg","someorg/a-team"]')
     from ampel.ztf.archive.server import app
     from ampel.ztf.archive.server.settings import settings
-    from ampel.ztf.archive.server import db, tokens
+    from ampel.ztf.archive.server import db
 
     mocker.patch.object(db, "ArchiveDB")
-    mocker.patch.object(tokens, "find_access_token", side_effect=lambda *args: True)
     yield app
+
+
+@pytest.fixture
+def mock_auth(mocker: "MockerFixture"):
+    from ampel.ztf.archive.server import tokens
+
+    mocker.patch.object(tokens, "find_access_token", side_effect=lambda *args: True)
+    yield
 
 
 @pytest.fixture
@@ -133,15 +141,58 @@ async def test_basic_auth(
 
 
 @pytest.mark.asyncio
-async def test_get_healpix(mock_client: httpx.AsyncClient, mock_db: MagicMock):
-    params = {"ipix": [1, 2], "jd_start": 0, "jd_end": 1}
-    response = await mock_client.get("/alerts/healpix", params=params)
+async def test_auth_timeout(
+    mock_client: httpx.AsyncClient,
+    mock_db: MagicMock,
+    mocker,
+):
+    msg = "bad things happened for reasons"
+    mocker.patch.object(
+        mock_db._engine, "connect", side_effect=sqlalchemy.exc.TimeoutError(msg)
+    )
+    kwargs = {"auth": BearerAuth("tokeytoken")}
+    response = await mock_client.get("/object/thingamajig/alerts", **kwargs)
+    assert response.status_code == 503
+    assert response.json()["detail"] == msg
+
+
+@pytest.mark.asyncio
+async def test_get_healpix(
+    mock_client: httpx.AsyncClient, mock_db: MagicMock, mock_auth
+):
+    ipix = [1, 2]
+    params = {"jd_start": 0, "jd_end": 1}
+    response = await mock_client.get(
+        "/alerts/healpix", params={"ipix": [1, 2], **params}
+    )
     response.raise_for_status()
     assert mock_db.get_alerts_in_healpix.call_count == 1
     assert (
-        mock_db.get_alerts_in_healpix.call_args.kwargs | params
+        mock_db.get_alerts_in_healpix.call_args.kwargs
+        | {"pixels": {64: [1, 2]}, **params}
         == mock_db.get_alerts_in_healpix.call_args.kwargs
     ), "kwargs contain supplied params"
+
+
+@pytest.mark.asyncio
+async def test_get_healpix_skymap(
+    mock_client: httpx.AsyncClient, mock_db: MagicMock, mock_auth
+):
+    query = {
+        "nside": 4,
+        "pixels": [0, 56, 79, 81]
+        + list(range(10 * 16, 11 * 16))
+        + list(range(4 * 4, 5 * 4)),
+        "jd": {"gt": 0, "lt": 1},
+    }
+    response = await mock_client.post("/alerts/healpix/skymap", json=query)
+    response.raise_for_status()
+    assert mock_db.get_alerts_in_healpix.call_count == 1
+    assert mock_db.get_alerts_in_healpix.call_args.kwargs["pixels"] == {
+        1: [10],
+        2: [4],
+        4: [0, 56, 79, 81],
+    }, "map is decomposed into superpixels"
 
 
 @pytest.mark.parametrize(

@@ -482,7 +482,7 @@ def test_schema_update(empty_archive, alert_with_schema):
                 assert old[k] == new[k]
 
 
-def test_archive_object(alert_generator, empty_archive):
+def test_archive_object(alert_generator, empty_archive) -> None:
     updater = ArchiveUpdater(empty_archive)
     from itertools import islice
 
@@ -513,14 +513,18 @@ def test_archive_object(alert_generator, empty_archive):
     sec = 1 / (24 * 3600.0)
     reco_jds = [
         a["candidate"]["jd"]
-        for a in db.get_alerts_in_time_range(jd_start=min(jds) - sec, jd_end=max(jds) + sec)
+        for a in db.get_alerts_in_time_range(
+            jd_start=min(jds) - sec, jd_end=max(jds) + sec
+        )
     ]
     assert reco_jds == jds
 
     reco_candids = [
         a["candid"]
         for a in db.get_alerts_in_cone(
-            ra=alerts[0]["candidate"]["ra"], dec=alerts[0]["candidate"]["dec"], radius=2.0
+            ra=alerts[0]["candidate"]["ra"],
+            dec=alerts[0]["candidate"]["dec"],
+            radius=2.0,
         )
     ]
     assert alerts[0]["candid"] in reco_candids
@@ -553,7 +557,10 @@ def test_partitioned_read_double(alert_archive):
         )
     )
     l2 = list(
-        (alert["candid"] for alert in db2.get_alerts_in_time_range(jd_start=0, jd_end=1e8, **kwargs))
+        (
+            alert["candid"]
+            for alert in db2.get_alerts_in_time_range(jd_start=0, jd_end=1e8, **kwargs)
+        )
     )
 
     assert set(l1).intersection(l2) == {
@@ -583,11 +590,14 @@ def test_create_topic(alert_archive):
     )
     with db._engine.connect() as conn:
         Topic = db._meta.tables["topic"]
-        row = conn.execute(Topic.select().where(Topic.c.topic_id==topic_id)).fetchone()
+        row = conn.execute(
+            Topic.select().where(Topic.c.topic_id == topic_id)
+        ).fetchone()
         assert row
         assert len(row["alert_ids"]) == 3
 
-@pytest.mark.parametrize("selection", [slice(None), slice(None,None,1)])
+
+@pytest.mark.parametrize("selection", [slice(None), slice(None, None, 1)])
 def test_topic_to_read_queue(alert_archive, selection):
     candids = [595147624915010001, 595193335915010017, 595211874215015018]
     db = ArchiveDB(alert_archive)
@@ -606,18 +616,31 @@ def test_topic_to_read_queue(alert_archive, selection):
     assert [alert["candid"] for alert in db.get_chunk_from_queue(group)] == candids[2:]
     assert [alert["candid"] for alert in db.get_chunk_from_queue(group)] == []
 
+
 def test_cone_search(alert_archive):
     db = ArchiveDB(alert_archive)
     group = secrets.token_urlsafe()
-    alerts = list(db.get_alerts_in_cone(ra=0, dec=0, radius=1,  with_history=False, with_cutouts=False, group_name=group))
+    alerts = list(
+        db.get_alerts_in_cone(
+            ra=0,
+            dec=0,
+            radius=1,
+            with_history=False,
+            with_cutouts=False,
+            group_name=group,
+        )
+    )
     assert len(alerts) == 0
 
+
 @pytest.mark.parametrize("nside", [32, 64, 128])
-def test_healpix_search(empty_archive, nside):
+def test_healpix_search(empty_archive, nside: int) -> None:
     db = ArchiveDB(empty_archive)
     group = secrets.token_urlsafe()
     ipix = 13
-    condition, order = db._healpix_search_condition(nside, ipix, -1, 1)
+    condition, order = db._healpix_search_condition(
+        pixels={nside: [ipix]}, jd_min=-1, jd_max=1
+    )
     assert isinstance(condition, BooleanClauseList)
     assert condition.operator == operator.and_
 
@@ -629,10 +652,11 @@ def test_healpix_search(empty_archive, nside):
 
     nsides = []
     for op in ops:
-        assert isinstance(op, BinaryExpression)    
+        assert isinstance(op, BinaryExpression)
         assert isinstance(func := op.get_children()[0], Function)
         assert func.name == "healpix_ang2ipix_nest"
         assert isinstance(arg := func.clauses.get_children()[0], BindParameter)
         nsides.append(arg.value)
-    assert any([n == 64 for n in nsides]), "pixel lookups used indexed expression at least once"
-    
+    assert any(
+        [n == 64 for n in nsides]
+    ), "pixel lookups used indexed expression at least once"

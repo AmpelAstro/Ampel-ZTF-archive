@@ -1,9 +1,10 @@
+from ampel.ztf.archive.server.skymap import deres
 from pydantic.fields import Field
 import sqlalchemy
 from ampel.ztf.archive.server.models import AlertChunk
 import secrets
 from base64 import b64encode
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, Union
 
 from fastapi import FastAPI, Depends, Query, HTTPException, status
 from fastapi.encoders import jsonable_encoder
@@ -19,6 +20,7 @@ from .models import (
     AlertChunk,
     AlertCutouts,
     AlertQuery,
+    HEALpixMapQuery,
     StreamDescription,
     Topic,
     TopicDescription,
@@ -39,7 +41,7 @@ These tokens are persistent, and associated with your GitHub username.
 app = FastAPI(
     title="ZTF Alert Archive Service",
     description=DESCRIPTION,
-    version="2.0.0",
+    version="2.1.0",
     root_path=settings.root_path,
     openapi_tags=[
         {"name": "alerts", "description": "Retrieve alerts"},
@@ -233,6 +235,9 @@ def get_alerts_in_cone(
     jd_start: float = Query(..., description="Earliest observation jd"),
     jd_end: float = Query(..., description="Latest observation jd"),
     programid: Optional[int] = None,
+    latest: bool = Query(
+        False, description="Return only the latest alert for each objectId"
+    ),
     with_history: bool = False,
     with_cutouts: bool = False,
     chunk_size: int = Query(
@@ -254,6 +259,7 @@ def get_alerts_in_cone(
             radius=radius,
             jd_start=jd_start,
             jd_end=jd_end,
+            latest=latest,
             programid=programid,
             with_history=with_history,
             with_cutouts=with_cutouts,
@@ -271,6 +277,37 @@ def get_alerts_in_cone(
 
 
 @app.get(
+    "/objects/cone_search",
+    tags=["search"],
+)
+def get_objects_in_cone(
+    ra: float = Query(
+        ..., description="Right ascension of field center in degrees (J2000)"
+    ),
+    dec: float = Query(
+        ..., description="Declination of field center in degrees (J2000)"
+    ),
+    radius: float = Query(..., description="radius of search field in degrees"),
+    jd_start: float = Query(..., description="Earliest observation jd"),
+    jd_end: float = Query(..., description="Latest observation jd"),
+    programid: Optional[int] = None,
+    archive: ArchiveDB = Depends(get_archive),
+    auth: bool = Depends(verify_access_token),
+) -> List[str]:
+    chunk = list(
+        archive.get_objects_in_cone(
+            ra=ra,
+            dec=dec,
+            radius=radius,
+            jd_start=jd_start,
+            jd_end=jd_end,
+            programid=programid,
+        )
+    )
+    return chunk
+
+
+@app.get(
     "/alerts/healpix",
     tags=["search"],
     response_model=AlertChunk,
@@ -278,11 +315,27 @@ def get_alerts_in_cone(
 )
 def get_alerts_in_healpix_pixel(
     nside: Literal[
-        "1", "2", "4", "8", "16", "32", "64", "128", "256", "512", "1024", "2048", "4096", "8192"
+        "1",
+        "2",
+        "4",
+        "8",
+        "16",
+        "32",
+        "64",
+        "128",
+        "256",
+        "512",
+        "1024",
+        "2048",
+        "4096",
+        "8192",
     ] = Query("64", description="NSide of (nested) HEALpix grid"),
     ipix: List[int] = Query(..., description="Pixel index"),
     jd_start: float = Query(..., description="Earliest observation jd"),
     jd_end: float = Query(..., description="Latest observation jd"),
+    latest: bool = Query(
+        False, description="Return only the latest alert for each objectId"
+    ),
     with_history: bool = False,
     with_cutouts: bool = False,
     chunk_size: int = Query(
@@ -299,10 +352,10 @@ def get_alerts_in_healpix_pixel(
         resume_token = secrets.token_urlsafe(32)
     chunk = list(
         archive.get_alerts_in_healpix(
-            nside=int(nside),
-            ipix=ipix,
+            pixels={int(nside): ipix},
             jd_start=jd_start,
             jd_end=jd_end,
+            latest=latest,
             with_history=with_history,
             with_cutouts=with_cutouts,
             group_name=resume_token,
@@ -313,6 +366,39 @@ def get_alerts_in_healpix_pixel(
     return AlertChunk(
         resume_token=resume_token,
         chunk_size=chunk_size,
+        chunks_remaining=archive.get_remaining_chunks(resume_token),
+        alerts=chunk,
+    )
+
+
+@app.post(
+    "/alerts/healpix/skymap",
+    tags=["search"],
+    response_model=AlertChunk,
+    response_model_exclude_none=True,
+)
+def get_alerts_in_healpix_map(
+    query: HEALpixMapQuery,
+    archive: ArchiveDB = Depends(get_archive),
+    auth: bool = Depends(verify_access_token),
+) -> AlertChunk:
+    resume_token = query.resume_token or secrets.token_urlsafe(32)
+    chunk = list(
+        archive.get_alerts_in_healpix(
+            pixels=deres(query.nside, query.pixels),
+            jd_start=query.jd.gt,
+            jd_end=query.jd.lt,
+            latest=query.latest,
+            with_history=query.with_history,
+            with_cutouts=query.with_cutouts,
+            group_name=resume_token,
+            block_size=query.chunk_size,
+            max_blocks=1,
+        )
+    )
+    return AlertChunk(
+        resume_token=resume_token,
+        chunk_size=query.chunk_size,
         chunks_remaining=archive.get_remaining_chunks(resume_token),
         alerts=chunk,
     )
@@ -387,7 +473,7 @@ def create_stream_from_topic(
     status_code=201,
 )
 def create_stream_from_query(
-    query: AlertQuery,
+    query: Union[AlertQuery, HEALpixMapQuery],
     archive: ArchiveDB = Depends(get_archive),
     auth: bool = Depends(verify_access_token),
 ):
@@ -395,20 +481,28 @@ def create_stream_from_query(
     Create a stream of alerts from the given query. The resulting resume_token
     can be used to read the stream concurrently from multiple clients.
     """
-    if query.cone:
-        condition, order = archive._cone_search_condition(
-            query.cone.ra,
-            query.cone.dec,
-            query.cone.radius,
-            query.programid,
-            query.jd.gt,
-            query.jd.lt,
-        )
+    if isinstance(query, AlertQuery):
+        if query.cone:
+            condition, order = archive._cone_search_condition(
+                ra=query.cone.ra,
+                dec=query.cone.dec,
+                radius=query.cone.radius,
+                programid=query.programid,
+                jd_min=query.jd.gt,
+                jd_max=query.jd.lt,
+            )
+        else:
+            condition, order = archive._time_range_condition(
+                query.programid,
+                query.jd.gt,
+                query.jd.lt,
+            )
     else:
-        condition, order = archive._time_range_condition(
-            query.programid,
-            query.jd.gt,
-            query.jd.lt,
+        condition, order = archive._healpix_search_condition(
+            pixels=deres(query.nside, query.pixels),
+            jd_min=query.jd.gt,
+            jd_max=query.jd.lt,
+            latest=query.latest,
         )
 
     with archive._engine.connect() as conn:
