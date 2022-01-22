@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE TABLE avro_archive (
 	avro_archive_id SERIAL NOT NULL, 
-	uri TEXT NOT NULL,
+	uri TEXT NOT NULL UNIQUE,
 	PRIMARY KEY (avro_archive_id)
 );
 
