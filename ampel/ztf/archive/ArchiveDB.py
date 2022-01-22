@@ -491,14 +491,16 @@ class ArchiveDB(ArchiveDBClient):
         Groups = self._meta.tables["read_queue_groups"]
         Queue = self._meta.tables["read_queue"]
         with self._engine.connect() as conn:
-            # TODO could do this with a lateral join
+            # Update the access time to keep the group from being deleted
+            # after 24 hours of inactivity.
             group_id = (
                 result[0]
                 if (
                     result := conn.execute(
-                        select([Groups.c.group_id]).where(
-                            Groups.c.group_name == group_name
-                        )
+                        update(Groups)
+                        .where(Groups.c.group_name == group_name)
+                        .values(last_accessed=func.now())
+                        .returning(Groups.c.group_id)
                     ).fetchone()
                 )
                 is not None
