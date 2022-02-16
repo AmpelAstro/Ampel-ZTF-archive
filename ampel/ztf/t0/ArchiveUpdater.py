@@ -54,7 +54,7 @@ class ArchiveUpdater(ArchiveDBClient):
 
                 for alert, span in zip(alerts, ranges):
                     with conn.begin() as transaction:
-                        if self._insert_alert(
+                        self._insert_alert(
                             conn,
                             alert
                             | {
@@ -62,10 +62,8 @@ class ArchiveUpdater(ArchiveDBClient):
                                 "avro_archive_start": span[0],
                                 "avro_archive_end": span[1],
                             },
-                        ):
-                            transaction.commit()
-                        else:
-                            transaction.rollback()
+                        )
+                        transaction.commit()
 
     def insert_alert(self, alert, schema, partition_id, ingestion_time):
         """
