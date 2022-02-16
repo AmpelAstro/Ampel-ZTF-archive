@@ -417,7 +417,6 @@ class ArchiveDB(ArchiveDBClient):
         *,
         distinct: bool = False,
         with_history=False,
-        with_cutouts=False,
         group_name=None,
         block_size=None,
         max_blocks=None,
@@ -457,7 +456,6 @@ class ArchiveDB(ArchiveDBClient):
                     select([func.unnest(popped_item.c.alert_ids)])
                 ),
                 with_history=with_history,
-                with_cutouts=with_cutouts,
             )
         else:
             alert_query = self._build_alert_query(
@@ -465,7 +463,6 @@ class ArchiveDB(ArchiveDBClient):
                 order=order,
                 distinct=distinct,
                 with_history=with_history,
-                with_cutouts=with_cutouts,
             )
 
         while True:
@@ -506,7 +503,7 @@ class ArchiveDB(ArchiveDBClient):
                 )
 
     def get_chunk_from_queue(
-        self, group_name: str, with_history: bool = True, with_cutouts: bool = False
+        self, group_name: str, with_history: bool = True
     ):
         Groups = self._meta.tables["read_queue_groups"]
         Queue = self._meta.tables["read_queue"]
@@ -552,7 +549,6 @@ class ArchiveDB(ArchiveDBClient):
                     select([func.unnest(popped_item.c.alert_ids)])
                 ),
                 with_history=with_history,
-                with_cutouts=with_cutouts,
             )
             with conn.begin() as transaction:
                 for result in conn.execute(alert_query):
@@ -597,7 +593,6 @@ class ArchiveDB(ArchiveDBClient):
         order: List[UnaryExpression] = [],
         distinct: bool = False,
         with_history: bool = True,
-        with_cutouts: bool = False,
     ):
         """
         Build a query whose results _mostly_ match the structure of the orginal
@@ -675,14 +670,6 @@ class ArchiveDB(ArchiveDBClient):
             query = query.join(prv_candidates.lateral(), true()).join(
                 upper_limits.lateral(), true()
             )
-
-        if with_cutouts:
-            cutout = (
-                select([json_agg(Cutout).label("cutouts")])
-                .select_from(Cutout)
-                .where(Cutout.c.alert_id == alert.c.alert_id)
-            )
-            query = query.join(cutout.lateral(), true())
 
         return query.select()
 
@@ -798,7 +785,7 @@ class ArchiveDB(ArchiveDBClient):
             ]
 
     def get_alert(
-        self, candid: int, *, with_history: bool = True, with_cutouts: bool = False
+        self, candid: int, *, with_history: bool = True
     ):
         """
         Retrieve an alert from the archive database
@@ -816,22 +803,9 @@ class ArchiveDB(ArchiveDBClient):
                 conn,
                 Alert.c.candid == candid,
                 with_history=with_history,
-                with_cutouts=with_cutouts,
             ):
                 return alert
         return None
-
-    def get_cutout(self, candid):
-        """ """
-        Alert = self._meta.tables["alert"]
-        Cutout = self._meta.tables["cutout"]
-        q = (
-            select([Cutout.c.kind, Cutout.c.stampData])
-            .select_from(Cutout.join(Alert))
-            .where(Alert.c.candid == candid)
-        )
-        with self._engine.connect() as conn:
-            return dict(conn.execute(q).fetchall())
 
     def get_archive_segment(self, candid):
         """ """
@@ -863,7 +837,6 @@ class ArchiveDB(ArchiveDBClient):
         jd_start: Optional[float] = None,
         jd_end: Optional[float] = None,
         with_history: bool = False,
-        with_cutouts: bool = False,
     ):
         """
         Retrieve alerts from the archive database by ID
@@ -874,7 +847,6 @@ class ArchiveDB(ArchiveDBClient):
         :param jd_start: minimum JD of exposure start
         :param jd_end: maximum JD of exposure start
         :param with_history: return alert with previous detections and upper limits
-        :param with_cutout: return alert with cutout images
         :returns: a generator of alerts matching the condition
         """
         Alert = self._meta.tables["alert"]
@@ -899,7 +871,6 @@ class ArchiveDB(ArchiveDBClient):
                 in_range,
                 [Alert.c.jd.asc()],
                 with_history=with_history,
-                with_cutouts=with_cutouts,
             )
 
     def get_photopoints_for_object(
@@ -948,7 +919,6 @@ class ArchiveDB(ArchiveDBClient):
         candids: List[int],
         *,
         with_history: bool = True,
-        with_cutouts: bool = False,
     ):
         """
         Retrieve alerts from the archive database by ID
@@ -971,7 +941,6 @@ class ArchiveDB(ArchiveDBClient):
                 Alert.c.candid.in_(candids),
                 [order],
                 with_history=with_history,
-                with_cutouts=with_cutouts,
             )
 
     def _time_range_condition(
@@ -999,7 +968,6 @@ class ArchiveDB(ArchiveDBClient):
         jd_end: float,
         programid: Optional[int] = None,
         with_history: bool = True,
-        with_cutouts: bool = False,
         group_name: str = None,
         block_size: int = 5000,
         max_blocks: Optional[int] = None,
@@ -1023,7 +991,6 @@ class ArchiveDB(ArchiveDBClient):
                 condition,
                 order,
                 with_history=with_history,
-                with_cutouts=with_cutouts,
                 group_name=group_name,
                 block_size=block_size,
                 max_blocks=max_blocks,
@@ -1144,7 +1111,6 @@ class ArchiveDB(ArchiveDBClient):
         jd_end: Optional[float] = None,
         latest: bool = False,
         with_history: bool = False,
-        with_cutouts: bool = False,
         group_name: Optional[str] = None,
         block_size: int = 5000,
         max_blocks: Optional[int] = None,
@@ -1178,7 +1144,6 @@ class ArchiveDB(ArchiveDBClient):
                 condition,
                 orders,
                 with_history=with_history,
-                with_cutouts=with_cutouts,
                 distinct=latest,
                 group_name=group_name,
                 block_size=block_size,
@@ -1235,7 +1200,6 @@ class ArchiveDB(ArchiveDBClient):
         jd_end: float,
         latest: bool = False,
         with_history: bool = False,
-        with_cutouts: bool = False,
         group_name: Optional[str] = None,
         block_size: int = 5000,
         max_blocks: Optional[int] = None,
@@ -1261,7 +1225,6 @@ class ArchiveDB(ArchiveDBClient):
                 orders,
                 distinct=latest,
                 with_history=with_history,
-                with_cutouts=with_cutouts,
                 group_name=group_name,
                 block_size=block_size,
                 max_blocks=max_blocks,

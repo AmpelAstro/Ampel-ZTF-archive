@@ -104,14 +104,13 @@ app.include_router(token_router, prefix="/tokens")
 def get_alert(
     candid: int,
     with_history: bool = True,
-    with_cutouts: bool = False,
     archive: ArchiveDB = Depends(get_archive),
 ):
     """
     Get a single alert by candidate id.
     """
     return archive.get_alert(
-        candid, with_history=with_history, with_cutouts=with_cutouts
+        candid, with_history=with_history
     )
 
 
@@ -238,9 +237,6 @@ def get_alerts_for_object(
     with_history: bool = Query(
         False, description="Include previous detections and upper limits"
     ),
-    with_cutouts: bool = Query(
-        False, description="Include image cutouts (if available)"
-    ),
     archive: ArchiveDB = Depends(get_archive),
     auth: bool = Depends(verify_access_token),
 ):
@@ -252,7 +248,6 @@ def get_alerts_for_object(
         jd_start=jd_start,
         jd_end=jd_end,
         with_history=with_history,
-        with_cutouts=with_cutouts,
     )
 
 
@@ -296,7 +291,6 @@ def get_alerts_in_time_range(
     jd_end: float = Query(..., description="Latest observation jd"),
     programid: Optional[int] = None,
     with_history: bool = False,
-    with_cutouts: bool = False,
     chunk_size: int = Query(
         100, gt=0, lte=10000, description="Number of alerts to return per page"
     ),
@@ -315,7 +309,6 @@ def get_alerts_in_time_range(
             jd_end=jd_end,
             programid=programid,
             with_history=with_history,
-            with_cutouts=with_cutouts,
             group_name=resume_token,
             block_size=chunk_size,
             max_blocks=1,
@@ -350,7 +343,6 @@ def get_alerts_in_cone(
         False, description="Return only the latest alert for each objectId"
     ),
     with_history: bool = False,
-    with_cutouts: bool = False,
     chunk_size: int = Query(
         100, gt=0, lte=10000, description="Number of alerts to return per page"
     ),
@@ -373,7 +365,6 @@ def get_alerts_in_cone(
             latest=latest,
             programid=programid,
             with_history=with_history,
-            with_cutouts=with_cutouts,
             group_name=resume_token,
             block_size=chunk_size,
             max_blocks=1,
@@ -448,7 +439,6 @@ def get_alerts_in_healpix_pixel(
         False, description="Return only the latest alert for each objectId"
     ),
     with_history: bool = False,
-    with_cutouts: bool = False,
     chunk_size: int = Query(
         100, gt=0, lte=10000, description="Number of alerts to return per page"
     ),
@@ -468,7 +458,6 @@ def get_alerts_in_healpix_pixel(
             jd_end=jd_end,
             latest=latest,
             with_history=with_history,
-            with_cutouts=with_cutouts,
             group_name=resume_token,
             block_size=chunk_size,
             max_blocks=1,
@@ -501,7 +490,6 @@ def get_alerts_in_healpix_map(
             jd_end=query.jd.lt,
             latest=query.latest,
             with_history=query.with_history,
-            with_cutouts=query.with_cutouts,
             group_name=resume_token,
             block_size=query.chunk_size,
             max_blocks=1,
@@ -641,7 +629,6 @@ def create_stream_from_query(
 def stream_get_chunk(
     resume_token: str,
     with_history: bool = True,
-    with_cutouts: bool = False,
     archive: ArchiveDB = Depends(get_archive),
 ):
     """
@@ -649,7 +636,7 @@ def stream_get_chunk(
     """
     try:
         chunk = list(
-            archive.get_chunk_from_queue(resume_token, with_history, with_cutouts)
+            archive.get_chunk_from_queue(resume_token, with_history)
         )
     except GroupNotFoundError:
         raise HTTPException(status_code=404, detail="Stream not found")

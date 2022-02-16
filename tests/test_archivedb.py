@@ -385,25 +385,6 @@ def assert_alerts_equivalent(alert, reco_alert):
             assert reco_candidate[k] == candidate[k]
 
 
-def test_get_cutout(empty_archive, alert_generator):
-    processor_id = 0
-    updater = ArchiveUpdater(empty_archive)
-    db = ArchiveDB(empty_archive)
-    for idx, (alert, schema) in enumerate(alert_generator(with_schema=True)):
-        processor_id = idx % 16
-        updater.insert_alert(alert, schema, processor_id, 0)
-
-    for idx, alert in enumerate(alert_generator()):
-        processor_id = idx % 16
-        cutouts = db.get_cutout(alert["candid"])
-        alert_cutouts = {
-            k[len("cutout") :].lower(): v["stampData"]
-            for k, v in alert.items()
-            if k.startswith("cutout")
-        }
-        assert cutouts == alert_cutouts
-
-
 def test_serializability(empty_archive, alert_generator):
     """
     Ensure that we can recover avro alerts from the db
@@ -423,7 +404,7 @@ def test_serializability(empty_archive, alert_generator):
         updater.insert_alert(alert, schema, processor_id, 0)
 
     for idx, alert in enumerate(alert_generator()):
-        reco = db.get_alert(alert["candid"], with_history=True, with_cutouts=True)
+        reco = db.get_alert(alert["candid"], with_history=True)
         # round-trip to avro and back
         f = BytesIO()
         writer(f, schema, [reco])
@@ -453,10 +434,14 @@ def test_schema_update(empty_archive, alert_with_schema):
 
     alert, schema = alert_with_schema
     updater.insert_alert(alert, schema, 0, 0)
-    reco = db.get_alert(alert["candid"], with_history=True, with_cutouts=True)
+    reco = db.get_alert(alert["candid"], with_history=True)
     f = BytesIO()
     writer(f, schema, [reco])
     deserialized = next(reader(BytesIO(f.getvalue())))
+    # remove cutouts, as they're not stored in the archive
+    for k in list(deserialized.keys()):
+        if k.startswith("cutout"):
+            del deserialized[k]
     assert deserialized.keys() == reco.keys()
     for k in reco:
         if not "candidate" in k or "cutout" in k:
@@ -499,11 +484,15 @@ def test_archive_object(alert_generator, empty_archive) -> None:
     db = ArchiveDB(empty_archive)
 
     for alert in islice(alert_generator(), 10):
-        reco_alert = db.get_alert(alert["candid"], with_history=True, with_cutouts=True)
+        reco_alert = db.get_alert(alert["candid"], with_history=True)
         # some necessary normalization on the alert
         for k, v in alert["candidate"].items():
             if isinstance(v, float) and isnan(v):
                 alert["candidate"][k] = None
+        # remove cutouts, as they're not stored in the archive
+        for k in list(alert.keys()):
+            if k.startswith("cutout"):
+                del alert[k]
         assert_alerts_equivalent(alert, reco_alert)
 
     alerts = list(islice(alert_generator(), 10))
@@ -628,7 +617,6 @@ def test_cone_search(alert_archive):
             dec=0,
             radius=1,
             with_history=False,
-            with_cutouts=False,
             group_name=group,
         )
     )
