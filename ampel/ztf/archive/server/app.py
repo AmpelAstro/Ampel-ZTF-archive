@@ -24,7 +24,12 @@ from fastapi.concurrency import run_in_threadpool
 from .settings import settings
 from .db import get_archive, get_archive_updater
 from .s3 import get_object, get_range, get_s3_bucket, get_url_for_key
-from .tokens import router as token_router, verify_access_token, verify_write_token
+from .tokens import (
+    router as token_router,
+    verify_access_token,
+    verify_write_token,
+    AuthToken,
+)
 from .models import (
     Alert,
     AlertChunk,
@@ -195,6 +200,23 @@ def get_cutouts(
     raise HTTPException(status_code=404)
 
 
+def verify_authorized_programid(
+    programid: Optional[int] = Query(
+        None, description="ZTF observing program to query"
+    ),
+    auth: AuthToken = Depends(verify_access_token),
+) -> Optional[int]:
+    if not auth.partnership:
+        if programid is None:
+            return 1
+        elif programid != 1:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Not authorized for programid {programid}",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+    return programid
+
 @app.get(
     "/object/{objectId}/alerts",
     tags=["alerts"],
@@ -213,7 +235,8 @@ def get_alerts_for_object(
         False, description="Include previous detections and upper limits"
     ),
     archive: ArchiveDB = Depends(get_archive),
-    auth: bool = Depends(verify_access_token),
+    auth: AuthToken = Depends(verify_access_token),
+    programid: Optional[int] = Depends(verify_authorized_programid),
 ):
     """
     Get all alerts for the given object.
@@ -222,6 +245,7 @@ def get_alerts_for_object(
         objectId,
         jd_start=jd_start,
         jd_end=jd_end,
+        programid=programid,
         with_history=with_history,
     )
 
@@ -234,9 +258,6 @@ def get_alerts_for_object(
 )
 def get_photopoints_for_object(
     objectId: str = Field(..., description="ZTF object name"),
-    programid: Optional[Literal[1, 2, 3]] = Query(
-        None, description="ZTF observing program for which to return photopoints"
-    ),
     jd_start: Optional[float] = Query(
         None, description="minimum Julian Date of observation"
     ),
@@ -244,14 +265,18 @@ def get_photopoints_for_object(
         None, description="maximum Julian Date of observation"
     ),
     archive: ArchiveDB = Depends(get_archive),
-    auth: bool = Depends(verify_access_token),
+    auth: AuthToken = Depends(verify_access_token),
+    programid: Optional[int] = Depends(verify_authorized_programid),
 ):
     """
     Get all detections and upper limits for the given object, consolidated into
     a single alert packet.
     """
     return archive.get_photopoints_for_object(
-        objectId, programid=programid, jd_start=jd_start, jd_end=jd_end
+        objectId,
+        programid=programid,
+        jd_start=jd_start,
+        jd_end=jd_end,
     )
 
 
@@ -264,7 +289,6 @@ def get_photopoints_for_object(
 def get_alerts_in_time_range(
     jd_start: float = Query(..., description="Earliest observation jd"),
     jd_end: float = Query(..., description="Latest observation jd"),
-    programid: Optional[int] = None,
     with_history: bool = False,
     chunk_size: int = Query(
         100, gt=0, lte=10000, description="Number of alerts to return per page"
@@ -275,6 +299,7 @@ def get_alerts_in_time_range(
     ),
     archive: ArchiveDB = Depends(get_archive),
     auth: bool = Depends(verify_access_token),
+    programid: Optional[int] = Depends(verify_authorized_programid),
 ) -> AlertChunk:
     if resume_token is None:
         resume_token = secrets.token_urlsafe(32)
@@ -313,7 +338,6 @@ def get_alerts_in_cone(
     radius: float = Query(..., description="radius of search field in degrees"),
     jd_start: float = Query(..., description="Earliest observation jd"),
     jd_end: float = Query(..., description="Latest observation jd"),
-    programid: Optional[int] = None,
     latest: bool = Query(
         False, description="Return only the latest alert for each objectId"
     ),
@@ -327,6 +351,7 @@ def get_alerts_in_cone(
     ),
     archive: ArchiveDB = Depends(get_archive),
     auth: bool = Depends(verify_access_token),
+    programid: Optional[int] = Depends(verify_authorized_programid),
 ) -> AlertChunk:
     if resume_token is None:
         resume_token = secrets.token_urlsafe(32)
@@ -367,9 +392,9 @@ def get_objects_in_cone(
     radius: float = Query(..., description="radius of search field in degrees"),
     jd_start: float = Query(..., description="Earliest observation jd"),
     jd_end: float = Query(..., description="Latest observation jd"),
-    programid: Optional[int] = None,
     archive: ArchiveDB = Depends(get_archive),
     auth: bool = Depends(verify_access_token),
+    programid: Optional[int] = Depends(verify_authorized_programid),
 ) -> List[str]:
     chunk = list(
         archive.get_objects_in_cone(
@@ -423,6 +448,7 @@ def get_alerts_in_healpix_pixel(
     ),
     archive: ArchiveDB = Depends(get_archive),
     auth: bool = Depends(verify_access_token),
+    programid: Optional[int] = Depends(verify_authorized_programid),
 ) -> AlertChunk:
     if resume_token is None:
         resume_token = secrets.token_urlsafe(32)
@@ -432,6 +458,7 @@ def get_alerts_in_healpix_pixel(
             jd_start=jd_start,
             jd_end=jd_end,
             latest=latest,
+            programid=programid,
             with_history=with_history,
             group_name=resume_token,
             block_size=chunk_size,
@@ -456,6 +483,7 @@ def get_alerts_in_healpix_map(
     query: HEALpixMapQuery,
     archive: ArchiveDB = Depends(get_archive),
     auth: bool = Depends(verify_access_token),
+    programid: Optional[int] = Depends(verify_authorized_programid),
 ) -> AlertChunk:
     resume_token = query.resume_token or secrets.token_urlsafe(32)
     chunk = list(
@@ -464,6 +492,7 @@ def get_alerts_in_healpix_map(
             jd_start=query.jd.gt,
             jd_end=query.jd.lt,
             latest=query.latest,
+            programid=programid,
             with_history=query.with_history,
             group_name=resume_token,
             block_size=query.chunk_size,
@@ -550,6 +579,7 @@ def create_stream_from_query(
     query: Union[AlertQuery, HEALpixRegionQuery],
     archive: ArchiveDB = Depends(get_archive),
     auth: bool = Depends(verify_access_token),
+    programid: Optional[int] = Depends(verify_authorized_programid),
 ):
     """
     Create a stream of alerts from the given query. The resulting resume_token
@@ -561,13 +591,13 @@ def create_stream_from_query(
                 ra=query.cone.ra,
                 dec=query.cone.dec,
                 radius=query.cone.radius,
-                programid=query.programid,
+                programid=programid,
                 jd_min=query.jd.gt,
                 jd_max=query.jd.lt,
             )
         else:
             condition, order = archive._time_range_condition(
-                query.programid,
+                programid,
                 query.jd.gt,
                 query.jd.lt,
             )
@@ -580,6 +610,7 @@ def create_stream_from_query(
             jd_min=query.jd.gt,
             jd_max=query.jd.lt,
             latest=query.latest,
+            programid=programid,
         )
 
     name = secrets.token_urlsafe(32)

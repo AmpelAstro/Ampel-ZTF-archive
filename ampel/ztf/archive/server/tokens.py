@@ -1,7 +1,8 @@
+from dataclasses import dataclass
 from functools import cached_property
 import sqlalchemy
 from ampel.ztf.archive.ArchiveDB import ArchiveDB, select
-from typing import Any, List
+from typing import Any, List, Optional
 import jwt
 
 from pydantic import BaseModel, ValidationError
@@ -31,6 +32,13 @@ class TokenRequest(BaseModel):
     token: str
 
 
+@dataclass
+class AuthToken:
+    id: int
+    role: str
+    partnership: bool
+
+
 async def get_user(auth: HTTPAuthorizationCredentials = Depends(user_bearer)) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -54,32 +62,37 @@ async def get_user(auth: HTTPAuthorizationCredentials = Depends(user_bearer)) ->
         raise credentials_exception
 
 
-def find_access_token(db: ArchiveDB, token: str) -> Any:
+def find_access_token(db: ArchiveDB, token: str) -> Optional[AuthToken]:
     Token = db._meta.tables["access_token"]
     try:
         with db._engine.connect() as conn:
             try:
                 cursor = conn.execute(
-                    select([Token.c.token_id, Token.c.role]).where(Token.c.token == token).limit(1)
+                    select([Token.c.token_id, Token.c.role, Token.c.partnership])
+                    .where(Token.c.token == token)
+                    .limit(1)
                 )
             except sqlalchemy.exc.DataError:
                 # e.g. invalid input syntax for type uuid
                 return None
-            return cursor.fetchone()
+            return AuthToken(*cursor.fetchone())
     except sqlalchemy.exc.TimeoutError as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        )
 
 
 async def verify_access_token(
     auth: HTTPAuthorizationCredentials = Depends(token_bearer), db=Depends(get_archive)
-) -> bool:
-    if not find_access_token(db, auth.credentials):
+) -> AuthToken:
+    if (token := find_access_token(db, auth.credentials)) is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return True
+    return token
+
 
 async def verify_write_token(
     auth: HTTPAuthorizationCredentials = Depends(token_bearer), db=Depends(get_archive)
@@ -90,7 +103,7 @@ async def verify_write_token(
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    elif token["role"] != "writer":
+    elif token.role != "writer":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
@@ -107,7 +120,14 @@ def create_token(user: User = Depends(get_user), db: ArchiveDB = Depends(get_arc
     Token = db._meta.tables["access_token"]
     with db._engine.connect() as conn:
         cursor = conn.execute(
-            Token.insert({"owner": user.name}).returning(Token.c.token)
+            Token.insert(
+                {
+                    "owner": user.name,
+                    "partnership": bool(
+                        settings.partnership_identities.intersection(user.identities)
+                    ),
+                }
+            ).returning(Token.c.token)
         )
         return cursor.fetchone()["token"]
 

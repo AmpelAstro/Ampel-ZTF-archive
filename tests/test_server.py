@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 from ampel.ztf.archive.server.cutouts import extract_alert, pack_records, ALERT_SCHEMAS
 from ampel.ztf.archive.server.db import get_archive, get_archive_updater
 from ampel.ztf.archive.server.s3 import get_object, get_range, get_s3_bucket
+from ampel.ztf.archive.server.tokens import AuthToken
 from fastapi.security import http
 from urllib.parse import urlsplit
 import fastavro
@@ -57,7 +58,9 @@ def mock_auth(mocker: "MockerFixture"):
     from ampel.ztf.archive.server import tokens
 
     mocker.patch.object(
-        tokens, "find_access_token", side_effect=lambda *args: {"role": "writer"}
+        tokens,
+        "find_access_token",
+        side_effect=lambda *args: AuthToken(0, "writer", False),
     )
     yield
 
@@ -196,7 +199,7 @@ async def test_basic_auth(
     mocker,
 ):
     mocker.patch("ampel.ztf.archive.server.tokens.find_access_token").return_value = (
-        auth is not BearerAuth
+        None if auth is BearerAuth else AuthToken(0, "jiminy", False)
     )
     kwargs = {}
     if auth is DEFAULT or auth is BearerAuth:
@@ -205,6 +208,49 @@ async def test_basic_auth(
         kwargs["auth"] = None
     response = await mock_client.get("/object/thingamajig/alerts", **kwargs)
     assert response.status_code == status
+
+
+@pytest.mark.parametrize(
+    "partnership",
+    [False, True],
+)
+@pytest.mark.parametrize(
+    "params,status_code",
+    [
+        ({}, status.HTTP_200_OK),
+        ({"programid": 1}, status.HTTP_200_OK),
+        ({"programid": 2}, status.HTTP_401_UNAUTHORIZED),
+    ],
+)
+@pytest.mark.asyncio
+async def test_programid_auth(
+    mock_client: httpx.AsyncClient,
+    mock_db: MagicMock,
+    mocker,
+    partnership,
+    params,
+    status_code,
+):
+    mocker.patch(
+        "ampel.ztf.archive.server.tokens.find_access_token"
+    ).return_value = AuthToken(0, "reader", partnership)
+
+    response = await mock_client.get(
+        "/object/thingamajig/alerts", auth=BearerAuth("tokeytoken"), params=params
+    )
+    if partnership:
+        assert response.status_code == status.HTTP_200_OK
+        assert mock_db.get_alerts_for_object.call_args.kwargs[
+            "programid"
+        ] == params.get(
+            "programid"
+        ), "programid is passed through for partnership token"
+    else:
+        assert response.status_code == status_code
+        if response.status_code == status.HTTP_200_OK:
+            assert (
+                mock_db.get_alerts_for_object.call_args.kwargs["programid"] == 1
+            ), "non-partnership tokens always query programid 1"
 
 
 @pytest.mark.asyncio

@@ -62,7 +62,6 @@ class StrictTimeConstraint(TimeConstraint):
 class AlertQuery(StrictModel):
     cone: Optional[ConeConstraint] = None
     jd: TimeConstraint = TimeConstraint()
-    programid: Optional[int] = None
     chunk_size: int = Field(
         100, gte=0, lte=10000, description="Number of alerts per chunk"
     )

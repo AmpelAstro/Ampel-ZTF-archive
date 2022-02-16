@@ -502,9 +502,7 @@ class ArchiveDB(ArchiveDBClient):
                     )
                 )
 
-    def get_chunk_from_queue(
-        self, group_name: str, with_history: bool = True
-    ):
+    def get_chunk_from_queue(self, group_name: str, with_history: bool = True):
         Groups = self._meta.tables["read_queue_groups"]
         Queue = self._meta.tables["read_queue"]
         with self._engine.connect() as conn:
@@ -784,9 +782,7 @@ class ArchiveDB(ArchiveDBClient):
                 0
             ]
 
-    def get_alert(
-        self, candid: int, *, with_history: bool = True
-    ):
+    def get_alert(self, candid: int, *, with_history: bool = True):
         """
         Retrieve an alert from the archive database
 
@@ -836,6 +832,7 @@ class ArchiveDB(ArchiveDBClient):
         *,
         jd_start: Optional[float] = None,
         jd_end: Optional[float] = None,
+        programid: Optional[int] = None,
         with_history: bool = False,
     ):
         """
@@ -863,6 +860,8 @@ class ArchiveDB(ArchiveDBClient):
             conditions.insert(0, Alert.c.jd < jd_end)
         if jd_start is not None:
             conditions.insert(0, Alert.c.jd >= jd_start)
+        if programid is not None:
+            conditions.insert(0, Alert.c.programid == programid)
         in_range = and_(*conditions)
 
         with self._engine.connect() as conn:
@@ -1043,6 +1042,7 @@ class ArchiveDB(ArchiveDBClient):
         jd_min: float,
         jd_max: float,
         latest: bool = False,
+        programid: Optional[int] = None,
     ) -> Tuple[BooleanClauseList, List[UnaryExpression]]:
         Candidate = self.get_table("candidate")
 
@@ -1056,7 +1056,9 @@ class ArchiveDB(ArchiveDBClient):
         # of healpix_ang2ipix_nest, even though it is marked IMMUTABLE. this can result in
         # e.g. the pixel index being calculated 300 times for every row if you have 300
         # elements in your OR clause, which can end up dominating the runtime of the query.
-        consolidated_pixels: collections.defaultdict[int, set[int]] = collections.defaultdict(set)
+        consolidated_pixels: collections.defaultdict[
+            int, set[int]
+        ] = collections.defaultdict(set)
 
         # a stored column works better with parallel workers, since healpix_ang2ipix_nest
         # is not marked parallel safe
@@ -1069,9 +1071,13 @@ class ArchiveDB(ArchiveDBClient):
                 raise ValueError("nside must be >= 1, <= 8192, and a power of 2")
             elif nside <= 64:
                 scale = (64 // nside) ** 2
-                consolidated_pixels[64].update((i * scale for i in ([ipix] if isinstance(ipix, int) else ipix)))
+                consolidated_pixels[64].update(
+                    (i * scale for i in ([ipix] if isinstance(ipix, int) else ipix))
+                )
             else:
-                consolidated_pixels[nside].update([ipix] if isinstance(ipix, int) else ipix)
+                consolidated_pixels[nside].update(
+                    [ipix] if isinstance(ipix, int) else ipix
+                )
 
         # nest pixels finer than the indexed resolution inside a check on the containing superpixels
         for nside in consolidated_pixels:
@@ -1089,12 +1095,16 @@ class ArchiveDB(ArchiveDBClient):
                     )
                 )
 
+        and_conditions = [
+            or_(*conditions),
+            Candidate.c.jd >= jd_min,
+            Candidate.c.jd < jd_max,
+        ]
+        if programid is not None:
+            and_conditions.append(Candidate.c.programid == programid)
+
         return (
-            and_(
-                or_(*conditions),
-                Candidate.c.jd >= jd_min,
-                Candidate.c.jd < jd_max,
-            ),
+            and_(*and_conditions),
             [Candidate.c.jd.asc()]
             if not latest
             else [Candidate.c.jd.desc(), Candidate.c.candid.desc()],
@@ -1199,6 +1209,7 @@ class ArchiveDB(ArchiveDBClient):
         jd_start: float,
         jd_end: float,
         latest: bool = False,
+        programid: Optional[int] = None,
         with_history: bool = False,
         group_name: Optional[str] = None,
         block_size: int = 5000,
@@ -1215,7 +1226,11 @@ class ArchiveDB(ArchiveDBClient):
 
         """
         condition, orders = self._healpix_search_condition(
-            pixels=pixels, jd_min=jd_start, jd_max=jd_end, latest=latest
+            pixels=pixels,
+            jd_min=jd_start,
+            jd_max=jd_end,
+            latest=latest,
+            programid=programid,
         )
 
         with self._engine.connect() as conn:
