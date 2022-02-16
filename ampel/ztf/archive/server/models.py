@@ -103,16 +103,6 @@ class HEALpixRegionQuery(MapQueryBase):
     regions: list[HEALpixMapRegion]
 
 
-class AlertCutouts(BaseModel):
-    """
-    Images are gzipped FITS files, b64 encoded
-    """
-
-    template: str
-    science: str
-    difference: str
-
-
 # Generated from tests/test-data/schema_3.3.json
 # 1. Convert avro to json-schema with https://json-schema-validator.herokuapp.com/avro.jsp
 # 2. Convert json-schema to pydantic with datamodel-codegen --input schema_3.3.json --output alert --use-schema-description
@@ -294,7 +284,7 @@ class PrvCandidate(BaseModel):
 
 class Cutout(BaseModel):
     """
-    avro alert schema
+    stampData is a gzipped FITS file, b64 encoded
     """
 
     fileName: str
