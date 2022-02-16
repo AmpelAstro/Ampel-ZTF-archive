@@ -38,32 +38,34 @@ class ArchiveUpdater(ArchiveDBClient):
         AvroArchive = self._meta.tables["avro_archive"]
 
         with self._engine.connect() as conn:
-            with conn.begin() as transaction:
 
-                if row := conn.execute(
-                    select([AvroArchive.c.avro_archive_id]).where(
-                        AvroArchive.c.uri == archive_uri
-                    )
-                ).fetchone():
-                    archive_id = row[0]
-                else:
-                    archive_id = conn.execute(
-                        AvroArchive.insert()
-                        .values(uri=archive_uri)
-                        .returning(AvroArchive.c.avro_archive_id)
-                    ).fetchone()[0]
+            if row := conn.execute(
+                select([AvroArchive.c.avro_archive_id]).where(
+                    AvroArchive.c.uri == archive_uri
+                )
+            ).fetchone():
+                archive_id = row[0]
+            else:
+                archive_id = conn.execute(
+                    AvroArchive.insert()
+                    .values(uri=archive_uri)
+                    .returning(AvroArchive.c.avro_archive_id)
+                ).fetchone()[0]
 
                 for alert, span in zip(alerts, ranges):
-                    self._insert_alert(
-                        conn,
-                        alert
-                        | {
-                            "avro_archive_id": archive_id,
-                            "avro_archive_start": span[0],
-                            "avro_archive_end": span[1],
-                        },
-                    )
-                transaction.commit()
+                    with conn.begin() as transaction:
+                        if self._insert_alert(
+                            conn,
+                            alert
+                            | {
+                                "avro_archive_id": archive_id,
+                                "avro_archive_start": span[0],
+                                "avro_archive_end": span[1],
+                            },
+                        ):
+                            transaction.commit()
+                        else:
+                            transaction.rollback()
 
     def insert_alert(self, alert, schema, partition_id, ingestion_time):
         """
