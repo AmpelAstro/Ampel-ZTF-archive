@@ -192,34 +192,6 @@ def get_cutouts(
     }
 
 
-@app.put(
-    "/alert/{candid}/cutouts",
-    tags=["alerts"],
-    response_model_exclude_none=True,
-)
-def put_alert(
-    candid: int,
-    content: AlertCutouts,
-    s3=Depends(get_s3_bucket),
-    auth: bool = Depends(verify_write_token),
-):
-    s3.put_object(
-        Key=f"{candid}.avro",
-        Body=repack_alert(
-            {
-                "candid": candid,
-                **{
-                    f"cutout{kind.capitalize()}": {
-                        "fileName": "",
-                        "stampData": base64.b64decode(payload),
-                    }
-                    for kind, payload in content.dict().items()
-                },
-            }
-        ),
-    )
-
-
 @app.get(
     "/object/{objectId}/alerts",
     tags=["alerts"],
