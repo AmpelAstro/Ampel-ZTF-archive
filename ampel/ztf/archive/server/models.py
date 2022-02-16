@@ -73,6 +73,7 @@ class AlertQuery(StrictModel):
             raise ValueError(f"At least one constraint (cone or jd) must be specified")
         return values
 
+
 class MapQueryBase(StrictModel):
     jd: StrictTimeConstraint
     latest: bool = Field(
@@ -88,22 +89,25 @@ class MapQueryBase(StrictModel):
         description="Identifier of a previous query to continue. This token expires after 24 hours.",
     )
 
+
 class HEALpixMapRegion(StrictModel):
     nside: int
     pixels: list[int]
 
+
 class HEALpixMapQuery(MapQueryBase, HEALpixMapRegion):
     ...
 
+
 class HEALpixRegionQuery(MapQueryBase):
-    regions: list[HEALpixMapRegion] 
-    
+    regions: list[HEALpixMapRegion]
 
 
 class AlertCutouts(BaseModel):
     """
     Images are gzipped FITS files, b64 encoded
     """
+
     template: str
     science: str
     difference: str
@@ -297,23 +301,29 @@ class Cutout(BaseModel):
     stampData: bytes
 
 
-class Alert(BaseModel):
+class AlertBase(BaseModel):
+    candid: int
+    objectId: str
+
+    class Config:
+        json_encoders = {bytes: lambda v: b64encode(v).decode()}
+
+
+class AlertCutouts(AlertBase):
+    cutoutScience: Optional[Cutout]
+    cutoutTemplate: Optional[Cutout]
+    cutoutDifference: Optional[Cutout]
+
+
+class Alert(AlertCutouts):
     """
     avro alert schema for ZTF (www.ztf.caltech.edu)
     """
 
     schemavsn: str = "3.3"
     publisher: str = "Ampel"
-    objectId: str
-    candid: int
     candidate: Candidate
     prv_candidates: Optional[List[PrvCandidate]]
-    cutoutScience: Optional[Cutout]
-    cutoutTemplate: Optional[Cutout]
-    cutoutDifference: Optional[Cutout]
-
-    class Config:
-        json_encoders = {bytes: lambda v: b64encode(v).decode()}
 
 
 class AlertChunk(BaseModel):

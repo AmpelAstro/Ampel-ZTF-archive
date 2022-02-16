@@ -95,25 +95,6 @@ app.add_middleware(
 app.include_router(token_router, prefix="/tokens")
 
 
-@app.get(
-    "/alert/{candid}",
-    tags=["alerts"],
-    response_model=Alert,
-    response_model_exclude_none=True,
-)
-def get_alert(
-    candid: int,
-    with_history: bool = True,
-    archive: ArchiveDB = Depends(get_archive),
-):
-    """
-    Get a single alert by candidate id.
-    """
-    return archive.get_alert(
-        candid, with_history=with_history
-    )
-
-
 # NB: make deserialization depend on write auth to minimize attack surface
 async def deserialize_avro_body(
     request: Request, auth: bool = Depends(verify_write_token)
@@ -165,6 +146,43 @@ def post_alert_chunk(
     )
 
 
+def get_alert_from_s3(
+    candid: int,
+    db: ArchiveDB,
+    bucket: "Bucket",
+) -> Optional[dict]:
+    try:
+        uri, start, end = db.get_archive_segment(candid)
+    except (ValueError, TypeError):
+        return None
+    path = urlsplit(uri).path.split("/")
+    assert path[-2] == bucket.name
+    try:
+        return extract_alert(candid, *get_range(bucket, path[-1], start, end))
+    except KeyError as err:
+        return None
+
+
+@app.get(
+    "/alert/{candid}",
+    tags=["alerts"],
+    response_model=Alert,
+    response_model_exclude_none=True,
+)
+def get_alert(
+    candid: int,
+    db: ArchiveDB = Depends(get_archive),
+    bucket=Depends(get_s3_bucket),
+):
+    """
+    Get a single alert by candidate id.
+    """
+    if alert := get_alert_from_s3(candid, db, bucket):
+        return alert
+    else:
+        return db.get_alert(candid, with_history=True)
+
+
 @app.get("/alert/{candid}/cutouts", tags=["cutouts"], response_model=AlertCutouts)
 def get_cutouts(
     candid: int,
@@ -172,24 +190,9 @@ def get_cutouts(
     bucket=Depends(get_s3_bucket),
     auth: bool = Depends(verify_access_token),
 ):
-    try:
-        uri, start, end = db.get_archive_segment(candid)
-    except (ValueError, TypeError):
-        raise HTTPException(status_code=404)
-    path = urlsplit(uri).path.split("/")
-    assert path[-2] == bucket.name
-    try:
-        alert = extract_alert(candid, *get_range(bucket, path[-1], start, end))
-    except KeyError as err:
-        raise HTTPException(status_code=404) from err
-    return {
-        "candid": alert["candid"],
-        **{
-            k[6:].lower(): b64encode(v["stampData"])
-            for k, v in alert.items()
-            if k.startswith("cutout")
-        },
-    }
+    if (alert := get_alert_from_s3(candid, db, bucket)):
+        return alert
+    raise HTTPException(status_code=404)
 
 
 @app.get(
@@ -607,9 +610,7 @@ def stream_get_chunk(
     Get the next available chunk of alerts from the given stream.
     """
     try:
-        chunk = list(
-            archive.get_chunk_from_queue(resume_token, with_history)
-        )
+        chunk = list(archive.get_chunk_from_queue(resume_token, with_history))
     except GroupNotFoundError:
         raise HTTPException(status_code=404, detail="Stream not found")
     return AlertChunk(

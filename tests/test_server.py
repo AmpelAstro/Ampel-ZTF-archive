@@ -610,11 +610,12 @@ async def test_repost_alert_chunk(
         )
         response.raise_for_status()
         cutouts = response.json()
-        assert set(cutouts.keys()) == {"template", "science", "difference"}
-        for kind, cutout in cutouts.items():
-            base64.b64encode(
-                record[f"cutout{kind.capitalize()}"]["stampData"]
-            ) == cutout
+        for kind in ("template", "science", "difference"):
+            key = f"cutout{kind.capitalize()}"
+            assert (
+                base64.b64encode(record[key]["stampData"]).decode()
+                == cutouts[key]["stampData"]
+            )
 
 
 @pytest.mark.asyncio
