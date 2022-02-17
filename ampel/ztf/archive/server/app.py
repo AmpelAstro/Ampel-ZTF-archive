@@ -594,12 +594,14 @@ def create_stream_from_query(
                 programid=programid,
                 jd_min=query.jd.gt,
                 jd_max=query.jd.lt,
+                candidate_filter=query.candidate,
             )
         else:
             condition, order = archive._time_range_condition(
                 programid,
                 query.jd.gt,
                 query.jd.lt,
+                candidate_filter=query.candidate,
             )
     else:
         pixels: dict[int, list[int]] = {}
@@ -611,6 +613,7 @@ def create_stream_from_query(
             jd_max=query.jd.lt,
             latest=query.latest,
             programid=programid,
+            candidate_filter=query.candidate,
         )
 
     name = secrets.token_urlsafe(32)

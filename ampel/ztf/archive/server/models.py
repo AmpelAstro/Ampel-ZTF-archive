@@ -1,6 +1,7 @@
 from base64 import b64encode
 from typing import List, Dict, Any, Literal, Optional
 from pydantic import BaseModel, Field, validator, root_validator
+from ..types import FilterClause
 
 
 class StrictModel(BaseModel):
@@ -58,10 +59,21 @@ class StrictTimeConstraint(TimeConstraint):
     lt: float
     gt: float
 
+class CandidateFilterable(StrictModel):
+    candidate: Optional[FilterClause] = None
 
-class AlertQuery(StrictModel):
+    @validator("candidate", pre=True, each_item=True)
+    def validate_operator(cls, v):
+        if isinstance(v, dict):
+            assert len(v) == 1
+            return v
+        else:
+            return {"$eq": v}
+
+class AlertQuery(CandidateFilterable):
     cone: Optional[ConeConstraint] = None
     jd: TimeConstraint = TimeConstraint()
+    candidate: Optional[FilterClause] = None
     chunk_size: int = Field(
         100, gte=0, lte=10000, description="Number of alerts per chunk"
     )
@@ -73,7 +85,7 @@ class AlertQuery(StrictModel):
         return values
 
 
-class MapQueryBase(StrictModel):
+class MapQueryBase(CandidateFilterable):
     jd: StrictTimeConstraint
     latest: bool = Field(
         False, description="Return only the latest alert for each objectId"

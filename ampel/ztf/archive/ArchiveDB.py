@@ -9,6 +9,7 @@
 
 import json
 import math
+import operator
 from typing import (
     Any,
     Dict,
@@ -35,6 +36,7 @@ from sqlalchemy.exc import IntegrityError
 import sqlalchemy, collections
 
 from ampel.ztf.archive.ArchiveDBClient import ArchiveDBClient
+from .types import FilterClause
 
 if TYPE_CHECKING:
     from sqlalchemy.sql.visitors import Visitable
@@ -942,13 +944,36 @@ class ArchiveDB(ArchiveDBClient):
                 with_history=with_history,
             )
 
+    def _candidate_filter_condition(
+        self, candidate_filter: FilterClause
+    ) -> BooleanClauseList:
+        Candidate = self.get_table("candidate")
+        ops = {
+            "$eq": operator.eq,
+            "$ne": operator.ne,
+            "$gt": operator.gt,
+            "$gte": operator.ge,
+            "$lt": operator.lt,
+            "$lte": operator.le,
+            "$in": sqlalchemy.Column.in_,
+            "$nin": sqlalchemy.Column.notin_,
+        }
+        conditions = []
+        for column, opspec in candidate_filter.items():
+            for op, value in opspec.items():
+                break
+            conditions.append(ops[op](Candidate.c[column], value))
+        return and_(*conditions)
+
     def _time_range_condition(
         self,
         programid: Optional[int] = None,
         jd_start: Optional[float] = None,
         jd_end: Optional[float] = None,
+        candidate_filter: Optional[FilterClause] = None,
     ) -> Tuple[BooleanClauseList, List[UnaryExpression]]:
         jd = self._get_alert_column("jd")
+        Candidate = self.get_table("candidate")
 
         conditions: List[ClauseElement] = []
         if jd_end is not None:
@@ -957,6 +982,8 @@ class ArchiveDB(ArchiveDBClient):
             conditions.insert(0, jd >= jd_start)
         if programid is not None:
             conditions.insert(0, self._get_alert_column("programid") == programid)
+        if candidate_filter is not None:
+            conditions.append(self._candidate_filter_condition(candidate_filter))
 
         return and_(*conditions), [jd.asc()]
 
@@ -966,6 +993,7 @@ class ArchiveDB(ArchiveDBClient):
         jd_start: float,
         jd_end: float,
         programid: Optional[int] = None,
+        candidate_filter: Optional[FilterClause] = None,
         with_history: bool = True,
         group_name: str = None,
         block_size: int = 5000,
@@ -982,7 +1010,9 @@ class ArchiveDB(ArchiveDBClient):
             results of the query among clients in the same group.
         :param block_size: partition results in chunks with this many alerts
         """
-        condition, order = self._time_range_condition(programid, jd_start, jd_end)
+        condition, order = self._time_range_condition(
+            programid, jd_start, jd_end, candidate_filter
+        )
 
         with self._engine.connect() as conn:
             yield from self._fetch_alerts_with_condition(
@@ -1005,6 +1035,7 @@ class ArchiveDB(ArchiveDBClient):
         jd_min: Optional[float] = None,
         jd_max: Optional[float] = None,
         latest: bool = False,
+        candidate_filter: Optional[FilterClause] = None,
     ) -> Tuple[BooleanClauseList, List[UnaryExpression]]:
         from sqlalchemy import func
         from sqlalchemy.sql.expression import BinaryExpression
@@ -1016,21 +1047,23 @@ class ArchiveDB(ArchiveDBClient):
         box = func.earth_box(center, radius)
         loc = func.ll_to_earth(Candidate.c.dec, Candidate.c.ra)
 
-        in_range = and_(
+        conditions = [
             BinaryExpression(box, loc, "@>"),  # type: ignore
             func.earth_distance(center, loc) < radius,
-        )
+        ]
         # NB: filtering on jd from Candidate here is ~2x faster than _also_
         #      filtering on Alert (rows that pass are joined on the indexed
         #      primary key)
         if jd_min is not None:
-            in_range = and_(in_range, Candidate.c.jd >= jd_min)
+            conditions.insert(0, Candidate.c.jd >= jd_min)
         if jd_max is not None:
-            in_range = and_(in_range, Candidate.c.jd < jd_max)
+            conditions.insert(0, Candidate.c.jd < jd_max)
         if isinstance(programid, int):
-            in_range = and_(in_range, self._get_alert_column("programid") == programid)
+            conditions.insert(0, self._get_alert_column("programid") == programid)
+        if candidate_filter is not None:
+            conditions.append(self._candidate_filter_condition(candidate_filter))
 
-        return in_range, [Alert.c.jd.asc()] if not latest else [
+        return and_(*conditions), [Alert.c.jd.asc()] if not latest else [
             Alert.c.jd.desc(),
             Alert.c.candid.desc(),  # NB: reprocessed points may have identical jds; break ties with candid
         ]
@@ -1043,6 +1076,7 @@ class ArchiveDB(ArchiveDBClient):
         jd_max: float,
         latest: bool = False,
         programid: Optional[int] = None,
+        candidate_filter: Optional[FilterClause] = None,
     ) -> Tuple[BooleanClauseList, List[UnaryExpression]]:
         Candidate = self.get_table("candidate")
 
@@ -1102,6 +1136,8 @@ class ArchiveDB(ArchiveDBClient):
         ]
         if programid is not None:
             and_conditions.append(Candidate.c.programid == programid)
+        if candidate_filter is not None:
+            and_conditions.append(self._candidate_filter_condition(candidate_filter))
 
         return (
             and_(*and_conditions),
@@ -1119,6 +1155,7 @@ class ArchiveDB(ArchiveDBClient):
         programid: Optional[int] = None,
         jd_start: Optional[float] = None,
         jd_end: Optional[float] = None,
+        candidate_filter: Optional[FilterClause] = None,
         latest: bool = False,
         with_history: bool = False,
         group_name: Optional[str] = None,
@@ -1146,6 +1183,7 @@ class ArchiveDB(ArchiveDBClient):
             jd_min=jd_start,
             jd_max=jd_end,
             latest=latest,
+            candidate_filter=candidate_filter,
         )
 
         with self._engine.connect() as conn:
@@ -1167,6 +1205,7 @@ class ArchiveDB(ArchiveDBClient):
         dec: float,
         radius: float,
         programid: Optional[int] = None,
+        candidate_filter: Optional[FilterClause] = None,
         jd_start: Optional[float] = None,
         jd_end: Optional[float] = None,
     ):
@@ -1188,6 +1227,7 @@ class ArchiveDB(ArchiveDBClient):
             programid=programid,
             jd_min=jd_start,
             jd_max=jd_end,
+            candidate_filter=candidate_filter,
             latest=True,
         )
 
@@ -1210,6 +1250,7 @@ class ArchiveDB(ArchiveDBClient):
         jd_end: float,
         latest: bool = False,
         programid: Optional[int] = None,
+        candidate_filter: Optional[FilterClause] = None,
         with_history: bool = False,
         group_name: Optional[str] = None,
         block_size: int = 5000,
@@ -1231,6 +1272,7 @@ class ArchiveDB(ArchiveDBClient):
             jd_max=jd_end,
             latest=latest,
             programid=programid,
+            candidate_filter=candidate_filter,
         )
 
         with self._engine.connect() as conn:
