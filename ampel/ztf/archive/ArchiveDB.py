@@ -380,9 +380,9 @@ class ArchiveDB(ArchiveDBClient):
         with self._engine.connect() as conn:
             if (
                 row := conn.execute(
-                    select([Groups.c.group_id, Groups.c.chunk_size, Groups.c.error]).where(
-                        Groups.c.group_name == group_name
-                    )
+                    select(
+                        [Groups.c.group_id, Groups.c.chunk_size, Groups.c.error]
+                    ).where(Groups.c.group_name == group_name)
                 ).fetchone()
             ) is not None:
                 group_id: int = row.group_id
@@ -391,17 +391,21 @@ class ArchiveDB(ArchiveDBClient):
             else:
                 raise GroupNotFoundError
             col = Queue.c.alert_ids
+            row = conn.execute(
+                select(
+                    [
+                        func.count(col).label("chunks"),
+                        func.sum(func.array_length(col, 1)).label("items"),
+                    ]
+                ).where(Queue.c.group_id == group_id)
+            ).fetchone()
+            chunks: int = row.chunks
+            items: int = row.items
             return (
                 error,
                 chunk_size,
-                *conn.execute(
-                    select(
-                        [
-                            func.count(col).label("chunks"),
-                            func.sum(func.array_length(col, 1)).label("items"),
-                        ]
-                    ).where(Queue.c.group_id == group_id)
-                ).fetchone(),
+                chunks,
+                items,
             )
 
     def _fetch_alerts_with_condition(

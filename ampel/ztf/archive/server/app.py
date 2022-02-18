@@ -328,7 +328,7 @@ def get_alerts_in_time_range(
     return AlertChunk(
         resume_token=resume_token,
         chunk_size=chunk_size,
-        chunks_remaining=archive.get_remaining_chunks(resume_token),
+        chunks_remaining=get_stream_info(resume_token, archive)[1],
         alerts=chunk,
     )
 
@@ -384,7 +384,7 @@ def get_alerts_in_cone(
     return AlertChunk(
         resume_token=resume_token,
         chunk_size=chunk_size,
-        chunks_remaining=archive.get_remaining_chunks(resume_token),
+        chunks_remaining=get_stream_info(resume_token, archive)[1],
         alerts=chunk,
     )
 
@@ -479,7 +479,7 @@ def get_alerts_in_healpix_pixel(
     return AlertChunk(
         resume_token=resume_token,
         chunk_size=chunk_size,
-        chunks_remaining=archive.get_remaining_chunks(resume_token),
+        chunks_remaining=get_stream_info(resume_token, archive)[1],
         alerts=chunk,
     )
 
@@ -513,7 +513,7 @@ def get_alerts_in_healpix_map(
     return AlertChunk(
         resume_token=resume_token,
         chunk_size=query.chunk_size,
-        chunks_remaining=archive.get_remaining_chunks(resume_token),
+        chunks_remaining=get_stream_info(resume_token, archive)[1],
         alerts=chunk,
     )
 
@@ -682,19 +682,7 @@ def create_stream_from_query(
     return {"resume_token": name, "chunk_size": query.chunk_size}
 
 
-@app.get(
-    "/stream/{resume_token}",
-    tags=["stream"],
-    response_model=StreamDescription,
-    response_model_exclude_none=True,
-)
-def get_stream(
-    resume_token: str,
-    archive: ArchiveDB = Depends(get_archive),
-):
-    """
-    Get the next available chunk of alerts from the given stream.
-    """
+def get_stream_info(resume_token: str, archive: ArchiveDB = Depends(get_archive)):
     try:
         error, chunk_size, chunks_remaining, items_remaining = archive.get_group_info(
             resume_token
@@ -711,6 +699,22 @@ def get_stream(
             status_code=status.HTTP_424_FAILED_DEPENDENCY,
             detail={"msg": "queue-populating query failed"},
         )
+    return chunk_size, chunks_remaining, items_remaining
+
+
+@app.get(
+    "/stream/{resume_token}",
+    tags=["stream"],
+    response_model=StreamDescription,
+    response_model_exclude_none=True,
+)
+def get_stream(
+    resume_token: str, stream_info: tuple[int, int, int] = Depends(get_stream_info)
+):
+    """
+    Get the next available chunk of alerts from the given stream.
+    """
+    chunk_size, chunks_remaining, items_remaining = stream_info
     return {
         "resume_token": resume_token,
         "chunk_size": chunk_size,
@@ -729,6 +733,8 @@ def stream_get_chunk(
     resume_token: str,
     with_history: bool = True,
     archive: ArchiveDB = Depends(get_archive),
+    # piggy-back on stream info to raise errors on pending or errored queries
+    stream_info=Depends(get_stream_info),
 ):
     """
     Get the next available chunk of alerts from the given stream.
@@ -737,9 +743,12 @@ def stream_get_chunk(
         chunk = list(archive.get_chunk_from_queue(resume_token, with_history))
     except GroupNotFoundError:
         raise HTTPException(status_code=404, detail="Stream not found")
+    chunk_size, chunks_remaining, items_remaining = get_stream_info(
+        resume_token, archive
+    )
     return AlertChunk(
         resume_token=resume_token,
-        chunks_remaining=archive.get_remaining_chunks(resume_token),
+        chunks_remaining=chunks_remaining,
         alerts=chunk,
     )
 
