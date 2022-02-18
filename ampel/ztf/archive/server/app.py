@@ -708,6 +708,10 @@ def get_stream_info(resume_token: str, archive: ArchiveDB = Depends(get_archive)
     tags=["stream"],
     response_model=StreamDescription,
     response_model_exclude_none=True,
+    responses={
+        status.HTTP_423_LOCKED: {"description": "Query has not finished"},
+        status.HTTP_424_FAILED_DEPENDENCY: {"description": "Query failed"},
+    }
 )
 def get_stream(
     resume_token: str, stream_info: tuple[int, int, int] = Depends(get_stream_info)
@@ -729,6 +733,10 @@ def get_stream(
     tags=["stream"],
     response_model=AlertChunk,
     response_model_exclude_none=True,
+    responses={
+        status.HTTP_423_LOCKED: {"description": "Query has not finished"},
+        status.HTTP_424_FAILED_DEPENDENCY: {"description": "Query failed"},
+    }
 )
 def stream_get_chunk(
     resume_token: str,
