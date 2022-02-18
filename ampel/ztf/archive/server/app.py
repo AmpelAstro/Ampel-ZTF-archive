@@ -585,7 +585,7 @@ def create_stream_from_topic(
     "/streams/from_query",
     tags=["search", "stream"],
     response_model=Stream,
-    status_code=201,
+    status_code=status.HTTP_202_ACCEPTED,
 )
 def create_stream_from_query(
     tasks: BackgroundTasks,
