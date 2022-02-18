@@ -607,7 +607,6 @@ class ArchiveDB(ArchiveDBClient):
         Alert = meta.tables["alert"]
         Pivot = meta.tables["alert_prv_candidate_pivot"]
         UpperLimitPivot = meta.tables["alert_upper_limit_pivot"]
-        Cutout = meta.tables["cutout"]
 
         json_agg = lambda table: func.json_agg(literal_column('"' + table.name + '"'))
 
