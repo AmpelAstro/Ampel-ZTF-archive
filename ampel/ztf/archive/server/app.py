@@ -595,35 +595,41 @@ def create_stream_from_query(
     Create a stream of alerts from the given query. The resulting resume_token
     can be used to read the stream concurrently from multiple clients.
     """
-    if isinstance(query, AlertQuery):
-        if query.cone:
-            condition, order = archive._cone_search_condition(
-                ra=query.cone.ra,
-                dec=query.cone.dec,
-                radius=query.cone.radius,
-                programid=programid,
+    try:
+        if isinstance(query, AlertQuery):
+            if query.cone:
+                condition, order = archive._cone_search_condition(
+                    ra=query.cone.ra,
+                    dec=query.cone.dec,
+                    radius=query.cone.radius,
+                    programid=programid,
+                    jd_min=query.jd.gt,
+                    jd_max=query.jd.lt,
+                    candidate_filter=query.candidate,
+                )
+            else:
+                condition, order = archive._time_range_condition(
+                    programid,
+                    query.jd.gt,
+                    query.jd.lt,
+                    candidate_filter=query.candidate,
+                )
+        else:
+            pixels: dict[int, list[int]] = {}
+            for region in query.regions:
+                pixels[region.nside] = pixels.get(region.nside, []) + region.pixels
+            condition, order = archive._healpix_search_condition(
+                pixels=pixels,
                 jd_min=query.jd.gt,
                 jd_max=query.jd.lt,
+                latest=query.latest,
+                programid=programid,
                 candidate_filter=query.candidate,
             )
-        else:
-            condition, order = archive._time_range_condition(
-                programid,
-                query.jd.gt,
-                query.jd.lt,
-                candidate_filter=query.candidate,
-            )
-    else:
-        pixels: dict[int, list[int]] = {}
-        for region in query.regions:
-            pixels[region.nside] = pixels.get(region.nside, []) + region.pixels
-        condition, order = archive._healpix_search_condition(
-            pixels=pixels,
-            jd_min=query.jd.gt,
-            jd_max=query.jd.lt,
-            latest=query.latest,
-            programid=programid,
-            candidate_filter=query.candidate,
+    except NoSuchColumnError as exc:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"msg": f"unknown candidate field {exc.args[0]}"},
         )
 
     name = secrets.token_urlsafe(32)

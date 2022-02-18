@@ -57,6 +57,10 @@ class GroupNotFoundError(KeyError):
     ...
 
 
+class NoSuchColumnError(KeyError):
+    ...
+
+
 class ArchiveDB(ArchiveDBClient):
     """ """
 
@@ -942,10 +946,11 @@ class ArchiveDB(ArchiveDBClient):
             "$nin": sqlalchemy.Column.notin_,
         }
         conditions = []
-        for column, opspec in candidate_filter.items():
+        for column_name, opspec in candidate_filter.items():
+            if column_name not in Candidate.c:
+                raise NoSuchColumnError(column_name)
             for op, value in opspec.items():
-                break
-            conditions.append(ops[op](Candidate.c[column], value))
+                conditions.append(ops[op](Candidate.c[column_name], value))
         return and_(*conditions)
 
     def _time_range_condition(

@@ -65,7 +65,6 @@ class CandidateFilterable(StrictModel):
     @validator("candidate", pre=True, each_item=True)
     def validate_operator(cls, v):
         if isinstance(v, dict):
-            assert len(v) == 1
             return v
         else:
             return {"$eq": v}
