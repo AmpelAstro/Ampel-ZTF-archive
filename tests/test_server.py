@@ -8,6 +8,7 @@ from ampel.ztf.archive.server.cutouts import extract_alert, pack_records, ALERT_
 from ampel.ztf.archive.server.db import get_archive, get_archive_updater
 from ampel.ztf.archive.server.s3 import get_object, get_range, get_s3_bucket
 from ampel.ztf.archive.server.tokens import AuthToken
+import asyncio
 from fastapi.security import http
 from urllib.parse import urlsplit
 import fastavro
@@ -77,6 +78,7 @@ def mock_db(mocked_app, alert_generator):
     alert["candidate"]["drbversion"] = "0.0"
     db.get_alert.return_value = alert
     db.get_alerts_for_object.return_value = [alert]
+    db.get_group_info.return_value = (False, 5000, 1, 37)
     yield db
     mocked_app.get_archive.cache_clear()
     mocked_app.get_archive_updater.cache_clear()
@@ -334,9 +336,9 @@ async def test_create_stream(
     response = await authed_integration_client.post("/streams/from_query", json={})
     assert response.status_code == 201
     body = response.json()
-    assert body["chunks"] > 0
-    archive: ArchiveDB = integration_app.get_archive()
-    assert body["chunks"] == archive.get_remaining_chunks(body["resume_token"])
+    response = await authed_integration_client.get(f"/stream/{body['resume_token']}")
+    response.raise_for_status()
+    assert response.json()["chunks"] > 0
 
 
 @pytest.mark.asyncio
@@ -348,7 +350,11 @@ async def test_read_stream(
     assert response.status_code == 201
     body = response.json()
 
-    response = await integration_client.get(f"/stream/{body['resume_token']}/chunk")
+    for _ in range(10):
+        response = await integration_client.get(f"/stream/{body['resume_token']}/chunk")
+        if response.status_code < 400:
+            break
+        await asyncio.sleep(1)
     response.raise_for_status()
     chunk = response.json()
     assert len(chunk["alerts"]) == 10
