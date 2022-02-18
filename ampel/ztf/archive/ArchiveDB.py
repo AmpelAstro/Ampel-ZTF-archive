@@ -340,76 +340,59 @@ class ArchiveDB(ArchiveDBClient):
     ) -> Tuple[int, int]:
 
         Groups = self._meta.tables["read_queue_groups"]
-        Queue = self._meta.tables["read_queue"]
-        with conn.begin() as transaction:
-            try:
-                # Create the group. This will raise IntegrityError if the
-                # group already exists
-                result = conn.execute(Groups.insert(), group_name=group_name)
-                group_id = result.inserted_primary_key[0]
-                # Populate the group queue in the same transaction
-                queue_info = self._populate_read_queue(
-                    conn, group_id, block_size, condition, order
-                )
-                transaction.commit()
-                chunks = queue_info["chunks"]
-                log.info(
-                    "Created group {} with id {} ({} items in {} chunks)".format(
-                        group_name, group_id, queue_info["items"], queue_info["chunks"]
-                    )
-                )
-            except IntegrityError as e:
-                # If we arrive here, then another client already committed
-                # the group name and populated the queue.
-                transaction.rollback()
-                group_id = conn.execute(
-                    select([Groups.c.group_id]).where(Groups.c.group_name == group_name)
-                ).fetchone()[0]
-                chunks = conn.execute(
-                    select([func.count(Queue.c.alert_ids).label("chunks")]).where(
-                        Queue.c.group_id == group_id
-                    )
-                ).fetchone()[0]
-                # Update the access time to keep the group from being deleted
-                # after 24 hours of inactivity. If another client has already
-                # updated the access time, rollback.
-                with conn.begin() as transaction:
-                    try:
-                        conn.execute(
-                            update(Groups)
-                            .where(Groups.c.group_id == group_id)
-                            .values(last_accessed=func.now())
-                        )
-                    except IntegrityError:
-                        transaction.rollback()
 
-                log.info(
-                    "Subscribed to group {} with id {} ({} chunks remaining)".format(
-                        group_name, group_id, chunks
-                    )
+        result = conn.execute(
+            Groups.insert(), group_name=group_name, chunk_size=block_size
+        )
+        group_id = result.inserted_primary_key[0]
+        try:
+            queue_info = self._populate_read_queue(
+                conn, group_id, block_size, condition, order
+            )
+            conn.execute(
+                Groups.update(
+                    Groups.columns.group_id == group_id, values={"error": False}
                 )
-            except Exception as e:
-                log.error(e)
-                raise
+            )
+        except sqlalchemy.exc.TimeoutError as exc:
+            conn.execute(
+                Groups.update(
+                    Groups.columns.group_id == group_id, values={"error": True}
+                )
+            )
+            log.exception(f"Failed to create group {group_name}")
+
+        chunks = queue_info["chunks"]
+        log.info(
+            "Created group {} with id {} ({} items in {} chunks)".format(
+                group_name, group_id, queue_info["items"], queue_info["chunks"]
+            )
+        )
         return group_id, chunks
 
-    def get_remaining_chunks(self, group_name: str) -> int:
+    def get_remaining_chunks(self, group_name: str) -> tuple[int, int]:
         Groups = self._meta.tables["read_queue_groups"]
         Queue = self._meta.tables["read_queue"]
         with self._engine.connect() as conn:
             if (
                 row := conn.execute(
-                    select([Groups.c.group_id]).where(Groups.c.group_name == group_name)
+                    select([Groups.c.group_id, Groups.c.chunk_size]).where(
+                        Groups.c.group_name == group_name
+                    )
                 ).fetchone()
             ) is not None:
                 group_id: int = row.group_id
+                chunk_size: int = row.chunk_size
             else:
                 raise GroupNotFoundError
-            return conn.execute(
-                select([func.count(Queue.c.alert_ids).label("chunks")]).where(
-                    Queue.c.group_id == group_id
-                )
-            ).fetchone()[0]
+            return (
+                chunk_size,
+                conn.execute(
+                    select([func.count(Queue.c.alert_ids).label("chunks")]).where(
+                        Queue.c.group_id == group_id
+                    )
+                ).fetchone()[0],
+            )
 
     def _fetch_alerts_with_condition(
         self,

@@ -14,7 +14,15 @@ import fastavro
 from base64 import b64encode
 from typing import TYPE_CHECKING, Any, List, Literal, Optional, Union
 
-from fastapi import FastAPI, Depends, Request, Query, HTTPException, status
+from fastapi import (
+    FastAPI,
+    Depends,
+    Request,
+    Query,
+    HTTPException,
+    status,
+    BackgroundTasks,
+)
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.cors import CORSMiddleware
@@ -195,7 +203,7 @@ def get_cutouts(
     bucket=Depends(get_s3_bucket),
     auth: bool = Depends(verify_access_token),
 ):
-    if (alert := get_alert_from_s3(candid, db, bucket)):
+    if alert := get_alert_from_s3(candid, db, bucket):
         return alert
     raise HTTPException(status_code=404)
 
@@ -216,6 +224,7 @@ def verify_authorized_programid(
                 headers={"WWW-Authenticate": "Bearer"},
             )
     return programid
+
 
 @app.get(
     "/object/{objectId}/alerts",
@@ -577,6 +586,7 @@ def create_stream_from_topic(
 )
 def create_stream_from_query(
     query: Union[AlertQuery, HEALpixRegionQuery],
+    tasks: BackgroundTasks,
     archive: ArchiveDB = Depends(get_archive),
     auth: bool = Depends(verify_access_token),
     programid: Optional[int] = Depends(verify_authorized_programid),
@@ -617,15 +627,47 @@ def create_stream_from_query(
         )
 
     name = secrets.token_urlsafe(32)
-    with archive._engine.connect() as conn:
-        group_id, chunks = archive._create_read_queue(
-            conn, condition, order, name, query.chunk_size
-        )
+    # create stream in the background
+    def create_stream():
+        with archive._engine.connect() as conn:
+            try:
+                archive._create_read_queue(
+                    conn, condition, order, name, query.chunk_size
+                )
+            except:
+                # FIXME: do communicate the error somehow
+                pass
+
+    tasks.add_task(create_stream)
 
     return {
         "resume_token": name,
         "chunk_size": query.chunk_size,
-        "chunks": chunks,
+        "chunks": -1,
+    }
+
+
+@app.get(
+    "/stream/{resume_token}",
+    tags=["stream"],
+    response_model=StreamDescription,
+    response_model_exclude_none=True,
+)
+def get_stream(
+    resume_token: str,
+    archive: ArchiveDB = Depends(get_archive),
+):
+    """
+    Get the next available chunk of alerts from the given stream.
+    """
+    try:
+        chunk_size, chunks_remaining = archive.get_remaining_chunks(resume_token)
+    except GroupNotFoundError:
+        raise HTTPException(status_code=404, detail="Stream not found")
+    return {
+        "resume_token": resume_token,
+        "chunk_size": chunk_size,
+        "chunks": chunks_remaining,
     }
 
 
