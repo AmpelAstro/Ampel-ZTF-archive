@@ -216,7 +216,7 @@ class ArchiveDB(ArchiveDBClient):
             else:
                 topic_id: int = row.topic_id
             group_id = conn.execute(
-                Groups.insert(), group_name=group_name
+                Groups.insert(), group_name=group_name, chunk_size=block_size,
             ).inserted_primary_key[0]
 
             unnested = (
@@ -258,6 +258,8 @@ class ArchiveDB(ArchiveDBClient):
             )
 
             conn.execute(q)
+
+            conn.execute(Groups.update(Groups.c.group_id == group_id, {"error": False}))
             col = Queue.c.alert_ids
             return conn.execute(
                 select(

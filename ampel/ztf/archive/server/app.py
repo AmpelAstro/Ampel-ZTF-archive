@@ -577,6 +577,7 @@ def create_stream_from_topic(
         "resume_token": name,
         "chunk_size": query.chunk_size,
         "chunks": queue_info["chunks"],
+        "items": queue_info["items"],
     }
 
 
