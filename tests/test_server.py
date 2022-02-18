@@ -19,7 +19,7 @@ import pytest
 from fastapi import status
 from ampel.ztf.archive.ArchiveDB import ArchiveDB
 import sqlalchemy
-from starlette.status import HTTP_200_OK, HTTP_201_CREATED, HTTP_404_NOT_FOUND
+from starlette.status import HTTP_200_OK, HTTP_201_CREATED, HTTP_202_ACCEPTED, HTTP_404_NOT_FOUND
 from tests.fixtures import walk_tarball
 
 if TYPE_CHECKING:
@@ -334,7 +334,7 @@ async def test_create_stream(
     authed_integration_client: httpx.AsyncClient, integration_app
 ):
     response = await authed_integration_client.post("/streams/from_query", json={})
-    assert response.status_code == 201
+    assert response.status_code == HTTP_202_ACCEPTED
     body = response.json()
     response = await authed_integration_client.get(f"/stream/{body['resume_token']}")
     response.raise_for_status()
@@ -347,7 +347,7 @@ async def test_read_stream(
     authed_integration_client: httpx.AsyncClient,
 ):
     response = await authed_integration_client.post("/streams/from_query", json={})
-    assert response.status_code == 201
+    assert response.status_code == HTTP_202_ACCEPTED
     body = response.json()
 
     for _ in range(10):
