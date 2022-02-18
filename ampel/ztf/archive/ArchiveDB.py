@@ -387,9 +387,9 @@ class ArchiveDB(ArchiveDBClient):
                     ).where(Groups.c.group_name == group_name)
                 ).fetchone()
             ) is not None:
-                group_id: int = row.group_id
-                chunk_size: int = row.chunk_size
-                error: bool = row.error
+                group_id: int = row["group_id"]
+                chunk_size: int = row["chunk_size"]
+                error: bool = row["error"]
             else:
                 raise GroupNotFoundError
             col = Queue.c.alert_ids
@@ -401,8 +401,8 @@ class ArchiveDB(ArchiveDBClient):
                     ]
                 ).where(Queue.c.group_id == group_id)
             ).fetchone()
-            chunks: int = row.chunks
-            items: int = row.items
+            chunks: int = row["chunks"]
+            items: int = row["items"]
             return (
                 error,
                 chunk_size,
