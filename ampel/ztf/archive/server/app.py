@@ -195,7 +195,7 @@ def get_alert(
     if alert := get_alert_from_s3(candid, db, bucket):
         return alert
     elif alert := db.get_alert(candid, with_history=True):
-        return alert 
+        return alert
     else:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
 
@@ -671,7 +671,8 @@ def create_stream_from_query(
     name = secrets.token_urlsafe(32)
     # create stream in the background
     def create_stream():
-        with archive._engine.connect() as conn:
+        with archive.connect() as conn:
+            conn.execute(f"set statement_timeout={settings.stream_query_timeout*1000};")
             try:
                 archive._create_read_queue(
                     conn, condition, order, name, query.chunk_size
@@ -713,7 +714,7 @@ def get_stream_info(resume_token: str, archive: ArchiveDB = Depends(get_archive)
     responses={
         status.HTTP_423_LOCKED: {"description": "Query has not finished"},
         status.HTTP_424_FAILED_DEPENDENCY: {"description": "Query failed"},
-    }
+    },
 )
 def get_stream(
     resume_token: str, stream_info: tuple[int, int, int] = Depends(get_stream_info)
@@ -738,7 +739,7 @@ def get_stream(
     responses={
         status.HTTP_423_LOCKED: {"description": "Query has not finished"},
         status.HTTP_424_FAILED_DEPENDENCY: {"description": "Query failed"},
-    }
+    },
 )
 def stream_get_chunk(
     resume_token: str,

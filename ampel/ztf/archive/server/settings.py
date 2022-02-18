@@ -25,6 +25,16 @@ class Settings(BaseSettings):
     archive_uri: Optional[PostgresUrl] = Field(
         "postgresql://localhost:5432/ztfarchive", env="ARCHIVE_URI"
     )
+    default_statement_timeout: int = Field(
+        60,
+        env="DEFAULT_STATEMENT_TIMEOUT",
+        description="Timeout for synchronous queries, in seconds",
+    )
+    stream_query_timeout: int = Field(
+        8 * 60 * 60,
+        env="STREAM_QUERY_TIMEOUT",
+        description="Timeout for asynchronous queries, in seconds",
+    )
     s3_endpoint_url: Optional[HttpsUrl] = Field(None, env="S3_ENDPOINT_URL")
     s3_bucket: str = Field("ampel-ztf-cutout-archive", env="S3_BUCKET")
     jwt_secret_key: str = Field(secrets.token_urlsafe(64), env="JWT_SECRET_KEY")

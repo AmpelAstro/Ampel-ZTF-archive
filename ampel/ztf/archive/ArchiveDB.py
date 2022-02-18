@@ -21,6 +21,7 @@ from typing import (
     Union,
     cast,
 )
+from contextlib import contextmanager
 
 from sqlalchemy import select, update, and_, or_
 from sqlalchemy.engine.base import Connection
@@ -66,11 +67,18 @@ class ArchiveDB(ArchiveDBClient):
 
     _CLIENTS: Dict[str, "ArchiveDB"] = {}
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, default_statement_timeout: int = 60000, **kwargs):
         """ """
         super().__init__(*args, **kwargs)
         self._alert_id_column = self.get_alert_id_column()
-        self._table_mapping = {}
+        self._table_mapping: dict[str,str] = {}
+        self._default_statement_timeout = default_statement_timeout
+
+    @contextmanager
+    def connect(self):
+        with self._engine.connect() as conn:
+            conn.execute(f"set statement_timeout={self._default_statement_timeout}")
+            yield conn
 
     def _get_alert_column(self, name: str) -> ColumnClause:
         if "alert" in self._meta.tables and name in self._meta.tables["alert"].c:
@@ -97,7 +105,7 @@ class ArchiveDB(ArchiveDBClient):
     def get_statistics(self) -> Dict[str, Any]:
         """ """
         stats = {}
-        with self._engine.connect() as conn:
+        with self.connect() as conn:
             sql = "select relname, n_live_tup from pg_catalog.pg_stat_user_tables"
             rows = dict(conn.execute(sql).fetchall())
             sql = """SELECT TABLE_NAME, index_bytes, toast_bytes, table_bytes
@@ -135,7 +143,7 @@ class ArchiveDB(ArchiveDBClient):
             .group_by(Groups.c.group_id)
             .order_by(Groups.c.group_id)
         )
-        with self._engine.connect() as conn:
+        with self.connect() as conn:
             return conn.execute(query).fetchall()
 
     def create_topic(
@@ -145,7 +153,7 @@ class ArchiveDB(ArchiveDBClient):
         Queue = self._meta.tables["topic"]
         Alert = self._meta.tables["alert"]
         # TODO: chunk inputs, add update operation
-        with self._engine.connect() as conn:
+        with self.connect() as conn:
             result = conn.execute(
                 Groups.insert(),
                 topic_name=name,
@@ -169,7 +177,7 @@ class ArchiveDB(ArchiveDBClient):
     def get_topic_info(self, topic: str) -> Dict[str, Any]:
         Topic = self._meta.tables["topic"]
         TopicGroups = self._meta.tables["topic_groups"]
-        with self._engine.connect() as conn:
+        with self.connect() as conn:
             if (
                 row := conn.execute(
                     select(
@@ -204,7 +212,7 @@ class ArchiveDB(ArchiveDBClient):
         Queue = self._meta.tables["read_queue"]
         Topic = self._meta.tables["topic"]
         TopicGroups = self._meta.tables["topic_groups"]
-        with self._engine.connect() as conn:
+        with self.connect() as conn:
             if (
                 row := conn.execute(
                     select([TopicGroups.c.topic_id]).where(
@@ -216,7 +224,9 @@ class ArchiveDB(ArchiveDBClient):
             else:
                 topic_id: int = row.topic_id
             group_id = conn.execute(
-                Groups.insert(), group_name=group_name, chunk_size=block_size,
+                Groups.insert(),
+                group_name=group_name,
+                chunk_size=block_size,
             ).inserted_primary_key[0]
 
             unnested = (
@@ -273,7 +283,7 @@ class ArchiveDB(ArchiveDBClient):
     def remove_consumer_group(self, pattern: str) -> None:
         Groups = self._meta.tables["read_queue_groups"]
         Queue = self._meta.tables["read_queue"]
-        with self._engine.connect() as conn:
+        with self.connect() as conn:
             return conn.execute(
                 Groups.delete().where(Groups.c.group_name.like(pattern))
             )
@@ -379,7 +389,7 @@ class ArchiveDB(ArchiveDBClient):
     def get_group_info(self, group_name: str) -> tuple[bool, int, int, int]:
         Groups = self._meta.tables["read_queue_groups"]
         Queue = self._meta.tables["read_queue"]
-        with self._engine.connect() as conn:
+        with self.connect() as conn:
             if (
                 row := conn.execute(
                     select(
@@ -506,7 +516,7 @@ class ArchiveDB(ArchiveDBClient):
     def get_chunk_from_queue(self, group_name: str, with_history: bool = True):
         Groups = self._meta.tables["read_queue_groups"]
         Queue = self._meta.tables["read_queue"]
-        with self._engine.connect() as conn:
+        with self.connect() as conn:
             # Update the access time to keep the group from being deleted
             # after 24 hours of inactivity.
             group_id = (
@@ -777,7 +787,7 @@ class ArchiveDB(ArchiveDBClient):
         return [photopoints[k] for k in sorted(photopoints.keys(), reverse=True)]
 
     def count_alerts(self):
-        with self._engine.connect() as conn:
+        with self.connect() as conn:
             return conn.execute(select([func.count(self._alert_id_column)])).fetchone()[
                 0
             ]
@@ -794,7 +804,7 @@ class ArchiveDB(ArchiveDBClient):
         """
         Alert = self._meta.tables["alert"]
 
-        with self._engine.connect() as conn:
+        with self.connect() as conn:
             for alert in self._fetch_alerts_with_condition(
                 conn,
                 Alert.c.candid == candid,
@@ -823,7 +833,7 @@ class ArchiveDB(ArchiveDBClient):
             )
             .where(Alert.c.candid == candid)
         )
-        with self._engine.connect() as conn:
+        with self.connect() as conn:
             return conn.execute(q).fetchone()
 
     def get_alerts_for_object(
@@ -864,7 +874,7 @@ class ArchiveDB(ArchiveDBClient):
             conditions.insert(0, Alert.c.programid == programid)
         in_range = and_(*conditions)
 
-        with self._engine.connect() as conn:
+        with self.connect() as conn:
             yield from self._fetch_alerts_with_condition(
                 conn,
                 in_range,
@@ -899,7 +909,7 @@ class ArchiveDB(ArchiveDBClient):
             conditions.append(self._get_alert_column("programid") == programid)
         in_range = and_(*conditions)
 
-        with self._engine.connect() as conn:
+        with self.connect() as conn:
             datapoints = self._fetch_photopoints_with_condition(conn, in_range)
         if datapoints:
             candidate = datapoints.pop(0)
@@ -934,7 +944,7 @@ class ArchiveDB(ArchiveDBClient):
             sqlalchemy.text(",".join(("alert.candid=%d DESC" % i for i in candids))),
         )
 
-        with self._engine.connect() as conn:
+        with self.connect() as conn:
             yield from self._fetch_alerts_with_condition(
                 conn,
                 Alert.c.candid.in_(candids),
@@ -1013,7 +1023,7 @@ class ArchiveDB(ArchiveDBClient):
             programid, jd_start, jd_end, candidate_filter
         )
 
-        with self._engine.connect() as conn:
+        with self.connect() as conn:
             yield from self._fetch_alerts_with_condition(
                 conn,
                 condition,
@@ -1185,7 +1195,7 @@ class ArchiveDB(ArchiveDBClient):
             candidate_filter=candidate_filter,
         )
 
-        with self._engine.connect() as conn:
+        with self.connect() as conn:
             yield from self._fetch_alerts_with_condition(
                 conn,
                 condition,
@@ -1230,7 +1240,7 @@ class ArchiveDB(ArchiveDBClient):
             latest=True,
         )
 
-        with self._engine.connect() as conn:
+        with self.connect() as conn:
             for row in conn.execute(
                 self._build_base_alert_query(
                     [self._meta.tables["alert"].c.objectId],
@@ -1274,7 +1284,7 @@ class ArchiveDB(ArchiveDBClient):
             candidate_filter=candidate_filter,
         )
 
-        with self._engine.connect() as conn:
+        with self.connect() as conn:
             yield from self._fetch_alerts_with_condition(
                 conn,
                 condition,
