@@ -15,6 +15,7 @@ from base64 import b64encode
 from typing import TYPE_CHECKING, Any, List, Literal, Optional, Union
 
 from fastapi import (
+    Body,
     FastAPI,
     Depends,
     Request,
@@ -586,8 +587,39 @@ def create_stream_from_topic(
     status_code=201,
 )
 def create_stream_from_query(
-    query: Union[AlertQuery, HEALpixRegionQuery],
     tasks: BackgroundTasks,
+    query: Union[AlertQuery, HEALpixRegionQuery] = Body(
+        ...,
+        examples={
+            "cone": {
+                "summary": "Cone search",
+                "value": {
+                    "cone": {"ra": 158.068431, "dec": 47.0497302, "radius": 3.5},
+                },
+            },
+            "healpix": {
+                "summary": "HEALpix search",
+                "description": "search regions of a HEALpix map (in narrow time range)",
+                "value": {
+                    "regions": [{"nside": 64, "pixels": [5924, 5925, 5926, 5927]}],
+                    "jd": {"gt": 2459308.72, "lt": 2459308.73},
+                },
+            },
+            "filtered": {
+                "summary": "Epoch search",
+                "description": "Search for all candidates in an epoch range that fulfill criteria",
+                "value": {
+                    "jd": {"gt": 2459550.5, "lt": 2459551.5},
+                    "candidate": {
+                        "drb": {"$gt": 0.999},
+                        "magpsf": {"$lt": 15},
+                        "ndethist": {"$gt": 0, "$lte": 10},
+                        "fid": 1,
+                    },
+                },
+            },
+        },
+    ),
     archive: ArchiveDB = Depends(get_archive),
     auth: bool = Depends(verify_access_token),
     programid: Optional[int] = Depends(verify_authorized_programid),
