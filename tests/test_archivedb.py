@@ -531,36 +531,6 @@ def test_partitioned_read_single(alert_archive):
     assert len(l) == 10
 
 
-def test_partitioned_read_double(alert_archive):
-    import itertools
-
-    db1 = ArchiveDB(alert_archive)
-    db2 = ArchiveDB(alert_archive)
-    # kwargs = dict(group_name='testy', block_size=2, with_history=False, with_cutouts=False)
-    kwargs = dict(group_name="testy", block_size=2)
-
-    l1 = list(
-        (
-            alert["candid"]
-            for alert in itertools.islice(
-                db1.get_alerts_in_time_range(jd_start=0, jd_end=1e8, **kwargs), 5
-            )
-        )
-    )
-    l2 = list(
-        (
-            alert["candid"]
-            for alert in db2.get_alerts_in_time_range(jd_start=0, jd_end=1e8, **kwargs)
-        )
-    )
-
-    assert set(l1).intersection(l2) == {
-        l1[-1]
-    }, "both clients see alert in last partial block, as it was never committed"
-    assert len(l1) == 5, "first client sees all alerts it consumed"
-    assert len(l2) == 6, "alerts in uncommitted block read by second client"
-
-
 def test_insert_future_schema(alert_generator, empty_archive):
     db = ArchiveUpdater(empty_archive)
 
