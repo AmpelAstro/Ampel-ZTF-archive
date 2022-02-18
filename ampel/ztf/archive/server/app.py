@@ -45,12 +45,13 @@ from .models import (
     AlertQuery,
     HEALpixMapQuery,
     HEALpixRegionQuery,
+    Stream,
     StreamDescription,
     Topic,
     TopicDescription,
     TopicQuery,
 )
-from ampel.ztf.archive.ArchiveDB import ArchiveDB, GroupNotFoundError
+from ampel.ztf.archive.ArchiveDB import ArchiveDB, GroupNotFoundError, NoSuchColumnError
 from ampel.ztf.archive.server.skymap import deres
 
 if TYPE_CHECKING:
@@ -581,7 +582,7 @@ def create_stream_from_topic(
 @app.post(
     "/streams/from_query",
     tags=["search", "stream"],
-    response_model=StreamDescription,
+    response_model=Stream,
     status_code=201,
 )
 def create_stream_from_query(
@@ -646,11 +647,7 @@ def create_stream_from_query(
 
     tasks.add_task(create_stream)
 
-    return {
-        "resume_token": name,
-        "chunk_size": query.chunk_size,
-        "chunks": -1,
-    }
+    return {"resume_token": name, "chunk_size": query.chunk_size}
 
 
 @app.get(
@@ -667,13 +664,26 @@ def get_stream(
     Get the next available chunk of alerts from the given stream.
     """
     try:
-        chunk_size, chunks_remaining = archive.get_remaining_chunks(resume_token)
+        error, chunk_size, chunks_remaining, items_remaining = archive.get_group_info(
+            resume_token
+        )
     except GroupNotFoundError:
         raise HTTPException(status_code=404, detail="Stream not found")
+    if error is None:
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail={"msg": "queue-populating query has not yet finished"},
+        )
+    elif error:
+        raise HTTPException(
+            status_code=status.HTTP_424_FAILED_DEPENDENCY,
+            detail={"msg": "queue-populating query failed"},
+        )
     return {
         "resume_token": resume_token,
         "chunk_size": chunk_size,
         "chunks": chunks_remaining,
+        "items": items_remaining,
     }
 
 

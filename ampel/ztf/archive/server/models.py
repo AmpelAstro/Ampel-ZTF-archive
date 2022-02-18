@@ -8,10 +8,12 @@ class StrictModel(BaseModel):
     class Config:
         extra = "forbid"
 
-
-class StreamDescription(BaseModel):
+class Stream(BaseModel):
     resume_token: str
     chunk_size: int
+
+class StreamDescription(Stream):
+    items: int
     chunks: int
 
 

@@ -374,28 +374,34 @@ class ArchiveDB(ArchiveDBClient):
         )
         return group_id, chunks
 
-    def get_remaining_chunks(self, group_name: str) -> tuple[int, int]:
+    def get_group_info(self, group_name: str) -> tuple[bool, int, int, int]:
         Groups = self._meta.tables["read_queue_groups"]
         Queue = self._meta.tables["read_queue"]
         with self._engine.connect() as conn:
             if (
                 row := conn.execute(
-                    select([Groups.c.group_id, Groups.c.chunk_size]).where(
+                    select([Groups.c.group_id, Groups.c.chunk_size, Groups.c.error]).where(
                         Groups.c.group_name == group_name
                     )
                 ).fetchone()
             ) is not None:
                 group_id: int = row.group_id
                 chunk_size: int = row.chunk_size
+                error: bool = row.error
             else:
                 raise GroupNotFoundError
+            col = Queue.c.alert_ids
             return (
+                error,
                 chunk_size,
-                conn.execute(
-                    select([func.count(Queue.c.alert_ids).label("chunks")]).where(
-                        Queue.c.group_id == group_id
-                    )
-                ).fetchone()[0],
+                *conn.execute(
+                    select(
+                        [
+                            func.count(col).label("chunks"),
+                            func.sum(func.array_length(col, 1)).label("items"),
+                        ]
+                    ).where(Queue.c.group_id == group_id)
+                ).fetchone(),
             )
 
     def _fetch_alerts_with_condition(
