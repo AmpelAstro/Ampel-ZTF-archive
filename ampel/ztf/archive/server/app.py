@@ -194,8 +194,10 @@ def get_alert(
     """
     if alert := get_alert_from_s3(candid, db, bucket):
         return alert
+    elif alert := db.get_alert(candid, with_history=True):
+        return alert 
     else:
-        return db.get_alert(candid, with_history=True)
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
 
 
 @app.get("/alert/{candid}/cutouts", tags=["cutouts"], response_model=AlertCutouts)
