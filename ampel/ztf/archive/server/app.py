@@ -29,9 +29,15 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import JSONResponse
 
 from .settings import settings
-from .db import get_archive, get_archive_updater
+from .db import (
+    get_archive,
+    get_archive_updater,
+    OperationalError,
+    handle_operationalerror,
+)
 from .s3 import get_object, get_range, get_s3_bucket, get_url_for_key
 from .tokens import (
     router as token_router,
@@ -109,6 +115,7 @@ app.add_middleware(
 
 app.include_router(token_router, prefix="/tokens")
 
+app.exception_handler(OperationalError)(handle_operationalerror)
 
 # NB: make deserialization depend on write auth to minimize attack surface
 async def deserialize_avro_body(

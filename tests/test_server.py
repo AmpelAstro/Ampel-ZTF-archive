@@ -19,7 +19,12 @@ import pytest
 from fastapi import status
 from ampel.ztf.archive.ArchiveDB import ArchiveDB
 import sqlalchemy
-from starlette.status import HTTP_200_OK, HTTP_201_CREATED, HTTP_202_ACCEPTED, HTTP_404_NOT_FOUND
+from starlette.status import (
+    HTTP_200_OK,
+    HTTP_201_CREATED,
+    HTTP_202_ACCEPTED,
+    HTTP_404_NOT_FOUND,
+)
 from tests.fixtures import walk_tarball
 
 if TYPE_CHECKING:
@@ -327,6 +332,35 @@ async def test_get_photopoints(
     assert response.status_code == status
     if auth is DEFAULT:
         assert len(response.json()["prv_candidates"]) == 48
+
+
+@pytest.fixture
+def instant_timeout(monkeypatch: pytest.MonkeyPatch):
+    """
+    Set statement timeout to 1 ms
+    """
+    from ampel.ztf.archive.server import db
+
+    monkeypatch.setattr(
+        "ampel.ztf.archive.server.db.settings.default_statement_timeout", 1e-3
+    )
+    db.get_archive.cache_clear()
+    yield
+    db.get_archive.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_query_canceled(
+    authed_integration_client: httpx.AsyncClient,
+    instant_timeout,
+):
+    """
+    Statement timeouts raise a helpful error
+    """
+    response = await authed_integration_client.get(
+        "/object/ZTF18abaqwse/photopoints",
+    )
+    assert response.status_code == status.HTTP_504_GATEWAY_TIMEOUT
 
 
 @pytest.mark.asyncio
