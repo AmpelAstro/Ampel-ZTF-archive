@@ -612,14 +612,14 @@ def create_stream_from_query(
                 "description": "search regions of a HEALpix map (in narrow time range)",
                 "value": {
                     "regions": [{"nside": 64, "pixels": [5924, 5925, 5926, 5927]}],
-                    "jd": {"gt": 2459308.72, "lt": 2459308.73},
+                    "jd": {"$gt": 2459308.72, "$lt": 2459308.73},
                 },
             },
             "filtered": {
                 "summary": "Epoch search",
                 "description": "Search for all candidates in an epoch range that fulfill criteria",
                 "value": {
-                    "jd": {"gt": 2459550.5, "lt": 2459551.5},
+                    "jd": {"$gt": 2459550.5, "$lt": 2459551.5},
                     "candidate": {
                         "drb": {"$gt": 0.999},
                         "magpsf": {"$lt": 15},
