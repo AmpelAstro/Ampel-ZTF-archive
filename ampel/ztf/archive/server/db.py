@@ -1,7 +1,7 @@
 from functools import lru_cache
 
 from sqlalchemy.exc import OperationalError
-from psycopg2.errors import QueryCanceled
+from psycopg2.errors import QueryCanceled # type: ignore[import]
 from fastapi.responses import JSONResponse
 from fastapi import status, Request
 from fastapi.encoders import jsonable_encoder
