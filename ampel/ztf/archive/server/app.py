@@ -653,8 +653,8 @@ def create_stream_from_query(
             else:
                 condition, order = archive._time_range_condition(
                     programid,
-                    query.jd.gt,
-                    query.jd.lt,
+                    jd_start=query.jd.gt,
+                    jd_end=query.jd.lt,
                     candidate_filter=query.candidate,
                 )
         else:
@@ -686,6 +686,7 @@ def create_stream_from_query(
                 )
             except:
                 # FIXME: do communicate the error somehow
+                raise
                 pass
 
     tasks.add_task(create_stream)
@@ -695,9 +696,13 @@ def create_stream_from_query(
 
 def get_stream_info(resume_token: str, archive: ArchiveDB = Depends(get_archive)):
     try:
-        error, chunk_size, chunks_remaining, items_remaining = archive.get_group_info(
-            resume_token
-        )
+        (
+            error,
+            msg,
+            chunk_size,
+            chunks_remaining,
+            items_remaining,
+        ) = archive.get_group_info(resume_token)
     except GroupNotFoundError:
         raise HTTPException(status_code=404, detail="Stream not found")
     if error is None:
@@ -708,7 +713,7 @@ def get_stream_info(resume_token: str, archive: ArchiveDB = Depends(get_archive)
     elif error:
         raise HTTPException(
             status_code=status.HTTP_424_FAILED_DEPENDENCY,
-            detail={"msg": "queue-populating query failed"},
+            detail={"msg": msg},
         )
     return chunk_size, chunks_remaining, items_remaining
 

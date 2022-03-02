@@ -376,6 +376,31 @@ async def test_create_stream(
 
 
 @pytest.mark.asyncio
+async def test_create_stream_bad(
+    authed_integration_client: httpx.AsyncClient, integration_app
+):
+    response = await authed_integration_client.post(
+        "/streams/from_query",
+        json={
+            "jd": {"$gt": 2459550.5, "$lt": 2459550.5},
+            "candidate": {
+                "drb": {"$gt": 0.9},
+                "ndethist": {"$gt": 10, "$lte": 10000},
+                "distpsnr1": {"$gt": 0.00001, "$lte": 0.5},
+                "isdiffpos": {"$in": ["t", 1]},
+            },
+        },
+    )
+    assert response.status_code == HTTP_202_ACCEPTED
+    body = response.json()
+    response = await authed_integration_client.get(f"/stream/{body['resume_token']}")
+    assert response.status_code == status.HTTP_424_FAILED_DEPENDENCY
+    assert response.json()["detail"]["msg"].startswith(
+        "(psycopg2.errors.UndefinedFunction) operator does not exist"
+    )
+
+
+@pytest.mark.asyncio
 async def test_read_stream(
     integration_client: httpx.AsyncClient,
     authed_integration_client: httpx.AsyncClient,

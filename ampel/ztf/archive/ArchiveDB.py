@@ -71,7 +71,7 @@ class ArchiveDB(ArchiveDBClient):
         """ """
         super().__init__(*args, **kwargs)
         self._alert_id_column = self.get_alert_id_column()
-        self._table_mapping: dict[str,str] = {}
+        self._table_mapping: dict[str, str] = {}
         self._default_statement_timeout = default_statement_timeout
 
     @contextmanager
@@ -370,36 +370,46 @@ class ArchiveDB(ArchiveDBClient):
                     Groups.columns.group_id == group_id, values={"error": False}
                 )
             )
-        except sqlalchemy.exc.TimeoutError as exc:
+
+            chunks = queue_info["chunks"]
+            log.info(
+                "Created group {} with id {} ({} items in {} chunks)".format(
+                    group_name, group_id, queue_info["items"], queue_info["chunks"]
+                )
+            )
+            return group_id, chunks
+        except sqlalchemy.exc.SQLAlchemyError as exc:
             conn.execute(
                 Groups.update(
-                    Groups.columns.group_id == group_id, values={"error": True}
+                    Groups.columns.group_id == group_id,
+                    values={"error": True, "msg": str(exc)},
                 )
             )
             log.exception(f"Failed to create group {group_name}")
+            return group_id, 0
 
-        chunks = queue_info["chunks"]
-        log.info(
-            "Created group {} with id {} ({} items in {} chunks)".format(
-                group_name, group_id, queue_info["items"], queue_info["chunks"]
-            )
-        )
-        return group_id, chunks
-
-    def get_group_info(self, group_name: str) -> tuple[bool, int, int, int]:
+    def get_group_info(
+        self, group_name: str
+    ) -> tuple[bool, Optional[str], int, int, int]:
         Groups = self._meta.tables["read_queue_groups"]
         Queue = self._meta.tables["read_queue"]
         with self.connect() as conn:
             if (
                 row := conn.execute(
                     select(
-                        [Groups.c.group_id, Groups.c.chunk_size, Groups.c.error]
+                        [
+                            Groups.c.group_id,
+                            Groups.c.chunk_size,
+                            Groups.c.error,
+                            Groups.c.msg,
+                        ]
                     ).where(Groups.c.group_name == group_name)
                 ).fetchone()
             ) is not None:
                 group_id: int = row["group_id"]
                 chunk_size: int = row["chunk_size"]
                 error: bool = row["error"]
+                msg: Optional[str] = row["msg"]
             else:
                 raise GroupNotFoundError
             col = Queue.c.alert_ids
@@ -415,6 +425,7 @@ class ArchiveDB(ArchiveDBClient):
             items: int = row["items"]
             return (
                 error,
+                msg,
                 chunk_size,
                 chunks,
                 items,
