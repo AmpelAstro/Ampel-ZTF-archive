@@ -53,13 +53,13 @@ class ConeConstraint(StrictModel):
 
 
 class TimeConstraint(StrictModel):
-    lt: Optional[float] = Field(None)
-    gt: Optional[float] = Field(None)
+    lt: Optional[float] = Field(None, alias='$lt')
+    gt: Optional[float] = Field(None, alias='$gt')
 
 
 class StrictTimeConstraint(TimeConstraint):
-    lt: float
-    gt: float
+    lt: float = Field(..., alias='$lt')
+    gt: float = Field(..., alias='$gt')
 
 class CandidateFilterable(StrictModel):
     candidate: Optional[FilterClause] = None
