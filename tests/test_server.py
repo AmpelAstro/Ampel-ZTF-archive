@@ -17,7 +17,7 @@ import jwt
 import httpx
 import pytest
 from fastapi import status
-from ampel.ztf.archive.ArchiveDB import ArchiveDB
+from ampel.ztf.archive.ArchiveDB import ArchiveDB, GroupInfo
 import sqlalchemy
 from starlette.status import (
     HTTP_200_OK,
@@ -83,7 +83,14 @@ def mock_db(mocked_app, alert_generator):
     alert["candidate"]["drbversion"] = "0.0"
     db.get_alert.return_value = alert
     db.get_alerts_for_object.return_value = [alert]
-    db.get_group_info.return_value = (False, 5000, 1, 37)
+    db.get_group_info.return_value = {
+        "error": False,
+        "msg": None,
+        "chunk_size": 5000,
+        "remaining": {"chunks": 1, "items": 37},
+        "pending": {"chunks": 0, "items": 0},
+    }
+    db.get_alerts_in_healpix.return_value = (-1, [alert])
     yield db
     mocked_app.get_archive.cache_clear()
     mocked_app.get_archive_updater.cache_clear()
@@ -372,7 +379,22 @@ async def test_create_stream(
     body = response.json()
     response = await authed_integration_client.get(f"/stream/{body['resume_token']}")
     response.raise_for_status()
-    assert response.json()["chunks"] > 0
+    assert response.json()["remaining"]["chunks"] > 0
+    response = await authed_integration_client.get(
+        f"/stream/{body['resume_token']}/chunk"
+    )
+    response.raise_for_status()
+    body = response.json()
+    assert body["remaining"]["chunks"] == 0
+    assert body["pending"]["chunks"] == 1
+    response = await authed_integration_client.post(
+        f"/stream/{body['resume_token']}/chunk/{body['chunk']}/acknowledge"
+    )
+    assert response.status_code == status.HTTP_200_OK
+
+    response = await authed_integration_client.get(f"/stream/{body['resume_token']}")
+    response.raise_for_status()
+    assert response.json()["remaining"]["chunks"] == 0
 
 
 @pytest.mark.asyncio
@@ -417,13 +439,25 @@ async def test_read_stream(
     response.raise_for_status()
     chunk = response.json()
     assert len(chunk["alerts"]) == 10
-    assert chunk["chunks_remaining"] == 0
+    assert chunk["remaining"]["chunks"] == 0
+    assert chunk["pending"]["chunks"] == 1
+
+    response = await integration_client.post(
+        f"/stream/{chunk['resume_token']}/chunk/{chunk['chunk']}/acknowledge"
+    )
+    response.raise_for_status()
+    response = await integration_client.get(f"/stream/{chunk['resume_token']}")
+    response.raise_for_status()
+    info = response.json()
+    assert info["remaining"]["chunks"] == 0
+    assert info["pending"]["chunks"] == 0
 
     response = await integration_client.get(f"/stream/{body['resume_token']}/chunk")
     response.raise_for_status()
     chunk = response.json()
     assert len(chunk["alerts"]) == 0
-    assert chunk["chunks_remaining"] == 0
+    assert info["remaining"]["chunks"] == 0
+    assert info["pending"]["chunks"] == 0
 
     # read a nonexistant chunk
     response = await integration_client.get(
@@ -463,8 +497,8 @@ async def test_read_topic(
 
     response = await integration_client.get(f"/stream/{stream['resume_token']}/chunk")
     response.raise_for_status()
-    assert [alert["candid"] for alert in response.json()["alerts"]] == candids
-    assert response.json()["chunks_remaining"] == 0
+    assert {alert["candid"] for alert in response.json()["alerts"]} == set(candids)
+    assert response.json()["remaining"]["chunks"] == 0
 
 
 @pytest.mark.asyncio

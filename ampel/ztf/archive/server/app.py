@@ -58,7 +58,12 @@ from .models import (
     TopicDescription,
     TopicQuery,
 )
-from ampel.ztf.archive.ArchiveDB import ArchiveDB, GroupNotFoundError, NoSuchColumnError
+from ampel.ztf.archive.ArchiveDB import (
+    ArchiveDB,
+    GroupInfo,
+    GroupNotFoundError,
+    NoSuchColumnError,
+)
 from ampel.ztf.archive.server.skymap import deres
 
 if TYPE_CHECKING:
@@ -323,22 +328,23 @@ def get_alerts_in_time_range(
 ) -> AlertChunk:
     if resume_token is None:
         resume_token = secrets.token_urlsafe(32)
-    chunk = list(
-        archive.get_alerts_in_time_range(
-            jd_start=jd_start,
-            jd_end=jd_end,
-            programid=programid,
-            with_history=with_history,
-            group_name=resume_token,
-            block_size=chunk_size,
-            max_blocks=1,
-        )
+    chunk, alerts = archive.get_alerts_in_time_range(
+        jd_start=jd_start,
+        jd_end=jd_end,
+        programid=programid,
+        with_history=with_history,
+        group_name=resume_token,
+        block_size=chunk_size,
+        max_blocks=1,
     )
+    info = get_stream_info(resume_token, archive)
     return AlertChunk(
         resume_token=resume_token,
         chunk_size=chunk_size,
-        chunks_remaining=get_stream_info(resume_token, archive)[1],
-        alerts=chunk,
+        alerts=alerts,
+        chunk=chunk,
+        pending=info["pending"],
+        remaining=info["remaining"],
     )
 
 
@@ -375,26 +381,27 @@ def get_alerts_in_cone(
 ) -> AlertChunk:
     if resume_token is None:
         resume_token = secrets.token_urlsafe(32)
-    chunk = list(
-        archive.get_alerts_in_cone(
-            ra=ra,
-            dec=dec,
-            radius=radius,
-            jd_start=jd_start,
-            jd_end=jd_end,
-            latest=latest,
-            programid=programid,
-            with_history=with_history,
-            group_name=resume_token,
-            block_size=chunk_size,
-            max_blocks=1,
-        )
+    chunk, alerts = archive.get_alerts_in_cone(
+        ra=ra,
+        dec=dec,
+        radius=radius,
+        jd_start=jd_start,
+        jd_end=jd_end,
+        latest=latest,
+        programid=programid,
+        with_history=with_history,
+        group_name=resume_token,
+        block_size=chunk_size,
+        max_blocks=1,
     )
+    info = get_stream_info(resume_token, archive)
     return AlertChunk(
         resume_token=resume_token,
         chunk_size=chunk_size,
-        chunks_remaining=get_stream_info(resume_token, archive)[1],
-        alerts=chunk,
+        alerts=alerts,
+        chunk=chunk,
+        pending=info["pending"],
+        remaining=info["remaining"],
     )
 
 
@@ -472,24 +479,25 @@ def get_alerts_in_healpix_pixel(
 ) -> AlertChunk:
     if resume_token is None:
         resume_token = secrets.token_urlsafe(32)
-    chunk = list(
-        archive.get_alerts_in_healpix(
-            pixels={int(nside): ipix},
-            jd_start=jd_start,
-            jd_end=jd_end,
-            latest=latest,
-            programid=programid,
-            with_history=with_history,
-            group_name=resume_token,
-            block_size=chunk_size,
-            max_blocks=1,
-        )
+    chunk, alerts = archive.get_alerts_in_healpix(
+        pixels={int(nside): ipix},
+        jd_start=jd_start,
+        jd_end=jd_end,
+        latest=latest,
+        programid=programid,
+        with_history=with_history,
+        group_name=resume_token,
+        block_size=chunk_size,
+        max_blocks=1,
     )
+    info = get_stream_info(resume_token, archive)
     return AlertChunk(
         resume_token=resume_token,
         chunk_size=chunk_size,
-        chunks_remaining=get_stream_info(resume_token, archive)[1],
-        alerts=chunk,
+        alerts=alerts,
+        chunk=chunk,
+        pending=info["pending"],
+        remaining=info["remaining"],
     )
 
 
@@ -506,24 +514,25 @@ def get_alerts_in_healpix_map(
     programid: Optional[int] = Depends(verify_authorized_programid),
 ) -> AlertChunk:
     resume_token = query.resume_token or secrets.token_urlsafe(32)
-    chunk = list(
-        archive.get_alerts_in_healpix(
-            pixels=deres(query.nside, query.pixels),
-            jd_start=query.jd.gt,
-            jd_end=query.jd.lt,
-            latest=query.latest,
-            programid=programid,
-            with_history=query.with_history,
-            group_name=resume_token,
-            block_size=query.chunk_size,
-            max_blocks=1,
-        )
+    chunk, alerts = archive.get_alerts_in_healpix(
+        pixels=deres(query.nside, query.pixels),
+        jd_start=query.jd.gt,
+        jd_end=query.jd.lt,
+        latest=query.latest,
+        programid=programid,
+        with_history=query.with_history,
+        group_name=resume_token,
+        block_size=query.chunk_size,
+        max_blocks=1,
     )
+    info = get_stream_info(resume_token, archive)
     return AlertChunk(
         resume_token=resume_token,
         chunk_size=query.chunk_size,
-        chunks_remaining=get_stream_info(resume_token, archive)[1],
-        alerts=chunk,
+        alerts=alerts,
+        chunk=chunk,
+        pending=info["pending"],
+        remaining=info["remaining"],
     )
 
 
@@ -582,11 +591,12 @@ def create_stream_from_topic(
         )
     except GroupNotFoundError:
         raise HTTPException(status_code=404, detail="Topic not found")
+    info = get_stream_info(name, archive)
     return {
         "resume_token": name,
         "chunk_size": query.chunk_size,
-        "chunks": queue_info["chunks"],
-        "items": queue_info["items"],
+        "remaining": info["remaining"],
+        "pending": info["pending"],
     }
 
 
@@ -696,26 +706,20 @@ def create_stream_from_query(
 
 def get_stream_info(resume_token: str, archive: ArchiveDB = Depends(get_archive)):
     try:
-        (
-            error,
-            msg,
-            chunk_size,
-            chunks_remaining,
-            items_remaining,
-        ) = archive.get_group_info(resume_token)
+        info = archive.get_group_info(resume_token)
     except GroupNotFoundError:
         raise HTTPException(status_code=404, detail="Stream not found")
-    if error is None:
+    if info["error"] is None:
         raise HTTPException(
             status_code=status.HTTP_423_LOCKED,
             detail={"msg": "queue-populating query has not yet finished"},
         )
-    elif error:
+    elif info["error"]:
         raise HTTPException(
             status_code=status.HTTP_424_FAILED_DEPENDENCY,
-            detail={"msg": msg},
+            detail={"msg": info["msg"]},
         )
-    return chunk_size, chunks_remaining, items_remaining
+    return info
 
 
 @app.get(
@@ -728,18 +732,15 @@ def get_stream_info(resume_token: str, archive: ArchiveDB = Depends(get_archive)
         status.HTTP_424_FAILED_DEPENDENCY: {"description": "Query failed"},
     },
 )
-def get_stream(
-    resume_token: str, stream_info: tuple[int, int, int] = Depends(get_stream_info)
-):
+def get_stream(resume_token: str, stream_info: GroupInfo = Depends(get_stream_info)):
     """
     Get the next available chunk of alerts from the given stream.
     """
-    chunk_size, chunks_remaining, items_remaining = stream_info
     return {
         "resume_token": resume_token,
-        "chunk_size": chunk_size,
-        "chunks": chunks_remaining,
-        "items": items_remaining,
+        "chunk_size": stream_info["chunk_size"],
+        "remaining": stream_info["remaining"],
+        "pending": stream_info["pending"],
     }
 
 
@@ -761,20 +762,55 @@ def stream_get_chunk(
     stream_info=Depends(get_stream_info),
 ):
     """
-    Get the next available chunk of alerts from the given stream.
+    Get the next available chunk of alerts from the given stream. This chunk will
+    be reserved until explicitly acknowledged.
     """
     try:
-        chunk = list(archive.get_chunk_from_queue(resume_token, with_history))
+        chunk_id, alerts = archive.get_chunk_from_queue(resume_token, with_history)
     except GroupNotFoundError:
         raise HTTPException(status_code=404, detail="Stream not found")
-    chunk_size, chunks_remaining, items_remaining = get_stream_info(
-        resume_token, archive
-    )
+    info = get_stream_info(resume_token, archive)
     return AlertChunk(
         resume_token=resume_token,
-        chunks_remaining=chunks_remaining,
-        alerts=chunk,
+        chunk=chunk_id,
+        alerts=alerts,
+        remaining=info["remaining"],
+        pending=info["pending"],
     )
+
+
+@app.post(
+    "/stream/{resume_token}/chunk/{chunk_id}/acknowledge",
+    tags=["stream"],
+)
+def stream_acknowledge_chunk(
+    resume_token: str,
+    chunk_id: int,
+    archive: ArchiveDB = Depends(get_archive),
+    # piggy-back on stream info to raise errors on pending or errored queries
+    stream_info=Depends(get_stream_info),
+):
+    """
+    Mark the given chunk as consumed.
+    """
+    archive.acknowledge_chunk_from_queue(resume_token, chunk_id)
+
+
+@app.post(
+    "/stream/{resume_token}/chunk/{chunk_id}/release",
+    tags=["stream"],
+)
+def stream_release_chunk(
+    resume_token: str,
+    chunk_id: int,
+    archive: ArchiveDB = Depends(get_archive),
+    # piggy-back on stream info to raise errors on pending or errored queries
+    stream_info=Depends(get_stream_info),
+):
+    """
+    Mark the given chunk as unconsumed.
+    """
+    archive.release_chunk_from_queue(resume_token, chunk_id)
 
 
 # If we are mounted under a (non-stripped) prefix path, create a potemkin root

@@ -497,7 +497,7 @@ def test_archive_object(alert_generator, empty_archive) -> None:
 
     alerts = list(islice(alert_generator(), 10))
     candids = [a["candid"] for a in alerts]
-    reco_candids = [a["candid"] for a in db.get_alerts(candids)]
+    reco_candids = [a["candid"] for a in db.get_alerts(candids)[1]]
     assert reco_candids == candids
 
     jds = sorted([a["candidate"]["jd"] for a in alerts])
@@ -506,7 +506,7 @@ def test_archive_object(alert_generator, empty_archive) -> None:
         a["candidate"]["jd"]
         for a in db.get_alerts_in_time_range(
             jd_start=min(jds) - sec, jd_end=max(jds) + sec
-        )
+        )[1]
     ]
     assert reco_jds == jds
 
@@ -516,7 +516,7 @@ def test_archive_object(alert_generator, empty_archive) -> None:
             ra=alerts[0]["candidate"]["ra"],
             dec=alerts[0]["candidate"]["dec"],
             radius=2.0,
-        )
+        )[1]
     ]
     assert alerts[0]["candid"] in reco_candids
 
@@ -526,7 +526,7 @@ def test_archive_object(alert_generator, empty_archive) -> None:
 
 def test_partitioned_read_single(alert_archive):
     db = ArchiveDB(alert_archive)
-    alerts = db.get_alerts_in_time_range(jd_start=0, jd_end=1e8, group_name="testy")
+    alerts = db.get_alerts_in_time_range(jd_start=0, jd_end=1e8, group_name="testy")[1]
     l = list((alert["candid"] for alert in alerts))
     assert len(l) == 10
 
@@ -573,15 +573,20 @@ def test_topic_to_read_queue(alert_archive, selection):
     assert queue_info["chunks"] == 2
     assert queue_info["items"] == 3
 
-    assert [alert["candid"] for alert in db.get_chunk_from_queue(group)] == candids[:2]
-    assert [alert["candid"] for alert in db.get_chunk_from_queue(group)] == candids[2:]
-    assert [alert["candid"] for alert in db.get_chunk_from_queue(group)] == []
+    def get_chunk(group):
+        chunk_id, alerts = db.get_chunk_from_queue(group)
+        db.acknowledge_chunk_from_queue(group, chunk_id)
+        return alerts
+
+    assert {alert["candid"] for alert in get_chunk(group)} == set(candids[:2])
+    assert {alert["candid"] for alert in get_chunk(group)} == set(candids[2:])
+    assert [alert["candid"] for alert in get_chunk(group)] == []
 
 
 def test_cone_search(alert_archive):
     db = ArchiveDB(alert_archive)
     group = secrets.token_urlsafe()
-    alerts = list(
+    chunk_id, alerts = list(
         db.get_alerts_in_cone(
             ra=0,
             dec=0,
@@ -627,7 +632,7 @@ def test_seekable_avro(alert_generator, cutouts: bool):
     for alert, schema in alert_generator(with_schema=True):
         if not cutouts:
             for k in list(alert.keys()):
-                if k.startswith('cutout'):
+                if k.startswith("cutout"):
                     alert[k] = None
                     pass
         alerts.append(alert)
@@ -645,21 +650,23 @@ def test_seekable_avro(alert_generator, cutouts: bool):
             assert block.num_records > 0
         end = buf.tell()
         for alert in block:
-            ranges[alert['candid']] = (pos, end)
+            ranges[alert["candid"]] = (pos, end)
         pos = end
 
-    print(buf.tell() /  2**20)
+    print(buf.tell() / 2 ** 20)
 
     codec = reader.metadata["avro.codec"]
     read_block = BLOCK_READERS.get(codec)
 
     for alert in alerts:
-        decoder = BinaryDecoder(io.BytesIO(buf.getvalue()[slice(*ranges[alert["candid"]])]))
+        decoder = BinaryDecoder(
+            io.BytesIO(buf.getvalue()[slice(*ranges[alert["candid"]])])
+        )
         assert (nrecords := decoder.read_long()) > 0
         slicebuf = read_block(decoder)
         for _ in range(nrecords):
             reco = fastavro.schemaless_reader(slicebuf, reader.writer_schema)
-            if reco['candid'] == alert['candid']:
+            if reco["candid"] == alert["candid"]:
                 assert reco == alert
                 break
         else:

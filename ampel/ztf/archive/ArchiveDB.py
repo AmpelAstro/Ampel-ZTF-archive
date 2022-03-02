@@ -20,6 +20,7 @@ from typing import (
     TYPE_CHECKING,
     Union,
     cast,
+    TypedDict,
 )
 from contextlib import contextmanager
 
@@ -60,6 +61,19 @@ class GroupNotFoundError(KeyError):
 
 class NoSuchColumnError(KeyError):
     ...
+
+
+class ChunkCount(TypedDict):
+    chunks: int
+    items: int
+
+
+class GroupInfo(TypedDict):
+    error: Optional[bool]
+    msg: Optional[str]
+    chunk_size: int
+    remaining: ChunkCount
+    pending: ChunkCount
 
 
 class ArchiveDB(ArchiveDBClient):
@@ -388,9 +402,7 @@ class ArchiveDB(ArchiveDBClient):
             log.exception(f"Failed to create group {group_name}")
             return group_id, 0
 
-    def get_group_info(
-        self, group_name: str
-    ) -> tuple[bool, Optional[str], int, int, int]:
+    def get_group_info(self, group_name: str) -> GroupInfo:
         Groups = self._meta.tables["read_queue_groups"]
         Queue = self._meta.tables["read_queue"]
         with self.connect() as conn:
@@ -413,23 +425,30 @@ class ArchiveDB(ArchiveDBClient):
             else:
                 raise GroupNotFoundError
             col = Queue.c.alert_ids
-            row = conn.execute(
+            pending = (Queue.c.issued != sqlalchemy.sql.null()).label("pending")
+            info: GroupInfo = {
+                "error": error,
+                "msg": msg,
+                "chunk_size": chunk_size,
+                "remaining": {"chunks": 0, "items": 0},
+                "pending": {"chunks": 0, "items": 0},
+            }
+            for row in conn.execute(
                 select(
                     [
+                        pending,
                         func.count(col).label("chunks"),
                         func.sum(func.array_length(col, 1)).label("items"),
                     ]
-                ).where(Queue.c.group_id == group_id)
-            ).fetchone()
-            chunks: int = row["chunks"]
-            items: int = row["items"]
-            return (
-                error,
-                msg,
-                chunk_size,
-                chunks,
-                items,
-            )
+                )
+                .where(Queue.c.group_id == group_id)
+                .group_by(pending)
+            ):
+                target = info["pending"] if row["pending"] else info["remaining"]
+                target["chunks"] = row["chunks"]
+                target["items"] = row["items"]
+
+            return info
 
     def _fetch_alerts_with_condition(
         self,
@@ -454,46 +473,23 @@ class ArchiveDB(ArchiveDBClient):
             group_id, _ = self._create_read_queue(
                 conn, condition, order, group_name, block_size
             )
-            Queue = self._meta.tables["read_queue"]
-            # Pop a block of alert IDs from the queue that is not already
-            # locked by another client, and lock it for the duration of the
-            # transaction.
-            item_id = Queue.c.item_id
-            popped_item = (
-                Queue.delete()
-                .where(
-                    Queue.c.item_id
-                    == select([item_id])
-                    .where(Queue.c.group_id == group_id)
-                    .order_by(item_id.asc())
-                    .with_for_update(skip_locked=True)
-                    .limit(1)
-                )
-                .returning(Queue.c.alert_ids)
-                .cte()
-            )
-            # Query for alerts whose IDs were in the block
-            alert_query = self._build_alert_query(
-                self._alert_id_column.in_(
-                    select([func.unnest(popped_item.c.alert_ids)])
-                ),
-                with_history=with_history,
-            )
-        else:
-            alert_query = self._build_alert_query(
-                condition,
-                order=order,
-                distinct=distinct,
-                with_history=with_history,
-            )
+            return self.get_chunk_from_queue(group_name, with_history=with_history)
 
+        alert_query = self._build_alert_query(
+            condition,
+            order=order,
+            distinct=distinct,
+            with_history=with_history,
+        )
+
+        alerts = []
         while True:
             nrows = 0
             nchunks = 0
             with conn.begin() as transaction:
                 for result in conn.execute(alert_query):
                     nrows += 1
-                    yield self._apply_schema(result)
+                    alerts.append(self._apply_schema(result))
                 # If we reach this point, all alerts from the block have been
                 # consumed. Commit the transaction to delete the queue item. If
                 # the generator is destroyed before we reach this point,
@@ -512,17 +508,7 @@ class ArchiveDB(ArchiveDBClient):
                 or (max_blocks is not None and nchunks >= max_blocks)
             ):
                 break
-            else:
-                chunks = conn.execute(
-                    select([func.count(Queue.c.alert_ids).label("chunks")]).where(
-                        Queue.c.group_id == group_id
-                    )
-                ).fetchone()[0]
-                log.info(
-                    "Query complete after {} alerts, {} chunks remaining".format(
-                        nrows, chunks
-                    )
-                )
+        return -1, alerts
 
     def get_chunk_from_queue(self, group_name: str, with_history: bool = True):
         Groups = self._meta.tables["read_queue_groups"]
@@ -551,35 +537,61 @@ class ArchiveDB(ArchiveDBClient):
             # transaction.
             item_id = Queue.c.item_id
             popped_item = (
-                Queue.delete()
+                Queue.update()
                 .where(
                     Queue.c.item_id
                     == select([item_id])
                     .where(Queue.c.group_id == group_id)
+                    .where(Queue.c.issued == sqlalchemy.sql.null())
                     .order_by(item_id.asc())
                     .with_for_update(skip_locked=True)
                     .limit(1)
                 )
-                .returning(Queue.c.alert_ids)
+                .values(issued=sqlalchemy.func.now())
+                .returning(Queue.c.item_id)
                 .cte()
             )
             # Query for alerts whose IDs were in the block
+            alert_ids = select([func.unnest(Queue.c.alert_ids)]).where(
+                Queue.c.item_id == popped_item.c.item_id
+            )
             alert_query = self._build_alert_query(
-                self._alert_id_column.in_(
-                    select([func.unnest(popped_item.c.alert_ids)])
-                ),
+                self._alert_id_column.in_(alert_ids),
                 with_history=with_history,
             )
-            with conn.begin() as transaction:
-                for result in conn.execute(alert_query):
-                    yield self._apply_schema(result)
-                # If we reach this point, all alerts from the block have been
-                # consumed. Commit the transaction to delete the queue item. If
-                # the generator is destroyed before we reach this point,
-                # however, the transaction will be rolled back, releasing the
-                # lock on the queue item and allowing another client to claim
-                # it.
-                transaction.commit()
+            alert_query.append_column(popped_item.c.item_id.label("_chunk_id"))
+            print(alert_query.compile(compile_kwargs={"literal_binds": True}))
+
+            alerts = []
+            chunk_id = None
+            for row in conn.execute(alert_query):
+                chunk_id = row["_chunk_id"]
+                alerts.append(self._apply_schema(row))
+
+            return chunk_id, alerts
+
+    def acknowledge_chunk_from_queue(self, group_name: str, item_id: int):
+        Groups = self._meta.tables["read_queue_groups"]
+        Queue = self._meta.tables["read_queue"]
+        with self.connect() as conn:
+            conn.execute(
+                Queue.delete()
+                .where(Queue.c.group_id == Groups.c.group_id)
+                .where(Groups.c.group_name == group_name)
+                .where(Queue.c.item_id == item_id)
+            )
+
+    def release_chunk_from_queue(self, group_name: str, item_id: int):
+        Groups = self._meta.tables["read_queue_groups"]
+        Queue = self._meta.tables["read_queue"]
+        with self.connect() as conn:
+            conn.execute(
+                Queue.update()
+                .where(Queue.c.group_id == Groups.c.group_id)
+                .where(Groups.c.group_name == group_name)
+                .where(Queue.c.item_id == item_id)
+                .values(issued=sqlalchemy.sql.null)
+            )
 
     def _build_base_alert_query(
         self,
@@ -696,8 +708,15 @@ class ArchiveDB(ArchiveDBClient):
         alert = dict(candidate_row)
 
         # trim artifacts of schema adaptation
-        for k in ("alert_id", "jd", "programid", "partition_id", "ingestion_time"):
-            alert.pop(k)
+        for k in (
+            "alert_id",
+            "jd",
+            "programid",
+            "partition_id",
+            "ingestion_time",
+            "_chunk_id",
+        ):
+            alert.pop(k, None)
         alert["publisher"] = "Ampel"
         fluff = {"alert_id", "prv_candidate_id", "upper_limit_id"}
         missing = {"programpi", "pdiffimfilename"}
@@ -816,12 +835,13 @@ class ArchiveDB(ArchiveDBClient):
         Alert = self._meta.tables["alert"]
 
         with self.connect() as conn:
-            for alert in self._fetch_alerts_with_condition(
+            chunk_id, alerts = self._fetch_alerts_with_condition(
                 conn,
                 Alert.c.candid == candid,
                 with_history=with_history,
-            ):
-                return alert
+            )
+            if alerts:
+                return alerts[0]
         return None
 
     def get_archive_segment(self, candid):
@@ -886,7 +906,7 @@ class ArchiveDB(ArchiveDBClient):
         in_range = and_(*conditions)
 
         with self.connect() as conn:
-            yield from self._fetch_alerts_with_condition(
+            return self._fetch_alerts_with_condition(
                 conn,
                 in_range,
                 [Alert.c.jd.asc()],
@@ -956,7 +976,7 @@ class ArchiveDB(ArchiveDBClient):
         )
 
         with self.connect() as conn:
-            yield from self._fetch_alerts_with_condition(
+            return self._fetch_alerts_with_condition(
                 conn,
                 Alert.c.candid.in_(candids),
                 [order],
@@ -1035,7 +1055,7 @@ class ArchiveDB(ArchiveDBClient):
         )
 
         with self.connect() as conn:
-            yield from self._fetch_alerts_with_condition(
+            return self._fetch_alerts_with_condition(
                 conn,
                 condition,
                 order,
@@ -1207,7 +1227,7 @@ class ArchiveDB(ArchiveDBClient):
         )
 
         with self.connect() as conn:
-            yield from self._fetch_alerts_with_condition(
+            return self._fetch_alerts_with_condition(
                 conn,
                 condition,
                 orders,
@@ -1296,7 +1316,7 @@ class ArchiveDB(ArchiveDBClient):
         )
 
         with self.connect() as conn:
-            yield from self._fetch_alerts_with_condition(
+            return self._fetch_alerts_with_condition(
                 conn,
                 condition,
                 orders,
@@ -1304,7 +1324,6 @@ class ArchiveDB(ArchiveDBClient):
                 with_history=with_history,
                 group_name=group_name,
                 block_size=block_size,
-                max_blocks=max_blocks,
             )
 
 

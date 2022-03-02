@@ -1,4 +1,5 @@
 from base64 import b64encode
+from chunk import Chunk
 from typing import List, Dict, Any, Literal, Optional
 from pydantic import BaseModel, Field, validator, root_validator
 from ..types import FilterClause
@@ -8,13 +9,20 @@ class StrictModel(BaseModel):
     class Config:
         extra = "forbid"
 
+
 class Stream(BaseModel):
     resume_token: str
     chunk_size: int
 
-class StreamDescription(Stream):
+
+class ChunkCount(BaseModel):
     items: int
     chunks: int
+
+
+class StreamDescription(Stream):
+    remaining: ChunkCount
+    pending: ChunkCount
 
 
 class Topic(BaseModel):
@@ -53,13 +61,14 @@ class ConeConstraint(StrictModel):
 
 
 class TimeConstraint(StrictModel):
-    lt: Optional[float] = Field(None, alias='$lt')
-    gt: Optional[float] = Field(None, alias='$gt')
+    lt: Optional[float] = Field(None, alias="$lt")
+    gt: Optional[float] = Field(None, alias="$gt")
 
 
 class StrictTimeConstraint(TimeConstraint):
-    lt: float = Field(..., alias='$lt')
-    gt: float = Field(..., alias='$gt')
+    lt: float = Field(..., alias="$lt")
+    gt: float = Field(..., alias="$gt")
+
 
 class CandidateFilterable(StrictModel):
     candidate: Optional[FilterClause] = None
@@ -70,6 +79,7 @@ class CandidateFilterable(StrictModel):
             return v
         else:
             return {"$eq": v}
+
 
 class AlertQuery(CandidateFilterable):
     cone: Optional[ConeConstraint] = None
@@ -330,8 +340,10 @@ class Alert(AlertCutouts):
 
 class AlertChunk(BaseModel):
     resume_token: str
-    chunks_remaining: int
+    chunk: Optional[int]
     alerts: List[Alert]
+    remaining: ChunkCount
+    pending: ChunkCount
 
     class Config:
         json_encoders = {bytes: lambda v: b64encode(v).decode()}
