@@ -461,7 +461,7 @@ class ArchiveDB(ArchiveDBClient):
         group_name=None,
         block_size=None,
         max_blocks=None,
-    ):
+    ) -> tuple[int, list[dict[str,Any]]]:
         """ """
 
         if group_name is not None:

@@ -266,13 +266,14 @@ def get_alerts_for_object(
     """
     Get all alerts for the given object.
     """
-    return archive.get_alerts_for_object(
+    chunk_id, alerts = archive.get_alerts_for_object(
         objectId,
         jd_start=jd_start,
         jd_end=jd_end,
         programid=programid,
         with_history=with_history,
     )
+    return alerts
 
 
 @app.get(

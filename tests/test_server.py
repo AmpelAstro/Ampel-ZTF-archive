@@ -82,7 +82,7 @@ def mock_db(mocked_app, alert_generator):
     # add fake drbversion to pre-drb alert
     alert["candidate"]["drbversion"] = "0.0"
     db.get_alert.return_value = alert
-    db.get_alerts_for_object.return_value = [alert]
+    db.get_alerts_for_object.return_value = (-1, [alert])
     db.get_group_info.return_value = {
         "error": False,
         "msg": None,
