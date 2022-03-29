@@ -560,7 +560,6 @@ class ArchiveDB(ArchiveDBClient):
                 with_history=with_history,
             )
             alert_query.append_column(popped_item.c.item_id.label("_chunk_id"))
-            print(alert_query.compile(compile_kwargs={"literal_binds": True}))
 
             alerts = []
             chunk_id = None
