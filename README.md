@@ -15,8 +15,18 @@ You will also need `poetry` to proceed.
 
 After ensuring both, clone the repo, `cd` into it and run `poetry install -E server`, followed by `poetry run pytest --cov=ampel`. If no errors occur, you are good to go.
 
-To start the test server, simply run the bash script (`chmod +x start_test_server.sh; ./start_test_server.sh`)
+To start the test server, simply run the bash script: 
+`chmod +x start_test_server.sh; ./start_test_server.sh`
 
-This will prompt you with an environment variable (e.g.: `ARCHIVE_URI="postgresql://ampel:seekrit@localhost:55039/ztfarchive")`
+This will prompt you with an environment variable (NOTE: your port will be different): 
+`ARCHIVE_URI="postgresql://ampel:seekrit@localhost:55039/ztfarchive")`
 
-Open a new terminal and export this environment variable: `export ARCHIVE_URI="postgresql://ampel:seekrit@localhost:55039/ztfarchive")`. You will also need to export another one: `export ROOT_PATH=/api/ztf/archive/v3`. Now you can launch the web server with `uvicorn ampel.ztf.archive.server.app:app`. This listens on `localhost:8000`.
+Open a new terminal and export this environment variable: `export ARCHIVE_URI="postgresql://ampel:seekrit@localhost:55039/ztfarchive")`
+
+You will also need to export another one: 
+`export ROOT_PATH=/api/ztf/archive/v3`
+
+Now you can launch the web server with 
+`uvicorn ampel.ztf.archive.server.app:app`
+
+This listens on `localhost:8000`
