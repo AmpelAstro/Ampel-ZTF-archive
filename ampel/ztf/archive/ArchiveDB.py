@@ -461,9 +461,8 @@ class ArchiveDB(ArchiveDBClient):
         group_name=None,
         block_size=None,
         max_blocks=None,
-    ) -> tuple[int, list[dict[str,Any]]]:
+    ) -> tuple[int, list[dict[str, Any]]]:
         """ """
-
         if group_name is not None:
             if distinct:
                 # TODO
@@ -1184,6 +1183,40 @@ class ArchiveDB(ArchiveDBClient):
             if not latest
             else [Candidate.c.jd.desc(), Candidate.c.candid.desc()],
         )
+
+    def _object_search_condition(
+        self,
+        objectId: str,
+        programid: Optional[int] = None,
+        jd_start: Optional[float] = None,
+        jd_end: Optional[float] = None,
+        candidate_filter: Optional[FilterClause] = None,
+    ) -> Tuple[BooleanClauseList, List[UnaryExpression]]:
+
+        Alert = self._meta.tables["alert"]
+        if isinstance(objectId, str):
+            match = Alert.c.objectId == objectId
+        elif isinstance(objectId, collections.Collection):
+            match = Alert.c.objectId.in_(objectId)
+        else:
+            raise TypeError(
+                "objectId must be str or collection, got {}".format(type(objectId))
+            )
+        conditions = [match]
+
+        jd = self._get_alert_column("jd")
+        Candidate = self.get_table("candidate")
+
+        if jd_end is not None:
+            conditions.insert(0, jd < jd_end)
+        if jd_start is not None:
+            conditions.insert(0, jd >= jd_start)
+        if programid is not None:
+            conditions.insert(0, self._get_alert_column("programid") == programid)
+        if candidate_filter is not None:
+            conditions.append(self._candidate_filter_condition(candidate_filter))
+
+        return and_(*conditions), [jd.asc()]
 
     def get_alerts_in_cone(
         self,

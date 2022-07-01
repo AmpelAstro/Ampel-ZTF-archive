@@ -52,6 +52,7 @@ from .models import (
     AlertQuery,
     HEALpixMapQuery,
     HEALpixRegionQuery,
+    ObjectQuery,
     Stream,
     StreamDescription,
     Topic,
@@ -609,13 +610,21 @@ def create_stream_from_topic(
 )
 def create_stream_from_query(
     tasks: BackgroundTasks,
-    query: Union[AlertQuery, HEALpixRegionQuery] = Body(
+    query: Union[AlertQuery, ObjectQuery, HEALpixRegionQuery] = Body(
         ...,
         examples={
             "cone": {
                 "summary": "Cone search",
                 "value": {
                     "cone": {"ra": 158.068431, "dec": 47.0497302, "radius": 3.5},
+                },
+            },
+            "object": {
+                "summary": "ZTF-ID search",
+                "description": "Retrieve alerts for all ObjectIds provided",
+                "value": {
+                    "objectId": ["ZTF19aapreis", "ZTF19aatubsj"],
+                    "jd": {"$gt": 2458550.5, "$lt": 2459550.5},
                 },
             },
             "healpix": {
@@ -663,11 +672,19 @@ def create_stream_from_query(
                 )
             else:
                 condition, order = archive._time_range_condition(
-                    programid,
+                    programid=programid,
                     jd_start=query.jd.gt,
                     jd_end=query.jd.lt,
                     candidate_filter=query.candidate,
                 )
+        elif isinstance(query, ObjectQuery):
+            condition, order = archive._object_search_condition(
+                objectId=query.objectId,
+                programid=programid,
+                jd_start=query.jd.gt,
+                jd_end=query.jd.lt,
+                candidate_filter=query.candidate,
+            )
         else:
             pixels: dict[int, list[int]] = {}
             for region in query.regions:

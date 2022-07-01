@@ -96,6 +96,15 @@ class AlertQuery(CandidateFilterable):
         return values
 
 
+class ObjectQuery(CandidateFilterable):
+    objectId: list[str] = None
+    jd: TimeConstraint = TimeConstraint()
+    candidate: Optional[FilterClause] = None
+    chunk_size: int = Field(
+        100, gte=0, lte=10000, description="Number of alerts per chunk"
+    )
+
+
 class MapQueryBase(CandidateFilterable):
     jd: StrictTimeConstraint
     latest: bool = Field(

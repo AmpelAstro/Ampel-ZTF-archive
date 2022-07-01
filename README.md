@@ -23,10 +23,10 @@ To start the test server, simply run the bash script:
 This will prompt you with an environment variable (NOTE: your port will be different): 
 `ARCHIVE_URI="postgresql://ampel:seekrit@localhost:55039/ztfarchive")`
 
-Open a new terminal instance and set this environment variable: `ARCHIVE_URI="postgresql://ampel:seekrit@localhost:55039/ztfarchive")`
+Open a new terminal instance and set this environment variable: `export ARCHIVE_URI="postgresql://ampel:seekrit@localhost:55039/ztfarchive")`
 
 You will also need to set another one: 
-`ROOT_PATH=/api/ztf/archive/v3`
+`export ROOT_PATH=/api/ztf/archive/v3`
 
 Now you can launch the web server with 
 `uvicorn ampel.ztf.archive.server.app:app`
