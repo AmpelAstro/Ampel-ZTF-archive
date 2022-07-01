@@ -1,6 +1,7 @@
+import collections
 from base64 import b64encode
 from chunk import Chunk
-from typing import List, Dict, Any, Literal, Optional
+from typing import List, Dict, Any, Literal, Optional, Union
 from pydantic import BaseModel, Field, validator, root_validator
 from ..types import FilterClause
 
@@ -97,7 +98,7 @@ class AlertQuery(CandidateFilterable):
 
 
 class ObjectQuery(CandidateFilterable):
-    objectId: list[str] = None
+    objectId: Union[str, collections.Collection]
     jd: TimeConstraint = TimeConstraint()
     candidate: Optional[FilterClause] = None
     chunk_size: int = Field(

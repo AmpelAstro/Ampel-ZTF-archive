@@ -1186,7 +1186,7 @@ class ArchiveDB(ArchiveDBClient):
 
     def _object_search_condition(
         self,
-        objectId: str,
+        objectId: Union[str, collections.Collection],
         programid: Optional[int] = None,
         jd_start: Optional[float] = None,
         jd_end: Optional[float] = None,
