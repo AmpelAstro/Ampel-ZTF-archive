@@ -1,4 +1,3 @@
-import collections
 from base64 import b64encode
 from chunk import Chunk
 from typing import List, Dict, Any, Literal, Optional, Union
@@ -98,7 +97,7 @@ class AlertQuery(CandidateFilterable):
 
 
 class ObjectQuery(CandidateFilterable):
-    objectId: Union[str, collections.Collection]
+    objectId: Union[str, List[str]]
     jd: TimeConstraint = TimeConstraint()
     candidate: Optional[FilterClause] = None
     chunk_size: int = Field(
