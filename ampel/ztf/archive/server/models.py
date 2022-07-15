@@ -1,6 +1,6 @@
 from base64 import b64encode
 from chunk import Chunk
-from typing import List, Dict, Any, Literal, Optional
+from typing import List, Dict, Any, Literal, Optional, Union
 from pydantic import BaseModel, Field, validator, root_validator
 from ..types import FilterClause
 
@@ -94,6 +94,15 @@ class AlertQuery(CandidateFilterable):
         if not {"cone", "jd"}.intersection(values.keys()):
             raise ValueError(f"At least one constraint (cone or jd) must be specified")
         return values
+
+
+class ObjectQuery(CandidateFilterable):
+    objectId: Union[str, List[str]]
+    jd: TimeConstraint = TimeConstraint()
+    candidate: Optional[FilterClause] = None
+    chunk_size: int = Field(
+        100, gte=0, lte=10000, description="Number of alerts per chunk"
+    )
 
 
 class MapQueryBase(CandidateFilterable):

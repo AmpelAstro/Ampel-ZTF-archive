@@ -1,4 +1,4 @@
-#!/bin/sh
+#! /usr/bin/env sh
 
 postgres=$(docker run \
     -e ARCHIVE_READ_USER=ampel-readonly \
@@ -20,6 +20,7 @@ host_port() {
 
 POSTGRES_URI=postgresql://ampel:seekrit@localhost:$(host_port $postgres "5432/tcp")/ztfarchive
 
+
 localstack=$(docker run \
     -e SERVICES=s3 \
     -e DEBUG=s3 \
@@ -39,6 +40,8 @@ trap cleanup SIGINT
 
 echo postgres: $postgres
 echo localstack: $localstack
-echo POSTGRES_URI=\"$POSTGRES_URI\" LOCALSTACK_URI=\"$LOCALSTACK_URI\"
+echo POSTGRES_URI=\"$POSTGRES_URI\"
+echo LOCALSTACK_URI=\"$LOCALSTACK_URI\"
+echo ARCHIVE_URI=\"$POSTGRES_URI\"
 
 docker wait $postgres $localstack
