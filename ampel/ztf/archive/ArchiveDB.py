@@ -461,7 +461,9 @@ class ArchiveDB(ArchiveDBClient):
         group_name=None,
         block_size=None,
         max_blocks=None,
-    ) -> tuple[int, list[dict[str, Any]]]:
+        limit: Optional[int] = None,
+        skip: int = 0,
+    ) -> tuple[int, list[dict[str,Any]]]:
         """ """
         if group_name is not None:
             if distinct:
@@ -479,6 +481,8 @@ class ArchiveDB(ArchiveDBClient):
             order=order,
             distinct=distinct,
             with_history=with_history,
+            limit=limit,
+            skip=skip,
         )
 
         alerts = []
@@ -598,6 +602,8 @@ class ArchiveDB(ArchiveDBClient):
         *,
         order: List[UnaryExpression] = [],
         distinct: bool = False,
+        limit: Optional[int] = None,
+        skip: int = 0,
     ):
         meta = self._meta
         Candidate = self.get_table("candidate")
@@ -611,6 +617,8 @@ class ArchiveDB(ArchiveDBClient):
             .where(condition)
             .order_by(*(([Alert.c.objectId.asc()] if distinct else []) + order))
         )
+        if limit is not None:
+            alert_base = alert_base.limit(limit).offset(skip)
         if distinct:
             return alert_base.distinct(Alert.c.objectId)
         else:
@@ -623,6 +631,8 @@ class ArchiveDB(ArchiveDBClient):
         order: List[UnaryExpression] = [],
         distinct: bool = False,
         with_history: bool = True,
+        limit: Optional[int] = None,
+        skip: int = 0,
     ):
         """
         Build a query whose results _mostly_ match the structure of the orginal
@@ -647,6 +657,8 @@ class ArchiveDB(ArchiveDBClient):
             condition,
             order=order,
             distinct=distinct,
+            limit=limit,
+            skip=skip,
         ).alias()
 
         candidate = (
@@ -873,6 +885,8 @@ class ArchiveDB(ArchiveDBClient):
         jd_end: Optional[float] = None,
         programid: Optional[int] = None,
         with_history: bool = False,
+        limit: Optional[int] = None,
+        start: int = 0,
     ):
         """
         Retrieve alerts from the archive database by ID
@@ -907,8 +921,10 @@ class ArchiveDB(ArchiveDBClient):
             return self._fetch_alerts_with_condition(
                 conn,
                 in_range,
-                [Alert.c.jd.asc()],
+                [Alert.c.alert_id.asc()],
                 with_history=with_history,
+                limit=limit,
+                skip=start,
             )
 
     def get_photopoints_for_object(

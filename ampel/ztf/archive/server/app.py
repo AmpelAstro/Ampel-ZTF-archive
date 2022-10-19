@@ -260,6 +260,10 @@ def get_alerts_for_object(
     with_history: bool = Query(
         False, description="Include previous detections and upper limits"
     ),
+    limit: Optional[int] = Query(
+        None, description="Maximum number of alerts to return",
+    ),
+    start: int = Query(0, description="Return alerts starting at index"),
     archive: ArchiveDB = Depends(get_archive),
     auth: AuthToken = Depends(verify_access_token),
     programid: Optional[int] = Depends(verify_authorized_programid),
@@ -273,6 +277,8 @@ def get_alerts_for_object(
         jd_end=jd_end,
         programid=programid,
         with_history=with_history,
+        limit=limit,
+        start=start,
     )
     return alerts
 
