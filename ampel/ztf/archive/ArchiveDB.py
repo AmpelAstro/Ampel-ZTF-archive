@@ -463,7 +463,7 @@ class ArchiveDB(ArchiveDBClient):
         max_blocks=None,
         limit: Optional[int] = None,
         skip: int = 0,
-    ) -> tuple[int, list[dict[str,Any]]]:
+    ) -> tuple[int, list[dict[str, Any]]]:
         """ """
         if group_name is not None:
             if distinct:
@@ -1091,18 +1091,24 @@ class ArchiveDB(ArchiveDBClient):
         latest: bool = False,
         candidate_filter: Optional[FilterClause] = None,
     ) -> Tuple[BooleanClauseList, List[UnaryExpression]]:
-        from sqlalchemy import func
-        from sqlalchemy.sql.expression import BinaryExpression
+        from sqlalchemy import func, or_
+        from .server.healpix_cone_search import ranges_for_cone
 
         Alert = self._meta.tables["alert"]
         Candidate = self.get_table("candidate")
 
         center = func.ll_to_earth(dec, ra)
-        box = func.earth_box(center, radius)
         loc = func.ll_to_earth(Candidate.c.dec, Candidate.c.ra)
 
+        pix = Candidate.c._hpx_64
+
         conditions = [
-            BinaryExpression(box, loc, "@>"),  # type: ignore
+            or_(
+                *[
+                    and_(pix >= left, pix <= right)
+                    for left, right in ranges_for_cone(ra, dec, radius, nside=64)
+                ]
+            ),
             func.earth_distance(center, loc) < radius,
         ]
         # NB: filtering on jd from Candidate here is ~2x faster than _also_
