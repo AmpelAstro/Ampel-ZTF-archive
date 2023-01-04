@@ -20,6 +20,6 @@ def ranges_for_cone(
         [np.where(ipix != np.roll(ipix, 1) + 1)[0], [len(ipix)]]
     )
     return [
-        (ipix[left], ipix[right - 1])
+        (int(ipix[left]), int(ipix[right - 1]))
         for left, right in (zip(changepoints[:-1], changepoints[1:]))
     ]
