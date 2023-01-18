@@ -30,9 +30,14 @@ class Settings(BaseSettings):
         env="ALLOWED_IDENTITIES",
         description="Usernames, teams, and orgs allowed to create persistent tokens",
     )
+    query_debug: bool = Field(False, env="QUERY_DEBUG")
 
     class Config:
         env_file = ".env"
 
 
 settings = Settings()
+
+if settings.query_debug:
+    from ampel.ztf.archive.ArchiveDB import ArchiveDB
+    ArchiveDB.query_debug = True
