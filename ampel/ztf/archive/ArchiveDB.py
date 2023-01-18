@@ -81,6 +81,8 @@ class ArchiveDB(ArchiveDBClient):
 
     _CLIENTS: Dict[str, "ArchiveDB"] = {}
 
+    query_debug = False
+
     def __init__(self, *args, default_statement_timeout: int = 60000, **kwargs):
         """ """
         super().__init__(*args, **kwargs)
@@ -344,10 +346,13 @@ class ArchiveDB(ArchiveDBClient):
         self, conn, group_id, block_size, condition, order: List[UnaryExpression] = []
     ):
         Queue = self._meta.tables["read_queue"]
+        blocks = self._select_alert_ids(group_id, block_size, condition, order)
+        if self.query_debug:
+            log.warn(str(blocks.compile(dialect=sqlalchemy.dialects.postgresql.dialect(), compile_kwargs={'literal_binds': True})))
         conn.execute(
             Queue.insert().from_select(
                 [Queue.c.group_id, Queue.c.alert_ids],
-                self._select_alert_ids(group_id, block_size, condition, order),
+                blocks,
             )
         )
         col = Queue.c.alert_ids
