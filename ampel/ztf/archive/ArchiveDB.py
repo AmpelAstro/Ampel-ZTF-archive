@@ -7,6 +7,7 @@
 # Last Modified Date: 02.12.2020
 # Last Modified By  : Jakob van Santen <jakob.van.santen@desy.de>
 
+import itertools
 import json
 import math
 import operator
@@ -348,7 +349,14 @@ class ArchiveDB(ArchiveDBClient):
         Queue = self._meta.tables["read_queue"]
         blocks = self._select_alert_ids(group_id, block_size, condition, order)
         if self.query_debug:
-            log.warn(str(blocks.compile(dialect=sqlalchemy.dialects.postgresql.dialect(), compile_kwargs={'literal_binds': True})))
+            log.warn(
+                str(
+                    blocks.compile(
+                        dialect=sqlalchemy.dialects.postgresql.dialect(),
+                        compile_kwargs={"literal_binds": True},
+                    )
+                )
+            )
         conn.execute(
             Queue.insert().from_select(
                 [Queue.c.group_id, Queue.c.alert_ids],
@@ -1171,7 +1179,12 @@ class ArchiveDB(ArchiveDBClient):
             elif nside <= 64:
                 scale = (64 // nside) ** 2
                 consolidated_pixels[64].update(
-                    (i * scale for i in ([ipix] if isinstance(ipix, int) else ipix))
+                    itertools.chain(
+                        *(
+                            range(i * scale, (i + 1) * scale)
+                            for i in ([ipix] if isinstance(ipix, int) else ipix)
+                        )
+                    )
                 )
             else:
                 consolidated_pixels[nside].update(
