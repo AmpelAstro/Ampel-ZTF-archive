@@ -1136,9 +1136,9 @@ class ArchiveDB(ArchiveDBClient):
         if candidate_filter is not None:
             conditions.append(self._candidate_filter_condition(candidate_filter))
 
-        return and_(*conditions), [Alert.c.jd.asc()] if not latest else [
-            Alert.c.jd.desc(),
-            Alert.c.candid.desc(),  # NB: reprocessed points may have identical jds; break ties with candid
+        return and_(*conditions), [Candidate.c.jd.asc()] if not latest else [
+            Candidate.c.jd.desc(),
+            Candidate.c.candid.desc(),  # NB: reprocessed points may have identical jds; break ties with candid
         ]
 
     def _healpix_search_condition(
