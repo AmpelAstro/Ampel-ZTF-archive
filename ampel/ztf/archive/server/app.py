@@ -724,6 +724,7 @@ def create_stream_from_query(
                 # FIXME: do communicate the error somehow
                 raise
                 pass
+            conn.execute(archive._meta["read_queue_groups"])
 
     tasks.add_task(create_stream)
 
@@ -767,6 +768,8 @@ def get_stream(resume_token: str, stream_info: GroupInfo = Depends(get_stream_in
         "chunk_size": stream_info["chunk_size"],
         "remaining": stream_info["remaining"],
         "pending": stream_info["pending"],
+        "started_at": stream_info["started_at"],
+        "finished_at": stream_info["finished_at"]
     }
 
 
