@@ -7,6 +7,7 @@
 # Last Modified Date: 02.12.2020
 # Last Modified By  : Jakob van Santen <jakob.van.santen@desy.de>
 
+import datetime
 import itertools
 import json
 import math
@@ -75,6 +76,8 @@ class GroupInfo(TypedDict):
     chunk_size: int
     remaining: ChunkCount
     pending: ChunkCount
+    started_at: datetime.datetime
+    finished_at: Optional[datetime.datetime]
 
 
 class ArchiveDB(ArchiveDBClient):
@@ -428,6 +431,8 @@ class ArchiveDB(ArchiveDBClient):
                             Groups.c.chunk_size,
                             Groups.c.error,
                             Groups.c.msg,
+                            Groups.c.created,
+                            Groups.c.resolved
                         ]
                     ).where(Groups.c.group_name == group_name)
                 ).fetchone()
@@ -436,6 +441,8 @@ class ArchiveDB(ArchiveDBClient):
                 chunk_size: int = row["chunk_size"]
                 error: bool = row["error"]
                 msg: Optional[str] = row["msg"]
+                created: datetime.datetime = row["created"]
+                resolved: Optional[datetime.datetime] = row["resolved"]
             else:
                 raise GroupNotFoundError
             col = Queue.c.alert_ids
@@ -446,6 +453,8 @@ class ArchiveDB(ArchiveDBClient):
                 "chunk_size": chunk_size,
                 "remaining": {"chunks": 0, "items": 0},
                 "pending": {"chunks": 0, "items": 0},
+                "started_at": created,
+                "finished_at": resolved,
             }
             for row in conn.execute(
                 select(
