@@ -839,6 +839,16 @@ class ArchiveDB(ArchiveDBClient):
 
         q = union_all(*selects)
 
+        if self.query_debug:
+            log.warn(
+                str(
+                    q.compile(
+                        dialect=sqlalchemy.dialects.postgresql.dialect(),
+                        compile_kwargs={"literal_binds": True},
+                    )
+                )
+            )
+
         # ensure exactly one observation per jd. in case of conflicts, sort by
         # candidate > prv_candidate > upper_limit, then pid
         photopoints = dict()
