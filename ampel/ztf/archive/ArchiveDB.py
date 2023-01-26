@@ -394,7 +394,8 @@ class ArchiveDB(ArchiveDBClient):
             )
             conn.execute(
                 Groups.update(
-                    Groups.columns.group_id == group_id, values={"error": False}
+                    Groups.columns.group_id == group_id,
+                    values={"error": False, "resolved": func.now()},
                 )
             )
 
