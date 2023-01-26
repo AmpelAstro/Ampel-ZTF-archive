@@ -297,6 +297,7 @@ def get_photopoints_for_object(
     jd_end: Optional[float] = Query(
         None, description="maximum Julian Date of observation"
     ),
+    upper_limits: bool = Query(True, description="include upper limits"),
     archive: ArchiveDB = Depends(get_archive),
     auth: AuthToken = Depends(verify_access_token),
     programid: Optional[int] = Depends(verify_authorized_programid),
@@ -310,6 +311,7 @@ def get_photopoints_for_object(
         programid=programid,
         jd_start=jd_start,
         jd_end=jd_end,
+        include_upper_limits=upper_limits,
     )
 
 
