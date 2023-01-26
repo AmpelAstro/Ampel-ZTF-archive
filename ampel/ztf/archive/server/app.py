@@ -724,7 +724,6 @@ def create_stream_from_query(
                 # FIXME: do communicate the error somehow
                 raise
                 pass
-            conn.execute(archive._meta["read_queue_groups"])
 
     tasks.add_task(create_stream)
 
