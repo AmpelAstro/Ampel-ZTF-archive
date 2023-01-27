@@ -1,4 +1,5 @@
 from base64 import b64encode
+from datetime import datetime
 from chunk import Chunk
 from typing import List, Dict, Any, Literal, Optional, Union
 from pydantic import BaseModel, Field, validator, root_validator
@@ -23,6 +24,8 @@ class ChunkCount(BaseModel):
 class StreamDescription(Stream):
     remaining: ChunkCount
     pending: ChunkCount
+    started_at: datetime
+    finished_at: Optional[datetime]
 
 
 class Topic(BaseModel):
