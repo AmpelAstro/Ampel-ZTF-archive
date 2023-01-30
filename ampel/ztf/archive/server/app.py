@@ -261,7 +261,8 @@ def get_alerts_for_object(
         False, description="Include previous detections and upper limits"
     ),
     limit: Optional[int] = Query(
-        None, description="Maximum number of alerts to return",
+        None,
+        description="Maximum number of alerts to return",
     ),
     start: int = Query(0, description="Return alerts starting at index"),
     archive: ArchiveDB = Depends(get_archive),
@@ -591,23 +592,18 @@ def create_stream_from_topic(
     Create a stream of alerts from the given persistent topic.  The resulting
     resume_token can be used to read the stream concurrently from multiple clients.
     """
-    name = secrets.token_urlsafe()
+    resume_token = secrets.token_urlsafe()
     try:
         queue_info = archive.create_read_queue_from_topic(
             query.topic,
-            name,
+            resume_token,
             query.chunk_size,
             slice(query.start, query.stop, query.step),
         )
     except GroupNotFoundError:
         raise HTTPException(status_code=404, detail="Topic not found")
-    info = get_stream_info(name, archive)
-    return {
-        "resume_token": name,
-        "chunk_size": query.chunk_size,
-        "remaining": info["remaining"],
-        "pending": info["pending"],
-    }
+    stream_info = get_stream_info(resume_token, archive)
+    return {"resume_token": resume_token, **stream_info}
 
 
 @app.post(
@@ -762,14 +758,7 @@ def get_stream(resume_token: str, stream_info: GroupInfo = Depends(get_stream_in
     """
     Get the next available chunk of alerts from the given stream.
     """
-    return {
-        "resume_token": resume_token,
-        "chunk_size": stream_info["chunk_size"],
-        "remaining": stream_info["remaining"],
-        "pending": stream_info["pending"],
-        "started_at": stream_info["started_at"],
-        "finished_at": stream_info["finished_at"]
-    }
+    return {"resume_token": resume_token, **stream_info}
 
 
 @app.get(
