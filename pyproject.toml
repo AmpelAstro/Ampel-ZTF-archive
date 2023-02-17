@@ -58,3 +58,17 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.coverage.run]
 relative_files = true
+
+[tool.mypy]
+namespace_packages = true
+plugins = [
+  "sqlmypy"
+]
+show_error_codes = true
+
+[[tool.mypy.overrides]]
+module = [
+  "astropy.*",
+  "astropy_healpix.*",
+]
+ignore_missing_imports = true
