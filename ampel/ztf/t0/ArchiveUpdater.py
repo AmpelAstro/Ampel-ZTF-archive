@@ -16,6 +16,8 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.sql.elements import literal_column
 from sqlalchemy.sql.expression import tuple_, func
 from distutils.version import LooseVersion
+from astropy import units as u
+from astropy_healpix import lonlat_to_healpix
 
 
 class ArchiveUpdater(ArchiveDBClient):
@@ -102,6 +104,15 @@ class ArchiveUpdater(ArchiveDBClient):
         """
         Alert = self._meta.tables["alert"]
         Candidate = self._meta.tables["candidate"]
+
+        # add healpix index
+        candidate = alert["candidate"]
+        candidate["_hpx"] = lonlat_to_healpix(
+            candidate["ra"] * u.deg,
+            candidate["dec"] * u.deg,
+            self.NSIDE,
+            order="nested",
+        )
 
         insert_alert = postgresql.insert(Alert).values(
             programid=alert["candidate"]["programid"],

@@ -85,9 +85,6 @@ class ArchiveDB(ArchiveDBClient):
 
     _CLIENTS: Dict[str, "ArchiveDB"] = {}
 
-    # ~3 arcsec
-    nside = 1<<16
-
     query_debug = False
 
     def __init__(self, *args, default_statement_timeout: int = 60000, **kwargs):
@@ -1150,8 +1147,8 @@ class ArchiveDB(ArchiveDBClient):
 
         pix = Candidate.c._hpx
 
-        nside, ranges = ranges_for_cone(ra, dec, radius, max_nside=self.nside)
-        scale = (self.nside // nside)**2
+        nside, ranges = ranges_for_cone(ra, dec, radius, max_nside=self.NSIDE)
+        scale = (self.NSIDE // nside)**2
         conditions = [
             or_(
                 *[
@@ -1206,9 +1203,9 @@ class ArchiveDB(ArchiveDBClient):
         ranges: multirange[int] = multirange()
 
         for nside, ipix in pixels.items():
-            if not (nside <= self.nside and nside >= 1 and math.log2(nside).is_integer()):
-                raise ValueError(f"nside must be >= 1, <= {self.nside}, and a power of 2")
-            scale = (self.nside // nside) ** 2
+            if not (nside <= self.NSIDE and nside >= 1 and math.log2(nside).is_integer()):
+                raise ValueError(f"nside must be >= 1, <= {self.NSIDE}, and a power of 2")
+            scale = (self.NSIDE // nside) ** 2
             for i in ([ipix] if isinstance(ipix, int) else ipix):
                 ranges.add(i*scale, (i+1)*scale)
 
