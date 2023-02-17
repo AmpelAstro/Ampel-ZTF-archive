@@ -85,6 +85,9 @@ class ArchiveDB(ArchiveDBClient):
 
     _CLIENTS: Dict[str, "ArchiveDB"] = {}
 
+    # ~3 arcsec
+    nside = 1<<16
+
     query_debug = False
 
     def __init__(self, *args, default_statement_timeout: int = 60000, **kwargs):
@@ -1145,13 +1148,15 @@ class ArchiveDB(ArchiveDBClient):
         center = func.ll_to_earth(dec, ra)
         loc = func.ll_to_earth(Candidate.c.dec, Candidate.c.ra)
 
-        pix = Candidate.c._hpx_64
+        pix = Candidate.c._hpx
 
+        nside, ranges = ranges_for_cone(ra, dec, radius, max_nside=self.nside)
+        scale = (self.nside // nside)**2
         conditions = [
             or_(
                 *[
-                    and_(pix >= left, pix <= right)
-                    for left, right in ranges_for_cone(ra, dec, radius, nside=64)
+                    and_(pix >= left*scale, pix < right*scale)
+                    for left, right in ranges
                 ]
             ),
             func.earth_distance(center, loc) < radius,
@@ -1183,9 +1188,8 @@ class ArchiveDB(ArchiveDBClient):
         programid: Optional[int] = None,
         candidate_filter: Optional[FilterClause] = None,
     ) -> Tuple[BooleanClauseList, List[UnaryExpression]]:
+        from .server.skymap import multirange
         Candidate = self.get_table("candidate")
-
-        conditions = []
 
         # NB: searches against sets of pixel indices are reasonably efficient for nside=64,
         # but target lists could become unfeasibly long for large nside. use multiranges
@@ -1195,52 +1199,26 @@ class ArchiveDB(ArchiveDBClient):
         # of healpix_ang2ipix_nest, even though it is marked IMMUTABLE. this can result in
         # e.g. the pixel index being calculated 300 times for every row if you have 300
         # elements in your OR clause, which can end up dominating the runtime of the query.
-        consolidated_pixels: collections.defaultdict[
-            int, set[int]
-        ] = collections.defaultdict(set)
 
-        # a stored column works better with parallel workers, since healpix_ang2ipix_nest
-        # is not marked parallel safe
-        pix = Candidate.c._hpx_64
-        # pix = func.healpix_ang2ipix_nest(64, Candidate.c.ra, Candidate.c.dec)
+        # use stored healpix column
+        pix = Candidate.c._hpx
 
-        # flatten all levels with nside <= 64
+        ranges: multirange[int] = multirange()
+
         for nside, ipix in pixels.items():
-            if not (nside <= 8192 and nside >= 1 and math.log2(nside).is_integer()):
-                raise ValueError("nside must be >= 1, <= 8192, and a power of 2")
-            elif nside <= 64:
-                scale = (64 // nside) ** 2
-                consolidated_pixels[64].update(
-                    itertools.chain(
-                        *(
-                            range(i * scale, (i + 1) * scale)
-                            for i in ([ipix] if isinstance(ipix, int) else ipix)
-                        )
-                    )
-                )
-            else:
-                consolidated_pixels[nside].update(
-                    [ipix] if isinstance(ipix, int) else ipix
-                )
-
-        # nest pixels finer than the indexed resolution inside a check on the containing superpixels
-        for nside in consolidated_pixels:
-            if nside <= 64:
-                conditions.append(pix.in_(consolidated_pixels[nside]))
-            else:
-                scale = (nside // 64) ** 2
-                subpix = func.healpix_ang2ipix_nest(
-                    nside, Candidate.c.ra, Candidate.c.dec
-                )
-                conditions.append(
-                    and_(
-                        pix.in_(set((i // scale for i in consolidated_pixels[nside]))),
-                        subpix.in_(consolidated_pixels[nside]),
-                    )
-                )
+            if not (nside <= self.nside and nside >= 1 and math.log2(nside).is_integer()):
+                raise ValueError(f"nside must be >= 1, <= {self.nside}, and a power of 2")
+            scale = (self.nside // nside) ** 2
+            for i in ([ipix] if isinstance(ipix, int) else ipix):
+                ranges.add(i*scale, (i+1)*scale)
 
         and_conditions = [
-            or_(*conditions),
+            or_(
+                *[
+                    and_(pix >= left, pix < right)
+                    for left, right in ranges
+                ]
+            ),
             Candidate.c.jd >= jd_min,
             Candidate.c.jd < jd_max,
         ]

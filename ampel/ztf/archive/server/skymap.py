@@ -1,7 +1,7 @@
 import bisect
 import math
 from collections import defaultdict
-from typing import TypeVar, Generic
+from typing import TypeVar, Generic, Generator
 from collections.abc import Iterable
 
 T = TypeVar("T", bound=int)
@@ -71,7 +71,7 @@ class multirange(Generic[T]):
         self.rights.insert(i, right)
 
 
-def gen_ranges(items: list[int]):
+def gen_ranges(items: Iterable[int]) -> Generator[tuple[int, int], None, None]:
     """Convert to a sequence of half-open intervals"""
     ordered = sorted(items)
     i = 0
