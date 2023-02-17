@@ -1,0 +1,10 @@
+BEGIN;
+
+ALTER TABLE
+    read_queue_groups
+ADD
+    COLUMN created TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+ADD
+    COLUMN resolved TIMESTAMP WITH TIME ZONE;
+
+COMMIT;

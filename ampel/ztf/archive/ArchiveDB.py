@@ -7,6 +7,7 @@
 # Last Modified Date: 02.12.2020
 # Last Modified By  : Jakob van Santen <jakob.van.santen@desy.de>
 
+import datetime
 import itertools
 import json
 import math
@@ -75,6 +76,8 @@ class GroupInfo(TypedDict):
     chunk_size: int
     remaining: ChunkCount
     pending: ChunkCount
+    started_at: datetime.datetime
+    finished_at: Optional[datetime.datetime]
 
 
 class ArchiveDB(ArchiveDBClient):
@@ -394,7 +397,8 @@ class ArchiveDB(ArchiveDBClient):
             )
             conn.execute(
                 Groups.update(
-                    Groups.columns.group_id == group_id, values={"error": False}
+                    Groups.columns.group_id == group_id,
+                    values={"error": False, "resolved": func.now()},
                 )
             )
 
@@ -427,6 +431,8 @@ class ArchiveDB(ArchiveDBClient):
                             Groups.c.chunk_size,
                             Groups.c.error,
                             Groups.c.msg,
+                            Groups.c.created,
+                            Groups.c.resolved
                         ]
                     ).where(Groups.c.group_name == group_name)
                 ).fetchone()
@@ -435,6 +441,8 @@ class ArchiveDB(ArchiveDBClient):
                 chunk_size: int = row["chunk_size"]
                 error: bool = row["error"]
                 msg: Optional[str] = row["msg"]
+                created: datetime.datetime = row["created"]
+                resolved: Optional[datetime.datetime] = row["resolved"]
             else:
                 raise GroupNotFoundError
             col = Queue.c.alert_ids
@@ -445,6 +453,8 @@ class ArchiveDB(ArchiveDBClient):
                 "chunk_size": chunk_size,
                 "remaining": {"chunks": 0, "items": 0},
                 "pending": {"chunks": 0, "items": 0},
+                "started_at": created,
+                "finished_at": resolved,
             }
             for row in conn.execute(
                 select(
@@ -771,7 +781,9 @@ class ArchiveDB(ArchiveDBClient):
 
         return alert
 
-    def _fetch_photopoints_with_condition(self, conn, condition):
+    def _fetch_photopoints_with_condition(
+        self, conn, condition, include_upper_limits: bool = True
+    ):
         """
         Get all photopoints from alerts that match the condition, deduplicating
         history. This can be up to 100x faster than repeated queries for
@@ -786,6 +798,8 @@ class ArchiveDB(ArchiveDBClient):
         Alert = meta.tables["alert"]
         Pivot = meta.tables["alert_prv_candidate_pivot"]
         UpperLimitPivot = meta.tables["alert_upper_limit_pivot"]
+
+        json_agg = lambda table: func.json_agg(literal_column('"' + table.name + '"'))
 
         prv_candidate_id = func.unnest(Pivot.c.prv_candidate_id).label(
             "prv_candidate_id"
@@ -802,33 +816,48 @@ class ArchiveDB(ArchiveDBClient):
             prv_candidate_ids.c.prv_candidate_id == PrvCandidate.c.prv_candidate_id,
         )
 
-        upper_limit_id = func.unnest(UpperLimitPivot.c.upper_limit_id).label(
-            "upper_limit_id"
-        )
-        upper_limit_ids = (
-            select([upper_limit_id])
-            .select_from(Alert.join(UpperLimitPivot, isouter=True))
-            .where(condition)
-            .distinct(upper_limit_id)
-            .alias()
-        )
-        upper_limits = UpperLimit.join(
-            upper_limit_ids,
-            upper_limit_ids.c.upper_limit_id == UpperLimit.c.upper_limit_id,
-        )
-
-        json_agg = lambda table: func.json_agg(literal_column('"' + table.name + '"'))
-        q = union_all(
-            select([json_agg(UpperLimit).label("upper_limits")]).select_from(
-                upper_limits
-            ),
+        selects = [
             select([json_agg(PrvCandidate).label("prv_candidates")]).select_from(
                 prv_candidates
             ),
             select([json_agg(Candidate).label("candidates")])
             .select_from(Candidate.join(Alert))
             .where(condition),
-        )
+        ]
+
+        if include_upper_limits:
+            upper_limit_id = func.unnest(UpperLimitPivot.c.upper_limit_id).label(
+                "upper_limit_id"
+            )
+            upper_limit_ids = (
+                select([upper_limit_id])
+                .select_from(Alert.join(UpperLimitPivot, isouter=True))
+                .where(condition)
+                .distinct(upper_limit_id)
+                .alias()
+            )
+            upper_limits = UpperLimit.join(
+                upper_limit_ids,
+                upper_limit_ids.c.upper_limit_id == UpperLimit.c.upper_limit_id,
+            )
+            selects.insert(
+                0,
+                select([json_agg(UpperLimit).label("upper_limits")]).select_from(
+                    upper_limits
+                ),
+            )
+
+        q = union_all(*selects)
+
+        if self.query_debug:
+            log.warn(
+                str(
+                    q.compile(
+                        dialect=sqlalchemy.dialects.postgresql.dialect(),
+                        compile_kwargs={"literal_binds": True},
+                    )
+                )
+            )
 
         # ensure exactly one observation per jd. in case of conflicts, sort by
         # candidate > prv_candidate > upper_limit, then pid
@@ -947,6 +976,7 @@ class ArchiveDB(ArchiveDBClient):
         programid: Optional[int] = None,
         jd_start: Optional[float] = None,
         jd_end: Optional[float] = None,
+        include_upper_limits: bool = True,
     ):
         """
         Retrieve unique photopoints from the archive database by object ID.
@@ -968,7 +998,9 @@ class ArchiveDB(ArchiveDBClient):
         in_range = and_(*conditions)
 
         with self.connect() as conn:
-            datapoints = self._fetch_photopoints_with_condition(conn, in_range)
+            datapoints = self._fetch_photopoints_with_condition(
+                conn, in_range, include_upper_limits=include_upper_limits
+            )
         if datapoints:
             candidate = datapoints.pop(0)
             return {
