@@ -1152,7 +1152,7 @@ class ArchiveDB(ArchiveDBClient):
         conditions = [
             or_(
                 *[
-                    and_(pix >= left*scale, pix < right*scale)
+                    and_(pix >= int(left*scale), pix < int(right*scale))
                     for left, right in ranges
                 ]
             ),
@@ -1212,7 +1212,7 @@ class ArchiveDB(ArchiveDBClient):
         and_conditions = [
             or_(
                 *[
-                    and_(pix >= left, pix < right)
+                    and_(pix >= int(left), pix < int(right))
                     for left, right in ranges
                 ]
             ),

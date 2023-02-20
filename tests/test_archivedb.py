@@ -610,15 +610,12 @@ def test_healpix_search(empty_archive, nside, ipix):
     assert condition.operator == operator.and_
 
     ops = []
-    if nside <= 64:
-        ops.append(condition.get_children()[0])
-    else:
-        ops.extend(condition.get_children()[0].get_children())
+    ops.extend(condition.get_children()[0].get_children())
 
-    nsides = []
     for op in ops:
         assert isinstance(op, BinaryExpression)
-        assert op.operator is sqlalchemy.sql.operators.in_op
+        assert op.left.name == "_hpx"
+        assert op.operator in {operator.ge, operator.lt}
 
 
 @pytest.mark.parametrize("cutouts", [False, True])
