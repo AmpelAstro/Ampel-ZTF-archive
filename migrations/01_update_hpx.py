@@ -10,6 +10,7 @@ from astropy import units as u
 
 parser = ArgumentParser()
 parser.add_argument("uri")
+parser.add_argument("--chunk-size", type=int, default=1000)
 
 args = parser.parse_args()
 
@@ -30,7 +31,8 @@ with engine.connect() as connection:
             )
         )
         .order_by(Candidate.c.candidate_id)
-        .limit(1000)
+        .limit(args.chunk_size)
+        .with_for_update(skip_locked=True)
     )
     update = (
         sa.update(Candidate)
@@ -44,31 +46,29 @@ with engine.connect() as connection:
     updated = 0
     with tqdm(total=total) as progress:
         while True:
-            with connection.begin() as transaction:
-                rows = connection.execute(select, {"min_id": min_id}).fetchall()
+            rows = connection.execute(select, {"min_id": min_id}).fetchall()
 
-                if len(rows) == 0:
-                    break
+            if len(rows) == 0:
+                break
 
-                min_id = rows[-1]["candidate_id"]
+            min_id = rows[-1]["candidate_id"]
 
-                connection.execute(
-                    update,
-                    [
-                        {
-                            "id": row["candidate_id"],
-                            "hpx": int(
-                                lonlat_to_healpix(
-                                    row["ra"] * u.deg,
-                                    row["dec"] * u.deg,
-                                    nside=ArchiveUpdater.NSIDE,
-                                    order="nested",
-                                )
-                            ),
-                        }
-                        for row in rows
-                    ],
-                )
+            connection.execute(
+                update,
+                [
+                    {
+                        "id": row["candidate_id"],
+                        "hpx": int(
+                            lonlat_to_healpix(
+                                row["ra"] * u.deg,
+                                row["dec"] * u.deg,
+                                nside=ArchiveUpdater.NSIDE,
+                                order="nested",
+                            )
+                        ),
+                    }
+                    for row in rows
+                ],
+            )
 
-                transaction.commit()
-            progress.update(len(rows))
+        progress.update(len(rows))
