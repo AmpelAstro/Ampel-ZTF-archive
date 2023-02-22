@@ -10,8 +10,11 @@ ALTER TABLE
 ADD
     COLUMN _hpx bigint;
 
-DROP INDEX candidate_jd_healpix_64;
-DROP INDEX cone_search;
-CREATE INDEX CONCURRENTLY candidate_jd_hpx on candidate using brin (jd, _hpx) WITH (pages_per_range=1);
+DROP INDEX IF EXISTS candidate_jd_healpix_64
+DROP INDEX IF EXISTS candidate_jd_hpx_64;
+DROP INDEX IF EXISTS cone_search;
+
+CREATE INDEX ix_candidate_jd_hpx on candidate (jd, _hpx) include (alert_id);
+CREATE INDEX ix_candidate_hpx on candidate (_hpx) include (alert_id);
 
 COMMIT;
