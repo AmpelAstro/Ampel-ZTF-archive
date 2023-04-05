@@ -525,21 +525,27 @@ def get_alerts_in_healpix_map(
     programid: Optional[int] = Depends(verify_authorized_programid),
 ) -> AlertChunk:
     resume_token = query.resume_token or secrets.token_urlsafe(32)
-    chunk, alerts = archive.get_alerts_in_healpix(
-        pixels=deres(query.nside, query.pixels),
-        jd_start=query.jd.gt,
-        jd_end=query.jd.lt,
-        latest=query.latest,
-        programid=programid,
-        with_history=query.with_history,
-        group_name=resume_token,
-        block_size=query.chunk_size,
-        max_blocks=1,
-    )
+    if query.resume_token:
+        chunk, alerts = archive.get_chunk_from_queue(
+            query.resume_token,
+            with_history=query.with_history
+        )
+    else:
+        chunk, alerts = archive.get_alerts_in_healpix(
+            pixels=deres(query.nside, query.pixels),
+            jd_start=query.jd.gt,
+            jd_end=query.jd.lt,
+            latest=query.latest,
+            programid=programid,
+            with_history=query.with_history,
+            group_name=resume_token,
+            block_size=query.chunk_size,
+            max_blocks=1,
+        )
     info = get_stream_info(resume_token, archive)
     return AlertChunk(
         resume_token=resume_token,
-        chunk_size=query.chunk_size,
+        chunk_size=info["chunk_size"],
         alerts=alerts,
         chunk=chunk,
         pending=info["pending"],
