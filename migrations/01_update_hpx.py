@@ -1,16 +1,21 @@
 #!/usr/bin/env python
 
+import logging
+import time
 from argparse import ArgumentParser
 import sqlalchemy as sa
-from tqdm import tqdm
 
 from ampel.ztf.t0.ArchiveUpdater import ArchiveUpdater
 from astropy_healpix import lonlat_to_healpix
 from astropy import units as u
 
+logging.basicConfig(level="INFO", format="[%(asctime)s] %(message)s")
+log = logging.getLogger()
+
 parser = ArgumentParser()
 parser.add_argument("uri")
 parser.add_argument("--chunk-size", type=int, default=1000)
+parser.add_argument("--min-id", type=int, default=-1)
 
 args = parser.parse_args()
 
@@ -42,33 +47,57 @@ with engine.connect() as connection:
 
     total = connection.execute("select reltuples as estimate from pg_class where relname = 'candidate';").fetchone()[0]
 
-    min_id = -1
+    min_id = args.min_id
     updated = 0
-    with tqdm(total=total) as progress:
-        while True:
-            rows = connection.execute(select, {"min_id": min_id}).fetchall()
+    while True:
+        t0 = time.time()
+        rows = connection.execute(select, {"min_id": min_id}).fetchall()
 
-            if len(rows) == 0:
-                break
+        if len(rows) == 0:
+            break
 
-            min_id = rows[-1]["candidate_id"]
+        min_id = rows[-1]["candidate_id"]
 
-            connection.execute(
-                update,
-                [
-                    {
-                        "id": row["candidate_id"],
-                        "hpx": int(
-                            lonlat_to_healpix(
-                                row["ra"] * u.deg,
-                                row["dec"] * u.deg,
-                                nside=ArchiveUpdater.NSIDE,
-                                order="nested",
-                            )
-                        ),
-                    }
-                    for row in rows
-                ],
-            )
-
-        progress.update(len(rows))
+        connection.execute(
+            update,
+            [
+                {
+                    "id": row["candidate_id"],
+                    "hpx": int(
+                        lonlat_to_healpix(
+                            row["ra"] * u.deg,
+                            row["dec"] * u.deg,
+                            nside=ArchiveUpdater.NSIDE,
+                            order="nested",
+                        )
+                    ),
+                }
+                for row in rows
+            ],
+        )
+        dt = time.time() - t0
+        log.info(f"updated {len(rows)/dt:.1f} rows/s")
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
