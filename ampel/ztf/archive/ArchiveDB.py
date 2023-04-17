@@ -1364,7 +1364,7 @@ class ArchiveDB(ArchiveDBClient):
     def get_alerts_in_healpix(
         self,
         *,
-        pixels: Dict[int, Union[int, List[int]]],
+        pixels: Mapping[int, Union[int, List[int]]],
         jd_start: float,
         jd_end: float,
         latest: bool = False,

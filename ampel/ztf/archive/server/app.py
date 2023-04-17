@@ -519,7 +519,7 @@ def get_alerts_in_healpix_pixel(
     response_model_exclude_none=True,
 )
 def get_alerts_in_healpix_map(
-    query: HEALpixMapQuery,
+    query: Union[HEALpixMapQuery, HEALpixRegionQuery],
     archive: ArchiveDB = Depends(get_archive),
     auth: bool = Depends(verify_access_token),
     programid: Optional[int] = Depends(verify_authorized_programid),
@@ -531,8 +531,12 @@ def get_alerts_in_healpix_map(
             with_history=query.with_history
         )
     else:
+        if isinstance(query, HEALpixRegionQuery):
+            regions = {region.nside: region.pixels for region in query.regions}
+        else:
+            regions = deres(query.nside, query.pixels)
         chunk, alerts = archive.get_alerts_in_healpix(
-            pixels=deres(query.nside, query.pixels),
+            pixels=regions,
             jd_start=query.jd.gt,
             jd_end=query.jd.lt,
             latest=query.latest,
