@@ -17,6 +17,7 @@ AS $$
 DECLARE rows integer;
 DECLARE min_prv_id integer;
 DECLARE min_alert_id integer;
+DECLARE todo integer;
 BEGIN
 
 EXECUTE 'LOCK TABLE '||name||';';
@@ -55,21 +56,20 @@ ORDER BY
   '||name||'_id ASC;';
 EXECUTE 'CREATE UNIQUE INDEX id_map_reverse_index ON id_map (old_id);';
 
-/*
-NB: since the following UPDATEs can execute in any order, an updated id may take
-on a value that is still occupied, violating the primary key constraint. When
-the statement finishes, however, all ids will be unique again. Since we can't
-defer primary key constraints, we do the next best thing and drop the
-constraint while the statement is running. Duplicate ids after the update will
-cause entire transaction to roll back.
-*/
-EXECUTE 'ALTER TABLE '||name||' DROP CONSTRAINT '||name||'_pkey;';
 EXECUTE 'SELECT '||name||'_id FROM previous LIMIT 1;' INTO min_prv_id;
 EXECUTE 'SELECT alert_id FROM previous LIMIT 1;' INTO min_alert_id;
 
+/*
+NB: use SELECT FOR UPDATE to enforce ordering, so updates do not violate the
+primary key constraint
+*/
+
+EXECUTE 'SELECT count('||name||'_id) FROM '||name||' WHERE '||name||'_id > '||min_alert_id INTO todo;
+RAISE NOTICE 'remapping % ids',todo;
+
 EXECUTE '
 UPDATE
-  '||name||'
+  '||name||' target
 SET
   '||name||'_id = (
     SELECT
@@ -77,10 +77,23 @@ SET
     FROM
       id_map
     WHERE
-      id_map.old_id='||name||'_id
+      id_map.old_id=target.'||name||'_id
   )
+FROM (
+  SELECT
+    '||name||'_id
+  FROM
+    '||name||'
+  WHERE
+    '||name||'_id > $1
+  ORDER BY
+    '||name||'_id ASC
+  FOR UPDATE
+) upd
 WHERE
-  '||name||'_id > $1;' USING min_prv_id;
+  target.'||name||'_id = upd.'||name||'_id;'
+USING min_prv_id;
+
 EXECUTE '
 UPDATE
   alert_'||name||'_pivot
@@ -115,8 +128,6 @@ WHERE
     AND
   alert_'||name||'_pivot.alert_id = subq.alert_id;' USING min_alert_id;
 
-EXECUTE 'ALTER TABLE '||name||' ADD PRIMARY KEY ('||name||'_id);';
-
 /*
 Reset the auto-increment sequence. Note that we use setval(),
 because ALTER SEQUENCE can not use subqueries
@@ -128,6 +139,7 @@ PERFORM setval(pg_get_serial_sequence(name, name||'_id'), min_alert_id+1, false)
 EXECUTE 'INSERT INTO '||name||'_compacitification_history (alert_id,'||name||'_id) VALUES ($1,$2);' USING min_alert_id, min_prv_id;
 
 EXECUTE 'DROP TABLE id_map;';
+EXECUTE 'DROP VIEW previous;';
 END;
 $$ LANGUAGE plpgsql;
 
@@ -136,8 +148,7 @@ COMMIT;
 BEGIN;
 /* Run compactify at midnight CET */
 -- CREATE EXTENSION pg_cron;
--- SELECT cron.schedule('0 23 * * *', $$SELECT compactify_pivot_table('prv_candidate');$$);
--- SELECT cron.schedule('0 23 * * *', $$SELECT compactify_pivot_table('upper_limit');$$);
+-- SELECT cron.schedule('0 23 * * *', $$begin; SELECT compactify_pivot_table('prv_candidate'); commit;$$);
+-- SELECT cron.schedule('0 23 * * *', $$begin; SELECT compactify_pivot_table('upper_limit'); commit;$$);
 -- SELECT cron.schedule('0 0 * * *', $$VACUUM ANALYZE;$$);
 COMMIT;
-
