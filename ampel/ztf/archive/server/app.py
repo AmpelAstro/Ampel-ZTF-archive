@@ -541,6 +541,7 @@ def get_alerts_in_healpix_map(
             jd_end=query.jd.lt,
             latest=query.latest,
             programid=programid,
+            candidate_filter=query.candidate,
             with_history=query.with_history,
             group_name=resume_token,
             block_size=query.chunk_size,
