@@ -48,6 +48,7 @@ from .tokens import (
 from .models import (
     Alert,
     AlertChunk,
+    AlertCount,
     AlertCutouts,
     AlertQuery,
     HEALpixMapQuery,
@@ -561,7 +562,7 @@ def get_alerts_in_healpix_map(
 @app.post(
     "/alerts/healpix/skymap/count",
     tags=["search"],
-    response_model=int,
+    response_model=AlertCount,
     response_model_exclude_none=True,
 )
 def count_alerts_in_healpix_map(
@@ -569,13 +570,15 @@ def count_alerts_in_healpix_map(
     archive: ArchiveDB = Depends(get_archive),
     auth: bool = Depends(verify_access_token),
     programid: Optional[int] = Depends(verify_authorized_programid),
-) -> int:
-    return archive.count_alerts_in_healpix(
-        pixels={region.nside: region.pixels for region in query.regions},
-        jd_start=query.jd.gt,
-        jd_end=query.jd.lt,
-        programid=programid,
-        candidate_filter=query.candidate,
+) -> AlertCount:
+    return AlertCount(
+        count=archive.count_alerts_in_healpix(
+            pixels={region.nside: region.pixels for region in query.regions},
+            jd_start=query.jd.gt,
+            jd_end=query.jd.lt,
+            programid=programid,
+            candidate_filter=query.candidate,
+        )
     )
 
 

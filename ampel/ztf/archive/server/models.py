@@ -372,3 +372,7 @@ class AlertChunk(BaseModel):
 
     class Config:
         json_encoders = {bytes: lambda v: b64encode(v).decode()}
+
+
+class AlertCount(BaseModel):
+    count: int
