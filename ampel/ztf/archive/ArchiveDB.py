@@ -1431,7 +1431,7 @@ class ArchiveDB(ArchiveDBClient):
         )
 
         with self.connect() as conn:
-            return conn.execute(self._build_base_alert_query([func.count()], condition)).fetchone()
+            return conn.execute(self._build_base_alert_query([func.count()], condition)).fetchone()[0]
 
 
 def consumer_groups_command() -> None:
