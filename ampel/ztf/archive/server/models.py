@@ -108,8 +108,9 @@ class ObjectQuery(CandidateFilterable):
     )
 
 
-class MapQueryBase(CandidateFilterable):
-    jd: StrictTimeConstraint
+class AlertChunkQueryBase(StrictModel):
+    """Options for queries that will return a chunk of alerts"""
+
     latest: bool = Field(
         False, description="Return only the latest alert for each objectId"
     )
@@ -124,17 +125,29 @@ class MapQueryBase(CandidateFilterable):
     )
 
 
+class MapQueryBase(CandidateFilterable):
+    jd: StrictTimeConstraint
+
+
 class HEALpixMapRegion(StrictModel):
     nside: int
     pixels: list[int]
 
 
-class HEALpixMapQuery(MapQueryBase, HEALpixMapRegion):
+class HEALpixMapQuery(AlertChunkQueryBase, MapQueryBase, HEALpixMapRegion):
     ...
 
 
-class HEALpixRegionQuery(MapQueryBase):
+class HEALpixRegionQueryBase(MapQueryBase):
     regions: list[HEALpixMapRegion]
+
+
+class HEALpixRegionQuery(AlertChunkQueryBase, HEALpixRegionQueryBase):
+    ...
+
+
+class HEALpixRegionCountQuery(HEALpixRegionQueryBase):
+    ...
 
 
 # Generated from tests/test-data/schema_3.3.json

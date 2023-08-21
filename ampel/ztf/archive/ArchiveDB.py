@@ -1405,6 +1405,34 @@ class ArchiveDB(ArchiveDBClient):
                 block_size=block_size,
             )
 
+    def count_alerts_in_healpix(
+        self,
+        *,
+        pixels: Mapping[int, Union[int, List[int]]],
+        jd_start: float,
+        jd_end: float,
+        programid: Optional[int] = None,
+        candidate_filter: Optional[FilterClause] = None
+    ) -> int:
+        """
+        Count alerts in HEALpix pixels
+
+        :param pixels: dict of nside->pixel index (nested ordering)
+        :param jd_start: minimum JD of exposure start
+        :param jd_end: maximum JD of exposure start
+        """
+        condition, orders = self._healpix_search_condition(
+            pixels=pixels,
+            jd_min=jd_start,
+            jd_max=jd_end,
+            latest=False,
+            programid=programid,
+            candidate_filter=candidate_filter,
+        )
+
+        with self.connect() as conn:
+            return conn.execute(self._build_base_alert_query([func.count()], condition)).fetchone()
+
 
 def consumer_groups_command() -> None:
     from argparse import ArgumentParser

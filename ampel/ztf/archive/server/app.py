@@ -51,6 +51,7 @@ from .models import (
     AlertCutouts,
     AlertQuery,
     HEALpixMapQuery,
+    HEALpixRegionCountQuery,
     HEALpixRegionQuery,
     ObjectQuery,
     Stream,
@@ -527,8 +528,7 @@ def get_alerts_in_healpix_map(
     resume_token = query.resume_token or secrets.token_urlsafe(32)
     if query.resume_token:
         chunk, alerts = archive.get_chunk_from_queue(
-            query.resume_token,
-            with_history=query.with_history
+            query.resume_token, with_history=query.with_history
         )
     else:
         if isinstance(query, HEALpixRegionQuery):
@@ -555,6 +555,27 @@ def get_alerts_in_healpix_map(
         chunk=chunk,
         pending=info["pending"],
         remaining=info["remaining"],
+    )
+
+
+@app.post(
+    "/alerts/healpix/skymap/count",
+    tags=["search"],
+    response_model=int,
+    response_model_exclude_none=True,
+)
+def count_alerts_in_healpix_map(
+    query: HEALpixRegionCountQuery,
+    archive: ArchiveDB = Depends(get_archive),
+    auth: bool = Depends(verify_access_token),
+    programid: Optional[int] = Depends(verify_authorized_programid),
+) -> int:
+    return archive.count_alerts_in_healpix(
+        pixels={region.nside: region.pixels for region in query.regions},
+        jd_start=query.jd.gt,
+        jd_end=query.jd.lt,
+        programid=programid,
+        candidate_filter=query.candidate,
     )
 
 
