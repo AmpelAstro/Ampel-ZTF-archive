@@ -322,6 +322,20 @@ async def test_get_healpix_skymap(
     }, "map is decomposed into superpixels"
 
 
+@pytest.mark.parametrize("nside", [0, ArchiveDB.NSIDE * 2, ArchiveDB.NSIDE - 1])
+@pytest.mark.asyncio
+async def test_get_healpix_validation(
+    mock_client: httpx.AsyncClient, mock_db: MagicMock, mock_auth, nside
+):
+    query = {
+        "jd": {"$gt": 0, "$lt": 1},
+        "nside": nside,
+        "pixels": [0],
+    }
+    response = await mock_client.post("/alerts/healpix/skymap", json=query)
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
 @pytest.mark.parametrize(
     "auth,status",
     [(DEFAULT, status.HTTP_200_OK), (BearerAuth, status.HTTP_401_UNAUTHORIZED)],

@@ -1,9 +1,11 @@
+import math
 from base64 import b64encode
 from datetime import datetime
 from chunk import Chunk
 from typing import List, Dict, Any, Literal, Optional, Union
 from pydantic import BaseModel, Field, validator, root_validator
 from ..types import FilterClause
+from ..ArchiveDBClient import ArchiveDBClient
 
 
 class StrictModel(BaseModel):
@@ -130,8 +132,14 @@ class MapQueryBase(CandidateFilterable):
 
 
 class HEALpixMapRegion(StrictModel):
-    nside: int
+    nside: int = Field(..., gt=0, le=ArchiveDBClient.NSIDE)
     pixels: list[int]
+
+    @validator("nside")
+    def power_of_two(cls, nside):
+        if not math.log2(nside).is_integer():
+            raise ValueError("nside must be a power of 2")
+        return nside
 
 
 class HEALpixMapQuery(AlertChunkQueryBase, MapQueryBase, HEALpixMapRegion):
