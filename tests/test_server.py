@@ -1,6 +1,7 @@
 import base64
 from contextlib import contextmanager
 import io
+from pathlib import Path
 import secrets
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
@@ -182,12 +183,17 @@ def test_parse_json_from_env(monkeypatch):
     assert Settings().allowed_identities == {"someorg", "someorg/a-team"}
 
 
+@pytest.mark.parametrize("schemavsn", ["3.3", "4.02"])
 @pytest.mark.asyncio
-async def test_get_alert(mock_client: httpx.AsyncClient, mock_db: MagicMock):
+async def test_get_alert(mock_client: httpx.AsyncClient, mock_db: MagicMock, schemavsn):
+    with open(Path(__file__).parent / "test-data" / f"schema_{schemavsn}.avro", "rb") as f:
+        alert: dict = next(fastavro.reader(f))
+    mock_db.get_alert.return_value = alert
     response = await mock_client.get("/alert/123")
     response.raise_for_status()
     assert mock_db.get_alert.called_once
     assert mock_db.get_alert.call_args.args[0] == 123
+    assert response.json().keys() == alert.keys()
 
 
 # metafixture as suggested in https://github.com/pytest-dev/pytest/issues/349#issuecomment-189370273

@@ -337,6 +337,38 @@ class PrvCandidate(BaseModel):
     rbversion: Optional[str]
 
 
+class FPHist(BaseModel):
+    field: Optional[int]
+    rcid: Optional[int]
+    fid: int
+    pid: int
+    rfid: int
+    sciinpseeing: Optional[float]
+    scibckgnd: Optional[float]
+    scisigpix: Optional[float]
+    magzpsci: Optional[float]
+    magzpsciunc: Optional[float]
+    magzpscirms: Optional[float]
+    clrcoeff: Optional[float]
+    clrcounc: Optional[float]
+    exptime: Optional[float]
+    adpctdif1: Optional[float]
+    adpctdif2: Optional[float]
+    diffmaglim: Optional[float]
+    programid: int
+    jd: float
+    forcediffimflux: Optional[float]
+    forcediffimfluxunc: Optional[float]
+    procstatus: Optional[str]
+    distnr: Optional[float]
+    ranr: float
+    decnr: float
+    magnr: Optional[float]
+    sigmagnr: Optional[float]
+    chinr: Optional[float]
+    sharpnr: Optional[float]
+
+
 class Cutout(BaseModel):
     """
     stampData is a gzipped FITS file, b64 encoded
@@ -360,15 +392,23 @@ class AlertCutouts(AlertBase):
     cutoutDifference: Optional[Cutout]
 
 
-class Alert(AlertCutouts):
+class Alert_33(AlertCutouts):
     """
     avro alert schema for ZTF (www.ztf.caltech.edu)
     """
 
-    schemavsn: str = "3.3"
+    schemavsn: Union[Literal["3.0"], Literal["3.3"]]
     publisher: str = "Ampel"
     candidate: Candidate
     prv_candidates: Optional[List[PrvCandidate]]
+
+
+class Alert_402(Alert_33):
+    schemavsn: Literal["4.02"]
+    fp_hists: Optional[List[FPHist]]
+
+
+Alert = Union[Alert_33, Alert_402]
 
 
 class AlertChunk(BaseModel):
