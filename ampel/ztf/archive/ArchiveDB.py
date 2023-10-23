@@ -1009,6 +1009,7 @@ class ArchiveDB(ArchiveDBClient):
                 "programid": candidate["programid"],
                 "candidate": candidate,
                 "prv_candidates": datapoints,
+                "schemavsn": "3.3",
             }
         else:
             return None
