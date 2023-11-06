@@ -397,7 +397,7 @@ class Alert_33(AlertCutouts):
     avro alert schema for ZTF (www.ztf.caltech.edu)
     """
 
-    schemavsn: Union[Literal["3.0"], Literal["3.3"]]
+    schemavsn: Union[Literal["2.0"], Literal["3.0"], Literal["3.1"], Literal["3.2"], Literal["3.3"]]
     publisher: str = "Ampel"
     candidate: Candidate
     prv_candidates: Optional[List[PrvCandidate]]
