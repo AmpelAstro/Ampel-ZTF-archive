@@ -164,16 +164,22 @@ def post_alert_chunk(
     key = f'{hashlib.sha256(json.dumps(sorted(alert["candid"] for alert in alerts)).encode("utf-8")).hexdigest()}.avro'
     md5 = base64.b64encode(hashlib.md5(blob).digest()).decode("utf-8")
 
-    s3_response = bucket.Object(key).put(
+    obj = bucket.Object(key)
+
+    s3_response = obj.put(
         Body=blob,
         ContentMD5=md5,
         Metadata={"schema-name": schema["name"], "schema-version": schema["version"]},
     )
     assert 200 <= s3_response["ResponseMetadata"]["HTTPStatusCode"] < 300
 
-    archive.insert_alert_chunk(
-        alerts, schema, archive_uri=get_url_for_key(bucket, key), ranges=ranges
-    )
+    try:
+        archive.insert_alert_chunk(
+            alerts, schema, archive_uri=get_url_for_key(bucket, key), ranges=ranges
+        )
+    except:
+        obj.delete()
+        raise
 
 
 def get_alert_from_s3(
