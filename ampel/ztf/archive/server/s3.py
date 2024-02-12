@@ -1,6 +1,7 @@
 from functools import lru_cache
 import io
 from typing import TYPE_CHECKING
+from urllib.parse import urlsplit
 
 import boto3
 from botocore.exceptions import ClientError
@@ -13,8 +14,9 @@ if TYPE_CHECKING:
     from mypy_boto3_s3.service_resource import Bucket
     from typing import BinaryIO
 
-class NoSuchKey(KeyError):
-    ...
+
+class NoSuchKey(KeyError): ...
+
 
 @lru_cache(maxsize=1)
 def get_s3_bucket() -> "Bucket":
@@ -38,7 +40,7 @@ def get_object(bucket: "Bucket", key: str) -> bytes:
 def get_stream(bucket: "Bucket", key: str) -> "BinaryIO":
     response = bucket.Object(key).get()
     if response["ResponseMetadata"]["HTTPStatusCode"] <= 400:
-        return response["Body"] # type: ignore[return-value]
+        return response["Body"]  # type: ignore[return-value]
     else:
         raise KeyError
 
@@ -60,10 +62,16 @@ def get_range(
             schema = get_parsed_schema(read_schema(get_stream(bucket, key)))
         else:
             schema = ALERT_SCHEMAS[schema_key]
-        return response["Body"], schema # type: ignore[return-value]
+        return response["Body"], schema  # type: ignore[return-value]
     else:
         raise KeyError
 
 
 def get_url_for_key(bucket: "Bucket", key: str) -> str:
     return f"{settings.s3_endpoint_url or ''}/{bucket.name}/{key}"
+
+
+def get_key_for_url(bucket: "Bucket", uri: str) -> str:
+    path = urlsplit(uri).path.split("/")
+    assert path[-2] == bucket.name
+    return path[-1]

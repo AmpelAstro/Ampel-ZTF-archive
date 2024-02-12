@@ -1,0 +1,5 @@
+BEGIN;
+
+ALTER TABLE avro_archive ADD count INTEGER;
+
+COMMIT;
