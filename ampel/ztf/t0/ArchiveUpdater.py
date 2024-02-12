@@ -50,7 +50,7 @@ class ArchiveUpdater(ArchiveDBClient):
             else:
                 archive_id = conn.execute(
                     AvroArchive.insert()
-                    .values(uri=archive_uri)
+                    .values(uri=archive_uri, count=len(alerts))
                     .returning(AvroArchive.c.avro_archive_id)
                 ).fetchone()[0]
 
