@@ -1318,6 +1318,33 @@ class ArchiveDB(ArchiveDBClient):
                 max_blocks=max_blocks,
             )
 
+
+    def get_random_alerts(
+        self,
+        *,
+        count: int,
+        with_history: bool = False,
+    ):
+
+        Alert = self._meta.tables["alert"]
+
+        with self.connect() as conn:
+            ids = [
+                conn.execute("select alert_id from alert TABLESAMPLE system_rows(1)").fetchone()[0]
+                for _ in range(count)
+            ]
+            condition = Alert.c.alert_id.in_(ids)
+            orders = []
+
+            _, alerts = self._fetch_alerts_with_condition(
+                conn,
+                condition,
+                orders,
+                with_history=with_history,
+            )
+            return alerts
+
+
     def get_objects_in_cone(
         self,
         *,
