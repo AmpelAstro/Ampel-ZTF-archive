@@ -12,6 +12,7 @@ import itertools
 import json
 import math
 import operator
+import time
 from typing import (
     Any,
     Dict,
@@ -1317,6 +1318,35 @@ class ArchiveDB(ArchiveDBClient):
                 block_size=block_size,
                 max_blocks=max_blocks,
             )
+
+
+    def get_random_alerts(
+        self,
+        *,
+        count: int,
+        with_history: bool = False,
+    ):
+
+        Alert = self._meta.tables["alert"]
+
+        with self.connect() as conn:
+            ids = [
+                conn.execute("select alert_id from alert TABLESAMPLE system_rows(1)").fetchone()[0]
+                for _ in range(count)
+            ]
+            condition = Alert.c.alert_id.in_(ids)
+            orders = []
+
+            t0 = time.time()
+            _, alerts = self._fetch_alerts_with_condition(
+                conn,
+                condition,
+                orders,
+                with_history=with_history,
+            )
+            dt = time.time() - t0
+            return alerts, dt
+
 
     def get_objects_in_cone(
         self,

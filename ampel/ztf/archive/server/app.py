@@ -425,6 +425,25 @@ def get_alerts_in_cone(
 
 
 @app.get(
+    "/alerts/sample"
+)
+def get_random_alerts(
+    count: int = Query(1, ge=1, le=10_000),
+    with_history: bool = Query(False),
+    archive: ArchiveDB = Depends(get_archive),
+):
+    """
+    Get a sample of random alerts to test random-access throughput
+    """
+    alerts, dt = archive.get_random_alerts(count=count, with_history=with_history)
+    return {
+        "dt": dt,
+        "alerts": len(alerts),
+        "prv_candidates": sum(len(alert["prv_candidates"]) for alert in alerts),
+    }
+
+
+@app.get(
     "/objects/cone_search",
     tags=["search"],
 )
