@@ -436,7 +436,7 @@ def get_random_alerts(
     Get a sample of random alerts to test random-access throughput
     """
     t0 = time.time()
-    alerts = archive.get_random_alerts(count, with_history)
+    alerts = archive.get_random_alerts(count=count, with_history=with_history)
     dt = time.time() - t0
     return {
         "dt": dt,
