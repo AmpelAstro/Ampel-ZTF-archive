@@ -435,13 +435,11 @@ def get_random_alerts(
     """
     Get a sample of random alerts to test random-access throughput
     """
-    t0 = time.time()
-    alerts = archive.get_random_alerts(count=count, with_history=with_history)
-    dt = time.time() - t0
+    alerts, dt = archive.get_random_alerts(count=count, with_history=with_history)
     return {
         "dt": dt,
         "alerts": len(alerts),
-        "photopoints": sum(len(alert["prv_candidates"]) for alert in alerts)
+        "prv_candidates": sum(len(alert["prv_candidates"]) for alert in alerts),
     }
 
 

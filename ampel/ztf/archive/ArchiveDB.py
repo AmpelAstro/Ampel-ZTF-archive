@@ -12,6 +12,7 @@ import itertools
 import json
 import math
 import operator
+import time
 from typing import (
     Any,
     Dict,
@@ -1336,13 +1337,15 @@ class ArchiveDB(ArchiveDBClient):
             condition = Alert.c.alert_id.in_(ids)
             orders = []
 
+            t0 = time.time()
             _, alerts = self._fetch_alerts_with_condition(
                 conn,
                 condition,
                 orders,
                 with_history=with_history,
             )
-            return alerts
+            dt = time.time() - t0
+            return alerts, dt
 
 
     def get_objects_in_cone(
