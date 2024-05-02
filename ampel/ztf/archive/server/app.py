@@ -226,7 +226,6 @@ def get_cutouts(
     candid: int,
     db: ArchiveDB = Depends(get_archive),
     bucket=Depends(get_s3_bucket),
-    auth: bool = Depends(verify_access_token),
 ):
     if alert := get_alert_from_s3(candid, db, bucket):
         return alert
