@@ -1351,13 +1351,11 @@ class ArchiveDB(ArchiveDBClient):
                 for _ in range(count)
             ]
             condition = Alert.c.alert_id.in_(ids)
-            orders = []
 
             t0 = time.time()
             _, alerts = self._fetch_alerts_with_condition(
                 conn,
                 condition,
-                orders,
                 with_history=with_history,
             )
             dt = time.time() - t0

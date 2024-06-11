@@ -404,7 +404,7 @@ class Alert_33(AlertCutouts):
 
 
 class Alert_402(Alert_33):
-    schemavsn: Literal["4.02"]
+    schemavsn: Literal["4.02"]  # type: ignore[assignment]
     fp_hists: Optional[List[FPHist]]
 
 
