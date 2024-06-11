@@ -348,7 +348,12 @@ class ArchiveDB(ArchiveDBClient):
         )
 
     def _populate_read_queue(
-        self, conn, group_id, block_size, condition, order: List[UnaryExpression] = []
+        self,
+        conn: Connection,
+        group_id: int,
+        block_size: int,
+        condition,
+        order: List[UnaryExpression] = [],
     ):
         Queue = self._meta.tables["read_queue"]
         blocks = self._select_alert_ids(group_id, block_size, condition, order)
@@ -380,18 +385,27 @@ class ArchiveDB(ArchiveDBClient):
     def _create_read_queue(
         self,
         conn: Connection,
-        condition: BooleanClauseList,
-        order: List[UnaryExpression],
         group_name: str,
         block_size: int,
-    ) -> Tuple[int, int]:
-
+    ) -> int:
         Groups = self._meta.tables["read_queue_groups"]
 
         result = conn.execute(
             Groups.insert(), group_name=group_name, chunk_size=block_size
         )
-        group_id = result.inserted_primary_key[0]
+        return result.inserted_primary_key[0]
+
+    def _fill_read_queue(
+        self,
+        conn: Connection,
+        condition: BooleanClauseList,
+        order: List[UnaryExpression],
+        group_id: int,
+        block_size: int,
+    ) -> int:
+
+        Groups = self._meta.tables["read_queue_groups"]
+
         try:
             queue_info = self._populate_read_queue(
                 conn, group_id, block_size, condition, order
@@ -405,11 +419,11 @@ class ArchiveDB(ArchiveDBClient):
 
             chunks = queue_info["chunks"]
             log.info(
-                "Created group {} with id {} ({} items in {} chunks)".format(
-                    group_name, group_id, queue_info["items"], queue_info["chunks"]
+                "Created group with id {} ({} items in {} chunks)".format(
+                    group_id, queue_info["items"], queue_info["chunks"]
                 )
             )
-            return group_id, chunks
+            return chunks
         except sqlalchemy.exc.SQLAlchemyError as exc:
             conn.execute(
                 Groups.update(
@@ -417,8 +431,8 @@ class ArchiveDB(ArchiveDBClient):
                     values={"error": True, "msg": str(exc)},
                 )
             )
-            log.exception(f"Failed to create group {group_name}")
-            return group_id, 0
+            log.exception(f"Failed to populate group {group_id}")
+            return 0
 
     def get_group_info(self, group_name: str) -> GroupInfo:
         Groups = self._meta.tables["read_queue_groups"]
@@ -481,10 +495,10 @@ class ArchiveDB(ArchiveDBClient):
         order: List[UnaryExpression] = [],
         *,
         distinct: bool = False,
-        with_history=False,
-        group_name=None,
-        block_size=None,
-        max_blocks=None,
+        with_history: bool=False,
+        group_name: Optional[str]=None,
+        block_size: Optional[int]=None,
+        max_blocks: Optional[int]=None,
         limit: Optional[int] = None,
         skip: int = 0,
     ) -> tuple[int, list[dict[str, Any]]]:
@@ -495,8 +509,10 @@ class ArchiveDB(ArchiveDBClient):
                 raise NotImplementedError(
                     "latest sorting is not implemented for queues"
                 )
-            group_id, _ = self._create_read_queue(
-                conn, condition, order, group_name, block_size
+            assert block_size is not None
+            group_id = self._create_read_queue(conn, group_name, block_size)
+            self._fill_read_queue(
+                conn, condition, order, group_id, block_size, 
             )
             return self.get_chunk_from_queue(group_name, with_history=with_history)
 

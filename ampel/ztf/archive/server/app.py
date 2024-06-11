@@ -767,19 +767,26 @@ def create_stream_from_query(
         )
 
     name = secrets.token_urlsafe(32)
-    # create stream in the background
-    def create_stream():
-        with archive.connect() as conn:
-            conn.execute(f"set statement_timeout={settings.stream_query_timeout*1000};")
-            try:
-                archive._create_read_queue(
-                    conn, condition, order, name, query.chunk_size
-                )
-            except:
-                # FIXME: do communicate the error somehow
-                raise
-                pass
+    try:
+        conn = archive._engine.connect()
+    except sqlalchemy.exc.TimeoutError as exc:
+        conn.close()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"msg": str(exc)}
+        )
+    
+    conn.execute(f"set statement_timeout={settings.stream_query_timeout*1000};")
+    group_id = archive._create_read_queue(conn, name, query.chunk_size)
 
+    # create stream in the background
+    def create_stream() -> None:
+        try:
+            archive._fill_read_queue(
+                conn, condition, order, group_id, query.chunk_size
+            ) 
+        finally:
+            conn.close()
     tasks.add_task(create_stream)
 
     return {"resume_token": name, "chunk_size": query.chunk_size}
