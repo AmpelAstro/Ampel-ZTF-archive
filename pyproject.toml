@@ -65,6 +65,9 @@ plugins = [
   "sqlmypy"
 ]
 show_error_codes = true
+packages = [
+  "ampel"
+]
 
 [[tool.mypy.overrides]]
 module = [
