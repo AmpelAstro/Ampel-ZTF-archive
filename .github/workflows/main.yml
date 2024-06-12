@@ -25,7 +25,7 @@ jobs:
         poetry install -E server
     - run: poetry run pytest --cov=ampel --integration
       env:
-        LOCALSTACK_URI: http://localhost:4566
+        LOCALSTACK_PORT: 4566
   
   mypy:
     runs-on: ubuntu-latest

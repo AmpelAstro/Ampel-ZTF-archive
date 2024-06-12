@@ -89,11 +89,11 @@ def archive(integration):
 
 @pytest.fixture(scope="session")
 def localstack_s3(integration):
-    if "LOCALSTACK_URI" in os.environ:
-        yield os.environ["LOCALSTACK_URI"]
+    if os.environ.get("LOCALSTACK_PORT"):
+        yield f"http://localhost:{os.environ['LOCALSTACK_PORT']}"
         return
     elif not integration:
-        raise pytest.skip("integration tests require --integration flag or LOCALSTACK_URI env var")
+        raise pytest.skip("integration tests require --integration flag or LOCALSTACK_PORT env var")
     container = None
     try:
         container = (
