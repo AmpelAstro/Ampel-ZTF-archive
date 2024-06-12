@@ -59,6 +59,10 @@ build-backend = "poetry.core.masonry.api"
 [tool.coverage.run]
 relative_files = true
 
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "--showlocals -r a -v"
+
 [tool.mypy]
 namespace_packages = true
 plugins = [
