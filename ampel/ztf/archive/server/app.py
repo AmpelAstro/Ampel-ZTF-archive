@@ -142,7 +142,7 @@ async def deserialize_avro_body(
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY, headers={"x-exception": str(exc)}
         )
-    return content, schema
+    return content, schema  # type: ignore[return-value]
 
 
 @app.post(
@@ -358,7 +358,6 @@ def get_alerts_in_time_range(
     info = get_stream_info(resume_token, archive)
     return AlertChunk(
         resume_token=resume_token,
-        chunk_size=chunk_size,
         alerts=alerts,
         chunk=chunk,
         pending=info["pending"],
@@ -415,7 +414,6 @@ def get_alerts_in_cone(
     info = get_stream_info(resume_token, archive)
     return AlertChunk(
         resume_token=resume_token,
-        chunk_size=chunk_size,
         alerts=alerts,
         chunk=chunk,
         pending=info["pending"],
@@ -530,7 +528,6 @@ def get_alerts_in_healpix_pixel(
     info = get_stream_info(resume_token, archive)
     return AlertChunk(
         resume_token=resume_token,
-        chunk_size=chunk_size,
         alerts=alerts,
         chunk=chunk,
         pending=info["pending"],
@@ -575,7 +572,6 @@ def get_alerts_in_healpix_map(
     info = get_stream_info(resume_token, archive)
     return AlertChunk(
         resume_token=resume_token,
-        chunk_size=info["chunk_size"],
         alerts=alerts,
         chunk=chunk,
         pending=info["pending"],

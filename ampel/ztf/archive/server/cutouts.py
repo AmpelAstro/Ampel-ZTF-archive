@@ -18,6 +18,7 @@ def get_parsed_schema(schema: dict):
 
 def read_schema(fo: BinaryIO) -> dict[str, Any]:
     reader = fastavro.reader(fo)
+    assert isinstance(reader.writer_schema, dict)
     return reader.writer_schema
 
 def repack_alert(alert: dict) -> bytes:
@@ -82,8 +83,8 @@ def extract_alert(
     buf = read_block(decoder)
     # iterate over deserialized records
     for _ in range(nrecords):
-        alert = fastavro.schemaless_reader(buf, get_parsed_schema(schema))
-        if alert["candid"] == candid:
+        alert = fastavro.schemaless_reader(buf, get_parsed_schema(schema), None)
+        if isinstance(alert, dict) and alert["candid"] == candid:
             return alert
     else:
         raise KeyError(f"{candid} not found in block")

@@ -55,7 +55,7 @@ class Settings(BaseSettings):
         env_file = ".env"
 
 
-settings = Settings()
+settings = Settings()  # type: ignore[call-arg]
 
 if settings.query_debug:
     from ampel.ztf.archive.ArchiveDB import ArchiveDB

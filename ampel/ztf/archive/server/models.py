@@ -88,7 +88,7 @@ class CandidateFilterable(StrictModel):
 
 class AlertQuery(CandidateFilterable):
     cone: Optional[ConeConstraint] = None
-    jd: TimeConstraint = TimeConstraint()
+    jd: TimeConstraint = TimeConstraint()  # type: ignore[call-arg]
     candidate: Optional[FilterClause] = None
     chunk_size: int = Field(
         100, gte=0, lte=10000, description="Number of alerts per chunk"
@@ -103,7 +103,7 @@ class AlertQuery(CandidateFilterable):
 
 class ObjectQuery(CandidateFilterable):
     objectId: Union[str, List[str]]
-    jd: TimeConstraint = TimeConstraint()
+    jd: TimeConstraint = TimeConstraint()  # type: ignore[call-arg]
     candidate: Optional[FilterClause] = None
     chunk_size: int = Field(
         100, gte=0, lte=10000, description="Number of alerts per chunk"

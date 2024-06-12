@@ -1112,7 +1112,7 @@ class ArchiveDB(ArchiveDBClient):
         programid: Optional[int] = None,
         candidate_filter: Optional[FilterClause] = None,
         with_history: bool = True,
-        group_name: str = None,
+        group_name: Optional[str] = None,
         block_size: int = 5000,
         max_blocks: Optional[int] = None,
     ):
