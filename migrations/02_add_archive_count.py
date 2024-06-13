@@ -45,7 +45,7 @@ with engine.connect() as connection:
     )
 
     log.info("filling in missing avro_archive.count")
-    for row in connection.execute(Archive.select(Archive.c.count == None)).fetchall():
+    for row in connection.execute(Archive.select(Archive.c.count is None)).fetchall():
         key = get_key_for_url(bucket, row["uri"])
         count = len(list(fastavro.reader(get_stream(bucket, key))))
 

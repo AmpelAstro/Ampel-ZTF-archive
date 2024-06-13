@@ -269,8 +269,7 @@ def test_delete_alert(empty_archive, alert_generator):
                     meta.tables["alert_prv_candidate_pivot"].columns.prv_candidate_id, 1
                 )
             )
-        ).first()[0]
-        == None
+        ).first()[0] is None
     )
     assert (
         connection.execute(
@@ -285,8 +284,7 @@ def test_delete_alert(empty_archive, alert_generator):
                     meta.tables["alert_upper_limit_pivot"].columns.upper_limit_id, 1
                 )
             )
-        ).first()[0]
-        == None
+        ).first()[0] is None
     )
     # array-joined tables don't participate in delete cascade, because ELEMENT REFERENCES is still not a thing
     # http://blog.2ndquadrant.com/postgresql-9-3-development-array-element-foreign-keys/
