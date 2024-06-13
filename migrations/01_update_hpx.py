@@ -32,7 +32,7 @@ with engine.connect() as connection:
         sa.select([Candidate.c.candidate_id, Candidate.c.ra, Candidate.c.dec])
         .where(
             sa.and_(
-                Candidate.columns._hpx.is_(None),
+                Candidate.columns._hpx.is_(None),  # noqa: SLF001
                 Candidate.c.candidate_id > sa.bindparam("min_id"),
             )
         )

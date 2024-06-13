@@ -96,7 +96,7 @@ select = [
     "T20",
     "PT",
     "RET",
-    # "SLF",
+    "SLF",
     # "SIM",
     # # "ARG", # sometimes your arguments have to conform to an interface
     # # "ERA", # seems to prohibit all comments, that's bad
@@ -108,4 +108,4 @@ select = [
 [tool.ruff.lint.per-file-ignores]
 "ampel/ztf/archive/server/*" = ["B008"]
 "migrations/*" = ["T201"]
-"tests/*" = ["T201"]
+"tests/*" = ["T201", "SLF001"]

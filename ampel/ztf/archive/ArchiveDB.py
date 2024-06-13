@@ -1157,7 +1157,7 @@ class ArchiveDB(ArchiveDBClient):
         center = func.ll_to_earth(dec, ra)
         loc = func.ll_to_earth(Candidate.c.dec, Candidate.c.ra)
 
-        pix = Candidate.c._hpx
+        pix = Candidate.c._hpx  # noqa: SLF001
 
         nside, ranges = ranges_for_cone(ra, dec, radius, max_nside=self.NSIDE)
         scale = (self.NSIDE // nside) ** 2
@@ -1216,7 +1216,7 @@ class ArchiveDB(ArchiveDBClient):
         # elements in your OR clause, which can end up dominating the runtime of the query.
 
         # use stored healpix column
-        pix = Candidate.c._hpx
+        pix = Candidate.c._hpx  # noqa: SLF001
 
         ranges: multirange[int] = multirange()
 

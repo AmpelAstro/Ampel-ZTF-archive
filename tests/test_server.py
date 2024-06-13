@@ -279,7 +279,7 @@ async def test_auth_timeout(
 ):
     msg = "bad things happened for reasons"
     mocker.patch.object(
-        mock_db._engine, "connect", side_effect=sqlalchemy.exc.TimeoutError(msg)
+        mock_db, "connect", side_effect=sqlalchemy.exc.TimeoutError(msg)
     )
     kwargs = {"auth": BearerAuth("tokeytoken")}
     response = await mock_client.get("/object/thingamajig/alerts", **kwargs)

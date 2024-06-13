@@ -62,9 +62,9 @@ async def get_user(auth: HTTPAuthorizationCredentials = Depends(user_bearer)) ->
 
 
 def find_access_token(db: ArchiveDB, token: str) -> Optional[AuthToken]:
-    Token = db._meta.tables["access_token"]
+    Token = db.get_table("access_token")
     try:
-        with db._engine.connect() as conn:
+        with db.connect() as conn:
             try:
                 cursor = conn.execute(
                     select([Token.c.token_id, Token.c.role, Token.c.partnership])
@@ -116,8 +116,8 @@ router = APIRouter(tags=["tokens"])
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
 def create_token(user: User = Depends(get_user), db: ArchiveDB = Depends(get_archive)):
-    Token = db._meta.tables["access_token"]
-    with db._engine.connect() as conn:
+    Token = db.get_table("access_token")
+    with db.connect() as conn:
         cursor = conn.execute(
             Token.insert(
                 {
@@ -133,8 +133,8 @@ def create_token(user: User = Depends(get_user), db: ArchiveDB = Depends(get_arc
 
 @router.get("/")
 def list_tokens(user: User = Depends(get_user), db: ArchiveDB = Depends(get_archive)):
-    Token = db._meta.tables["access_token"]
-    with db._engine.connect() as conn:
+    Token = db.get_table("access_token")
+    with db.connect() as conn:
         cursor = conn.execute(Token.select().where(Token.c.owner == user.name))
         return cursor.fetchall()
 
@@ -143,8 +143,8 @@ def list_tokens(user: User = Depends(get_user), db: ArchiveDB = Depends(get_arch
 def get_token(
     token_id: int, user: User = Depends(get_user), db: ArchiveDB = Depends(get_archive)
 ):
-    Token = db._meta.tables["access_token"]
-    with db._engine.connect() as conn:
+    Token = db.get_table("access_token")
+    with db.connect() as conn:
         cursor = conn.execute(
             Token.select().where(
                 Token.c.token_id == token_id and Token.c.owner == user.name
@@ -159,8 +159,8 @@ def get_token(
 def delete_token(
     token_id: int, user: User = Depends(get_user), db: ArchiveDB = Depends(get_archive)
 ):
-    Token = db._meta.tables["access_token"]
-    with db._engine.connect() as conn:
+    Token = db.get_table("access_token")
+    with db.connect() as conn:
         cursor = conn.execute(
             Token.delete().where(
                 Token.c.token_id == token_id and Token.c.owner == user.name

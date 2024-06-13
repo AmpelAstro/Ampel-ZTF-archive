@@ -714,7 +714,7 @@ def create_stream_from_query(
     try:
         if isinstance(query, AlertQuery):
             if query.cone:
-                condition, order = archive._cone_search_condition(
+                condition, order = archive._cone_search_condition(  # noqa: SLF001
                     ra=query.cone.ra,
                     dec=query.cone.dec,
                     radius=query.cone.radius,
@@ -724,14 +724,14 @@ def create_stream_from_query(
                     candidate_filter=query.candidate,
                 )
             else:
-                condition, order = archive._time_range_condition(
+                condition, order = archive._time_range_condition(  # noqa: SLF001
                     programid=programid,
                     jd_start=query.jd.gt,
                     jd_end=query.jd.lt,
                     candidate_filter=query.candidate,
                 )
         elif isinstance(query, ObjectQuery):
-            condition, order = archive._object_search_condition(
+            condition, order = archive._object_search_condition(  # noqa: SLF001
                 objectId=query.objectId,
                 programid=programid,
                 jd_start=query.jd.gt,
@@ -742,7 +742,7 @@ def create_stream_from_query(
             pixels: dict[int, list[int]] = {}
             for region in query.regions:
                 pixels[region.nside] = pixels.get(region.nside, []) + region.pixels
-            condition, order = archive._healpix_search_condition(
+            condition, order = archive._healpix_search_condition(  # noqa: SLF001
                 pixels=pixels,
                 jd_min=query.jd.gt,
                 jd_max=query.jd.lt,
@@ -758,7 +758,7 @@ def create_stream_from_query(
 
     name = secrets.token_urlsafe(32)
     try:
-        conn = archive._engine.connect()
+        conn = archive._engine.connect()  # noqa: SLF001
     except sqlalchemy.exc.TimeoutError as exc:
         conn.close()
         raise HTTPException(
@@ -766,12 +766,12 @@ def create_stream_from_query(
         ) from None
 
     conn.execute(f"set statement_timeout={settings.stream_query_timeout*1000};")
-    group_id = archive._create_read_queue(conn, name, query.chunk_size)
+    group_id = archive._create_read_queue(conn, name, query.chunk_size)  # noqa: SLF001
 
     # create stream in the background
     def create_stream() -> None:
         try:
-            archive._fill_read_queue(conn, condition, order, group_id, query.chunk_size)
+            archive._fill_read_queue(conn, condition, order, group_id, query.chunk_size)  # noqa: SLF001
         finally:
             conn.close()
 
