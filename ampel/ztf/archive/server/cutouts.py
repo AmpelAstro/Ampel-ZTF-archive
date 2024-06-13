@@ -64,7 +64,7 @@ def pack_records(
         # reader has consumed the block; note offset
         end = buf.tell()
         for _ in block:
-            ranges.append((pos, end))
+            ranges.append((pos, end))  # noqa: PERF401
         pos = end
 
     return buf.getvalue(), ranges
