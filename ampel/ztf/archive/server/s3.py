@@ -33,8 +33,7 @@ def get_object(bucket: "Bucket", key: str) -> bytes:
     except ClientError as err:
         if err.response["Error"]["Code"] == str(HTTP_404_NOT_FOUND):
             raise KeyError() from err
-        else:
-            raise
+        raise
     return buffer.getvalue()
 
 
@@ -42,8 +41,7 @@ def get_stream(bucket: "Bucket", key: str) -> "BinaryIO":
     response = bucket.Object(key).get()
     if response["ResponseMetadata"]["HTTPStatusCode"] <= 400:
         return response["Body"]  # type: ignore[return-value]
-    else:
-        raise KeyError
+    raise KeyError
 
 
 def get_range(
@@ -64,8 +62,7 @@ def get_range(
         else:
             schema = ALERT_SCHEMAS[schema_key]
         return response["Body"], schema  # type: ignore[return-value]
-    else:
-        raise KeyError
+    raise KeyError
 
 
 def get_url_for_key(bucket: "Bucket", key: str) -> str:

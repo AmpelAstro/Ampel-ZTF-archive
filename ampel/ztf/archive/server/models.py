@@ -83,8 +83,7 @@ class CandidateFilterable(StrictModel):
     def validate_operator(cls, v):
         if isinstance(v, dict):
             return v
-        else:
-            return {"$eq": v}
+        return {"$eq": v}
 
 
 class AlertQuery(CandidateFilterable):

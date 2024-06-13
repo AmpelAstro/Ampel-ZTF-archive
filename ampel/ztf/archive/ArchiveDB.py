@@ -98,8 +98,7 @@ class ArchiveDB(ArchiveDBClient):
     def _get_alert_column(self, name: str) -> ColumnClause:
         if "alert" in self._meta.tables and name in self._meta.tables["alert"].c:
             return getattr(self._meta.tables["alert"].c, name)
-        else:
-            return getattr(self.get_table("candidate").c, name)
+        return getattr(self.get_table("candidate").c, name)
 
     def get_alert_id_column(self):
         return self._meta.tables["alert"].c.alert_id
@@ -201,8 +200,7 @@ class ArchiveDB(ArchiveDBClient):
                 ).fetchone()
             ) is None:
                 raise GroupNotFoundError
-            else:
-                topic_id: int = row.topic_id
+            topic_id: int = row.topic_id
 
             info = conn.execute(
                 select([func.sum(func.array_length(Topic.c.alert_ids, 1))]).where(
@@ -236,8 +234,7 @@ class ArchiveDB(ArchiveDBClient):
                 ).fetchone()
             ) is None:
                 raise GroupNotFoundError
-            else:
-                topic_id: int = row.topic_id
+            topic_id: int = row.topic_id
             group_id = conn.execute(
                 Groups.insert(),
                 group_name=group_name,
@@ -661,8 +658,7 @@ class ArchiveDB(ArchiveDBClient):
             alert_base = alert_base.limit(limit).offset(skip)
         if distinct:
             return alert_base.distinct(Alert.c.objectId)
-        else:
-            return alert_base
+        return alert_base
 
     def _build_alert_query(
         self,
@@ -1028,8 +1024,7 @@ class ArchiveDB(ArchiveDBClient):
                 "prv_candidates": datapoints,
                 "schemavsn": "3.3",
             }
-        else:
-            return None
+        return None
 
     def get_alerts(
         self,

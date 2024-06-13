@@ -102,7 +102,7 @@ async def verify_write_token(
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    elif token.role != "writer":
+    if token.role != "writer":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
@@ -152,8 +152,7 @@ def get_token(
         )
         if result := cursor.fetchone():
             return result
-        else:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
 
 @router.delete("/{token_id}", status_code=status.HTTP_204_NO_CONTENT)

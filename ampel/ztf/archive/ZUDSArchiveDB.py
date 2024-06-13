@@ -16,8 +16,7 @@ class ZUDSArchiveDB(ArchiveDB):
             jd = super()._get_alert_column("jd")
             alert_type = super()._get_alert_column("alert_type")
             return case([(alert_type == "single", jd)], else_=jdstart)
-        else:
-            return super()._get_alert_column(name)
+        return super()._get_alert_column(name)
 
     @classmethod
     def _build_queries(cls, meta):

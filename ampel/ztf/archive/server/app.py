@@ -213,10 +213,9 @@ def get_alert(
     """
     if alert := get_alert_from_s3(candid, db, bucket):
         return alert
-    elif alert := db.get_alert(candid, with_history=True):
+    if alert := db.get_alert(candid, with_history=True):
         return alert
-    else:
-        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    raise HTTPException(status.HTTP_404_NOT_FOUND)
 
 
 @app.get("/alert/{candid}/cutouts", tags=["cutouts"], response_model=AlertCutouts)
@@ -239,7 +238,7 @@ def verify_authorized_programid(
     if not auth.partnership:
         if programid is None:
             return 1
-        elif programid != 1:
+        if programid != 1:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail=f"Not authorized for programid {programid}",
@@ -454,7 +453,7 @@ def get_objects_in_cone(
     auth: bool = Depends(verify_access_token),
     programid: Optional[int] = Depends(verify_authorized_programid),
 ) -> list[str]:
-    chunk = list(
+    return list(
         archive.get_objects_in_cone(
             ra=ra,
             dec=dec,
@@ -464,7 +463,6 @@ def get_objects_in_cone(
             programid=programid,
         )
     )
-    return chunk
 
 
 @app.get(
@@ -792,7 +790,7 @@ def get_stream_info(resume_token: str, archive: ArchiveDB = Depends(get_archive)
             status_code=status.HTTP_423_LOCKED,
             detail={"msg": "queue-populating query has not yet finished"},
         )
-    elif info["error"]:
+    if info["error"]:
         raise HTTPException(
             status_code=status.HTTP_424_FAILED_DEPENDENCY,
             detail={"msg": info["msg"]},
