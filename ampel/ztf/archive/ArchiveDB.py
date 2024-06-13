@@ -12,7 +12,7 @@ import json
 import math
 import operator
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
 from typing import (
     TYPE_CHECKING,
@@ -221,7 +221,7 @@ class ArchiveDB(ArchiveDBClient):
         topic: str,
         group_name: str,
         block_size: int,
-        selection: slice = slice(None),
+        selection: slice = slice(None),  # noqa: B008
     ) -> dict[str, Any]:
         Groups = self._meta.tables["read_queue_groups"]
         Queue = self._meta.tables["read_queue"]
@@ -303,7 +303,11 @@ class ArchiveDB(ArchiveDBClient):
             )
 
     def _select_alert_ids(
-        self, group_id, block_size, condition, order: list[UnaryExpression] = []
+        self,
+        group_id,
+        block_size,
+        condition,
+        order: Sequence[UnaryExpression] = tuple(),
     ):
         """Generate a statement that selects blocks of alert_id"""
 
@@ -346,7 +350,7 @@ class ArchiveDB(ArchiveDBClient):
         group_id: int,
         block_size: int,
         condition,
-        order: list[UnaryExpression] = [],
+        order: Sequence[UnaryExpression] = tuple(),
     ):
         Queue = self._meta.tables["read_queue"]
         blocks = self._select_alert_ids(group_id, block_size, condition, order)
@@ -484,7 +488,7 @@ class ArchiveDB(ArchiveDBClient):
         self,
         conn,
         condition,
-        order: list[UnaryExpression] = [],
+        order: Sequence[UnaryExpression] = tuple(),
         *,
         distinct: bool = False,
         with_history: bool = False,
@@ -636,7 +640,7 @@ class ArchiveDB(ArchiveDBClient):
         columns: list[Column],
         condition,
         *,
-        order: list[UnaryExpression] = [],
+        order: Sequence[UnaryExpression] = tuple(),
         distinct: bool = False,
         limit: Optional[int] = None,
         skip: int = 0,
@@ -651,7 +655,7 @@ class ArchiveDB(ArchiveDBClient):
                 Alert.join(Candidate, Alert.c.alert_id == Candidate.c.alert_id)
             )
             .where(condition)
-            .order_by(*(([Alert.c.objectId.asc()] if distinct else []) + order))
+            .order_by(*(*([Alert.c.objectId.asc()] if distinct else []), *order))
         )
         if limit is not None:
             alert_base = alert_base.limit(limit).offset(skip)
@@ -664,7 +668,7 @@ class ArchiveDB(ArchiveDBClient):
         self,
         condition,
         *,
-        order: list[UnaryExpression] = [],
+        order: Sequence[UnaryExpression] = tuple(),
         distinct: bool = False,
         with_history: bool = True,
         limit: Optional[int] = None,
@@ -962,9 +966,7 @@ class ArchiveDB(ArchiveDBClient):
         elif isinstance(objectId, collections.Collection):
             match = Alert.c.objectId.in_(objectId)
         else:
-            raise TypeError(
-                f"objectId must be str or collection, got {type(objectId)}"
-            )
+            raise TypeError(f"objectId must be str or collection, got {type(objectId)}")
         conditions = [match]
         if jd_end is not None:
             conditions.insert(0, Alert.c.jd < jd_end)
@@ -1265,9 +1267,7 @@ class ArchiveDB(ArchiveDBClient):
         elif isinstance(objectId, collections.Collection):
             match = Alert.c.objectId.in_(objectId)
         else:
-            raise TypeError(
-                f"objectId must be str or collection, got {type(objectId)}"
-            )
+            raise TypeError(f"objectId must be str or collection, got {type(objectId)}")
         conditions = [match]
 
         jd = self._get_alert_column("jd")

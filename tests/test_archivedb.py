@@ -34,7 +34,7 @@ def test_insert_unique_alerts(empty_archive, alert_generator):
 
         # (candid,pid) is unique within an alert packet
         prevs = dict()
-        for idx, candidate in enumerate([alert["candidate"]] + alert["prv_candidates"]):
+        for candidate in ([alert["candidate"]] + alert["prv_candidates"]):
             key = (candidate["candid"], candidate["pid"])
             assert key not in prevs
             prevs[key] = candidate
@@ -115,7 +115,7 @@ def test_insert_duplicate_photopoints(empty_archive, alert_generator):
     from sqlalchemy.sql.functions import sum
 
     # find an alert with at least 1 previous detection
-    for alert, schema in alert_generator(with_schema=True):
+    for alert, schema in alert_generator(with_schema=True):  # noqa: B007
         detections, upper_limits = count_previous_candidates(alert)
         if detections > 0 and upper_limits > 0:
             break
@@ -393,7 +393,7 @@ def test_serializability(empty_archive, alert_generator):
         processor_id = idx % 16
         updater.insert_alert(alert, schema, processor_id, 0)
 
-    for idx, alert in enumerate(alert_generator()):
+    for alert in alert_generator():
         reco = db.get_alert(alert["candid"], with_history=True)
         # round-trip to avro and back
         f = BytesIO()
@@ -616,7 +616,7 @@ def test_seekable_avro(alert_generator, cutouts: bool):
     from fastavro._read_py import BLOCK_READERS, BinaryDecoder
 
     alerts = []
-    for alert, schema in alert_generator(with_schema=True):
+    for alert, schema in alert_generator(with_schema=True):  # noqa: B007
         if not cutouts:
             for k in list(alert.keys()):
                 if k.startswith("cutout"):

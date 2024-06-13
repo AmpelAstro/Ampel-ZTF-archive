@@ -133,13 +133,13 @@ async def deserialize_avro_body(
     except ValueError as exc:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY, headers={"x-exception": str(exc)}
-        )
+        ) from exc
     try:
         content, schema = list(reader), reader.writer_schema
     except StopIteration as exc:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY, headers={"x-exception": str(exc)}
-        )
+        ) from exc
     return content, schema  # type: ignore[return-value]
 
 
@@ -617,7 +617,7 @@ def create_topic(
                 "msg": "Topic did not match any alerts. Are you sure these are valid candidate ids?",
                 "topic": jsonable_encoder(topic),
             },
-        )
+        ) from None
     return name
 
 
@@ -652,7 +652,7 @@ def create_stream_from_topic(
             slice(query.start, query.stop, query.step),
         )
     except GroupNotFoundError:
-        raise HTTPException(status_code=404, detail="Topic not found")
+        raise HTTPException(status_code=404, detail="Topic not found") from None
     stream_info = get_stream_info(resume_token, archive)
     return {"resume_token": resume_token, **stream_info}
 
@@ -756,7 +756,7 @@ def create_stream_from_query(
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={"msg": f"unknown candidate field {exc.args[0]}"},
-        )
+        ) from None
 
     name = secrets.token_urlsafe(32)
     try:
@@ -765,7 +765,7 @@ def create_stream_from_query(
         conn.close()
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={"msg": str(exc)}
-        )
+        ) from None
 
     conn.execute(f"set statement_timeout={settings.stream_query_timeout*1000};")
     group_id = archive._create_read_queue(conn, name, query.chunk_size)
@@ -786,7 +786,7 @@ def get_stream_info(resume_token: str, archive: ArchiveDB = Depends(get_archive)
     try:
         info = archive.get_group_info(resume_token)
     except GroupNotFoundError:
-        raise HTTPException(status_code=404, detail="Stream not found")
+        raise HTTPException(status_code=404, detail="Stream not found") from None
     if info["error"] is None:
         raise HTTPException(
             status_code=status.HTTP_423_LOCKED,
@@ -841,7 +841,7 @@ def stream_get_chunk(
     try:
         chunk_id, alerts = archive.get_chunk_from_queue(resume_token, with_history)
     except GroupNotFoundError:
-        raise HTTPException(status_code=404, detail="Stream not found")
+        raise HTTPException(status_code=404, detail="Stream not found") from None
     info = get_stream_info(resume_token, archive)
     return AlertChunk(
         resume_token=resume_token,

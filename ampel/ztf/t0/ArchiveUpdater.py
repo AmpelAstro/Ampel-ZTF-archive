@@ -149,7 +149,7 @@ class ArchiveUpdater(ArchiveDBClient):
         # come with unique ids) and upper limits (which don't)
         detections = []
         upper_limits = []
-        for index, c in enumerate(alert["prv_candidates"] or []):
+        for c in alert["prv_candidates"] or []:
             # entries with no candid are nondetections
             if c["candid"] is None:
                 upper_limits.append(c)

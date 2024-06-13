@@ -76,7 +76,7 @@ with engine.connect() as connection:
     log.info("cleaning up blobs not referenced by any alert")
     with connection.begin() as transaction:
         i = 0
-        for i, row in enumerate(
+        for i, row in enumerate(  # noqa: B007
             connection.execute(
                 Archive.delete(
                     sa.and_(

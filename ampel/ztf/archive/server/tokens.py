@@ -56,9 +56,9 @@ async def get_user(auth: HTTPAuthorizationCredentials = Depends(user_bearer)) ->
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
             return token_data
         except ValidationError:
-            raise credentials_exception
+            raise credentials_exception from None
     except jwt.PyJWTError:
-        raise credentials_exception
+        raise credentials_exception from None
 
 
 def find_access_token(db: ArchiveDB, token: str) -> Optional[AuthToken]:
@@ -78,7 +78,7 @@ def find_access_token(db: ArchiveDB, token: str) -> Optional[AuthToken]:
     except sqlalchemy.exc.TimeoutError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
-        )
+        ) from None
 
 
 async def verify_access_token(
