@@ -304,9 +304,9 @@ class ArchiveDB(ArchiveDBClient):
 
     def _select_alert_ids(
         self,
-        group_id,
-        block_size,
-        condition,
+        group_id: int,
+        block_size: int,
+        condition: BooleanClauseList,
         order: Sequence[UnaryExpression] = tuple(),
     ):
         """Generate a statement that selects blocks of alert_id"""
@@ -349,7 +349,7 @@ class ArchiveDB(ArchiveDBClient):
         conn: Connection,
         group_id: int,
         block_size: int,
-        condition,
+        condition: BooleanClauseList,
         order: Sequence[UnaryExpression] = tuple(),
     ):
         Queue = self._meta.tables["read_queue"]
@@ -396,7 +396,7 @@ class ArchiveDB(ArchiveDBClient):
         self,
         conn: Connection,
         condition: BooleanClauseList,
-        order: list[UnaryExpression],
+        order: Sequence[UnaryExpression],
         group_id: int,
         block_size: int,
     ) -> int:
@@ -486,8 +486,8 @@ class ArchiveDB(ArchiveDBClient):
 
     def _fetch_alerts_with_condition(
         self,
-        conn,
-        condition,
+        conn: Connection,
+        condition: BooleanClauseList,
         order: Sequence[UnaryExpression] = tuple(),
         *,
         distinct: bool = False,
