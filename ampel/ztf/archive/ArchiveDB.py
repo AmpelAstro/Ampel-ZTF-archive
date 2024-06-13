@@ -17,6 +17,7 @@ from contextlib import contextmanager
 from typing import (
     TYPE_CHECKING,
     Any,
+    ClassVar,
     Optional,
     TypedDict,
     Union,
@@ -78,7 +79,7 @@ class GroupInfo(TypedDict):
 class ArchiveDB(ArchiveDBClient):
     """ """
 
-    _CLIENTS: dict[str, "ArchiveDB"] = {}
+    _CLIENTS: ClassVar[dict[str, "ArchiveDB"]] = {}
 
     query_debug = False
 
@@ -689,8 +690,10 @@ class ArchiveDB(ArchiveDBClient):
             return func.json_agg(literal_column('"' + table.name + '"'))
 
         alert = self._build_base_alert_query(
-            [Alert.c.alert_id]
-            + without_keys(Alert, lambda k: not k.startswith("avro_archive_")),
+            [
+                Alert.c.alert_id,
+                *without_keys(Alert, lambda k: not k.startswith("avro_archive_")),
+            ],
             condition,
             order=order,
             distinct=distinct,

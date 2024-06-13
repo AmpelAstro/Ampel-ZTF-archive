@@ -1,7 +1,7 @@
 import math
 from base64 import b64encode
 from datetime import datetime
-from typing import Literal, Optional, Union
+from typing import ClassVar, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, root_validator, validator
 
@@ -380,7 +380,7 @@ class AlertBase(BaseModel):
     objectId: str
 
     class Config:
-        json_encoders = {bytes: lambda v: b64encode(v).decode()}
+        json_encoders: ClassVar[dict] = {bytes: lambda v: b64encode(v).decode()}
 
 
 class AlertCutouts(AlertBase):
@@ -423,7 +423,7 @@ class AlertChunk(BaseModel):
     pending: ChunkCount
 
     class Config:
-        json_encoders = {bytes: lambda v: b64encode(v).decode()}
+        json_encoders: ClassVar[dict] = {bytes: lambda v: b64encode(v).decode()}
 
 
 class AlertCount(BaseModel):

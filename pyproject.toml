@@ -102,7 +102,7 @@ select = [
     # # "ERA", # seems to prohibit all comments, that's bad
     "PL",
     "PERF",
-    # "RUF",
+    "RUF",
 ]
 ignore = [
     "PLR09", # too many (arguments|branches)

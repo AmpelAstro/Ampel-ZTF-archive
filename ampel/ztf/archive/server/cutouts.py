@@ -82,7 +82,8 @@ def extract_alert(
 
     decoder = BinaryDecoder(block)
     # consume record count to advance to the compressed block
-    assert (nrecords := decoder.read_long()) > 0
+    nrecords = decoder.read_long()
+    assert nrecords > 0
     # consume compressed block
     buf = read_block(decoder)
     # iterate over deserialized records

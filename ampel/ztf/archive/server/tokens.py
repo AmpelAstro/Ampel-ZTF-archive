@@ -24,7 +24,7 @@ class User(BaseModel):
 
     @property
     def identities(self) -> list[str]:
-        return [self.name] + self.orgs + self.teams
+        return [self.name, *self.orgs, *self.teams]
 
 
 class TokenRequest(BaseModel):
