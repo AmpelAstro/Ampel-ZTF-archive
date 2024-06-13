@@ -10,7 +10,7 @@ ALTER TABLE
 ADD
     COLUMN _hpx bigint;
 
-DROP INDEX IF EXISTS candidate_jd_healpix_64
+DROP INDEX IF EXISTS candidate_jd_healpix_64;
 DROP INDEX IF EXISTS candidate_jd_hpx_64;
 DROP INDEX IF EXISTS cone_search;
 
