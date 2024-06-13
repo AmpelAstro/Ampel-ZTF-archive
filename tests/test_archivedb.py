@@ -432,7 +432,7 @@ def test_schema_update(empty_archive, alert_with_schema):
             del deserialized[k]
     assert deserialized.keys() == reco.keys()
     for k in reco:
-        if not "candidate" in k or "cutout" in k:
+        if "candidate" not in k or "cutout" in k:
             assert deserialized[k] == reco[k]
     # reconstructed alert from the database may have extra keys
     assert not set(deserialized["candidate"].keys()).difference(

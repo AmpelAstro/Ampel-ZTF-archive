@@ -115,7 +115,7 @@ class ArchiveDB(ArchiveDBClient):
         Get a shared instance of a client with the given connection parameters
         """
         key = json.dumps({"args": args, "kwargs": kwargs})
-        if not key in cls._CLIENTS:
+        if key not in cls._CLIENTS:
             cls._CLIENTS[key] = cls(*args, **kwargs)
         return cls._CLIENTS[key]
 
