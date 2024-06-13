@@ -40,17 +40,19 @@ class ArchiveUpdater(ArchiveDBClient):
 
         with self._engine.connect() as conn:
             if row := conn.execute(
-                select([AvroArchive.c.avro_archive_id]).where(
+                select(AvroArchive.c.avro_archive_id).where(
                     AvroArchive.c.uri == archive_uri
                 )
             ).fetchone():
                 archive_id = row[0]
             else:
-                archive_id = conn.execute(
+                row = conn.execute(
                     AvroArchive.insert()
                     .values(uri=archive_uri, count=len(alerts))
                     .returning(AvroArchive.c.avro_archive_id)
-                ).fetchone()[0]
+                ).fetchone()
+                assert row is not None
+                archive_id = row[0]
 
                 for alert, span in zip(alerts, ranges):
                     with conn.begin() as transaction:

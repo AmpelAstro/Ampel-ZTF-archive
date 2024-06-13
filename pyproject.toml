@@ -41,7 +41,6 @@ pytest = "^6.2.2"
 pytest-cov = "^2.11.1"
 coverage = {extras = ["toml"], version = "^6.3.1"}
 mypy = "^1.10"
-sqlalchemy-stubs = "^0.4"
 pytest-timeout = "^1.4.2"
 httpx = "^0.17.0"
 pytest-mock = "^3.5.1"
@@ -65,9 +64,6 @@ addopts = "--showlocals -r a -v --integration"
 
 [tool.mypy]
 namespace_packages = true
-plugins = [
-  "sqlmypy"
-]
 show_error_codes = true
 packages = [
   "ampel"

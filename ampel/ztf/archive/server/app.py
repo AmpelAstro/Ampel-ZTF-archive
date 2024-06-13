@@ -765,7 +765,9 @@ def create_stream_from_query(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={"msg": str(exc)}
         ) from None
 
-    conn.execute(f"set statement_timeout={settings.stream_query_timeout*1000};")
+    conn.execute(
+        sqlalchemy.text(f"set statement_timeout={settings.stream_query_timeout*1000};")
+    )
     group_id = archive._create_read_queue(conn, name, query.chunk_size)  # noqa: SLF001
 
     # create stream in the background
