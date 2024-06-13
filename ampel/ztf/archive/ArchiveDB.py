@@ -299,7 +299,6 @@ class ArchiveDB(ArchiveDBClient):
 
     def remove_consumer_group(self, pattern: str) -> None:
         Groups = self._meta.tables["read_queue_groups"]
-        Queue = self._meta.tables["read_queue"]
         with self.connect() as conn:
             return conn.execute(
                 Groups.delete().where(Groups.c.group_name.like(pattern))
@@ -1089,7 +1088,6 @@ class ArchiveDB(ArchiveDBClient):
         candidate_filter: Optional[FilterClause] = None,
     ) -> Tuple[BooleanClauseList, List[UnaryExpression]]:
         jd = self._get_alert_column("jd")
-        Candidate = self.get_table("candidate")
 
         conditions: List[ClauseElement] = []
         if jd_end is not None:
@@ -1156,7 +1154,6 @@ class ArchiveDB(ArchiveDBClient):
         from sqlalchemy import func, or_
         from .server.healpix_cone_search import ranges_for_cone
 
-        Alert = self._meta.tables["alert"]
         Candidate = self.get_table("candidate")
 
         center = func.ll_to_earth(dec, ra)
@@ -1273,7 +1270,6 @@ class ArchiveDB(ArchiveDBClient):
         conditions = [match]
 
         jd = self._get_alert_column("jd")
-        Candidate = self.get_table("candidate")
 
         if jd_end is not None:
             conditions.insert(0, jd < jd_end)

@@ -7,7 +7,6 @@ from ampel.ztf.archive.server.cutouts import extract_alert, pack_records
 from ampel.ztf.t0.ArchiveUpdater import ArchiveUpdater
 from pydantic.fields import Field
 import sqlalchemy
-from ampel.ztf.archive.server.models import AlertChunk
 import secrets
 import fastavro
 from typing import TYPE_CHECKING, Any, List, Literal, Optional, Union
@@ -191,7 +190,7 @@ def get_alert_from_s3(
     assert path[-2] == bucket.name
     try:
         return extract_alert(candid, *get_range(bucket, path[-1], start, end))
-    except KeyError as err:
+    except KeyError:
         return None
 
 
@@ -643,7 +642,7 @@ def create_stream_from_topic(
     """
     resume_token = secrets.token_urlsafe()
     try:
-        queue_info = archive.create_read_queue_from_topic(
+        archive.create_read_queue_from_topic(
             query.topic,
             resume_token,
             query.chunk_size,

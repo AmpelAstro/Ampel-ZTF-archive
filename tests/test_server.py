@@ -291,7 +291,6 @@ async def test_auth_timeout(
 async def test_get_healpix(
     mock_client: httpx.AsyncClient, mock_db: MagicMock, mock_auth
 ):
-    ipix = [1, 2]
     params = {"jd_start": 0, "jd_end": 1}
     response = await mock_client.get(
         "/alerts/healpix", params={"ipix": [1, 2], **params}
@@ -664,7 +663,7 @@ def test_extract_block_from_s3(
 
     bucket = get_s3_bucket()
     obj = bucket.Object("blobsy.avro")
-    response = obj.put(
+    obj.put(
         Body=blob,
         Metadata={"schema-name": schema["name"], "schema-version": schema["version"]},
     )

@@ -397,7 +397,7 @@ def test_serializability(empty_archive, alert_generator):
         # round-trip to avro and back
         f = BytesIO()
         writer(f, schema, [reco])
-        deserialized = next(reader(BytesIO(f.getvalue())))
+        next(reader(BytesIO(f.getvalue())))
 
 
 @pytest.fixture(params=["3.2", "3.3"])
@@ -524,7 +524,7 @@ def test_insert_future_schema(alert_generator, empty_archive):
 
     alert, schema = next(alert_generator(True))
     schema["version"] = str(float(schema["version"]) + 10)
-    with pytest.raises(ValueError) as e_info:
+    with pytest.raises(ValueError):
         db.insert_alert(alert, schema, 0, 0)
 
 
@@ -590,7 +590,7 @@ def test_cone_search(alert_archive):
 @pytest.mark.parametrize("ipix", [13, [13]])
 def test_healpix_search(empty_archive, nside, ipix):
     db = ArchiveDB(empty_archive)
-    group = secrets.token_urlsafe()
+    secrets.token_urlsafe()
     condition, order = db._healpix_search_condition(
         pixels={nside: ipix}, jd_min=-1, jd_max=1
     )
