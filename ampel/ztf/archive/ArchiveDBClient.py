@@ -7,14 +7,13 @@
 # Last Modified Date: 14.11.2018
 # Last Modified By  : vb <vbrinnel@physik.hu-berlin.de>
 
+import logging
+import warnings
+from distutils.version import LooseVersion
 from functools import cached_property
 
 from sqlalchemy import MetaData, create_engine, select
 from sqlalchemy.exc import SAWarning
-
-from distutils.version import LooseVersion
-import logging
-import warnings
 
 
 class ArchiveDBClient:

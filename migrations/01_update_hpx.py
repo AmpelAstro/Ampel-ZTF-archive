@@ -3,11 +3,12 @@
 import logging
 import time
 from argparse import ArgumentParser
+
 import sqlalchemy as sa
+from astropy import units as u
+from astropy_healpix import lonlat_to_healpix
 
 from ampel.ztf.t0.ArchiveUpdater import ArchiveUpdater
-from astropy_healpix import lonlat_to_healpix
-from astropy import units as u
 
 logging.basicConfig(level="INFO", format="[%(asctime)s] %(message)s")
 log = logging.getLogger()

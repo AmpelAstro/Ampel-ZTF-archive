@@ -4,15 +4,16 @@ import os
 import secrets
 import subprocess
 import tarfile
-from pathlib import Path
-from os.path import dirname, join
-from ampel.ztf.archive.server.s3 import get_s3_bucket
-import httpx
 import time
+from os.path import dirname, join
+from pathlib import Path
 
+import fastavro
+import httpx
 import pytest
 from moto import mock_s3
-import fastavro
+
+from ampel.ztf.archive.server.s3 import get_s3_bucket
 
 POSTGRES_IMAGE = "ampelproject/postgres:14.1"
 LOCALSTACK_IMAGE = "localstack/localstack:3.4.0"
@@ -161,7 +162,7 @@ def empty_archive(archive):
     """
     Yield archive database, dropping all rows when finished
     """
-    from sqlalchemy import create_engine, MetaData
+    from sqlalchemy import MetaData, create_engine
 
     engine = create_engine(archive)
     meta = MetaData()

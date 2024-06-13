@@ -1,43 +1,43 @@
 import base64
-import io
 import hashlib
+import io
 import json
-from urllib.parse import urlsplit
-from ampel.ztf.archive.server.cutouts import extract_alert, pack_records
-from ampel.ztf.t0.ArchiveUpdater import ArchiveUpdater
-from pydantic.fields import Field
-import sqlalchemy
 import secrets
-import fastavro
 from typing import TYPE_CHECKING, Any, List, Literal, Optional, Union
+from urllib.parse import urlsplit
 
+import fastavro
+import sqlalchemy
 from fastapi import (
-    Body,
-    FastAPI,
-    Depends,
-    Request,
-    Query,
-    HTTPException,
-    status,
     BackgroundTasks,
+    Body,
+    Depends,
+    FastAPI,
+    HTTPException,
+    Query,
+    Request,
+    status,
 )
 from fastapi.encoders import jsonable_encoder
-from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+from pydantic.fields import Field
 
-from .settings import settings
+from ampel.ztf.archive.ArchiveDB import (
+    ArchiveDB,
+    GroupInfo,
+    GroupNotFoundError,
+    NoSuchColumnError,
+)
+from ampel.ztf.archive.server.cutouts import extract_alert, pack_records
+from ampel.ztf.archive.server.skymap import deres
+from ampel.ztf.t0.ArchiveUpdater import ArchiveUpdater
+
 from .db import (
+    OperationalError,
     get_archive,
     get_archive_updater,
-    OperationalError,
     handle_operationalerror,
-)
-from .s3 import get_range, get_s3_bucket, get_url_for_key
-from .tokens import (
-    router as token_router,
-    verify_access_token,
-    verify_write_token,
-    AuthToken,
 )
 from .models import (
     Alert,
@@ -55,13 +55,16 @@ from .models import (
     TopicDescription,
     TopicQuery,
 )
-from ampel.ztf.archive.ArchiveDB import (
-    ArchiveDB,
-    GroupInfo,
-    GroupNotFoundError,
-    NoSuchColumnError,
+from .s3 import get_range, get_s3_bucket, get_url_for_key
+from .settings import settings
+from .tokens import (
+    AuthToken,
+    verify_access_token,
+    verify_write_token,
 )
-from ampel.ztf.archive.server.skymap import deres
+from .tokens import (
+    router as token_router,
+)
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.service_resource import Bucket

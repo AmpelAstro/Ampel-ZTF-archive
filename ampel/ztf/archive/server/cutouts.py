@@ -1,8 +1,9 @@
 import io
-from typing import Any, BinaryIO
-import fastavro
 import json
 import pathlib
+from typing import Any, BinaryIO
+
+import fastavro
 from fastavro._read_py import BLOCK_READERS, BinaryDecoder
 
 with open(pathlib.Path(__file__).parent / "cutout_schema.json") as f:

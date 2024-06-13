@@ -1,4 +1,4 @@
-from sqlalchemy import select, bindparam, case
+from sqlalchemy import bindparam, case, select
 from sqlalchemy.sql.expression import func
 
 from ampel.ztf.archive.ArchiveDB import ArchiveDB

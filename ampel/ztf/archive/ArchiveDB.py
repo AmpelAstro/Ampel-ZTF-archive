@@ -7,26 +7,28 @@
 # Last Modified Date: 02.12.2020
 # Last Modified By  : Jakob van Santen <jakob.van.santen@desy.de>
 
+import collections
 import datetime
 import json
 import math
 import operator
 import time
+from contextlib import contextmanager
 from typing import (
+    TYPE_CHECKING,
     Any,
     Dict,
-    Mapping,
-    Tuple,
-    Optional,
     List,
-    TYPE_CHECKING,
+    Mapping,
+    Optional,
+    Tuple,
+    TypedDict,
     Union,
     cast,
-    TypedDict,
 )
-from contextlib import contextmanager
 
-from sqlalchemy import select, update, and_, or_
+import sqlalchemy
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.engine.base import Connection
 from sqlalchemy.sql.elements import (
     BooleanClauseList,
@@ -36,9 +38,9 @@ from sqlalchemy.sql.elements import (
 )
 from sqlalchemy.sql.expression import func
 from sqlalchemy.sql.schema import Column, Table
-import sqlalchemy, collections
 
 from ampel.ztf.archive.ArchiveDBClient import ArchiveDBClient
+
 from .types import FilterClause
 
 if TYPE_CHECKING:
@@ -676,8 +678,8 @@ class ArchiveDB(ArchiveDBClient):
         Build a query whose results _mostly_ match the structure of the orginal
         alert packet.
         """
-        from sqlalchemy.sql.expression import func, literal_column, true
         from sqlalchemy.dialects.postgresql import JSON
+        from sqlalchemy.sql.expression import func, literal_column, true
 
         meta = self._meta
         PrvCandidate = meta.tables["prv_candidate"]
@@ -1152,6 +1154,7 @@ class ArchiveDB(ArchiveDBClient):
         candidate_filter: Optional[FilterClause] = None,
     ) -> Tuple[BooleanClauseList, List[UnaryExpression]]:
         from sqlalchemy import func, or_
+
         from .server.healpix_cone_search import ranges_for_cone
 
         Candidate = self.get_table("candidate")
@@ -1480,8 +1483,8 @@ class ArchiveDB(ArchiveDBClient):
 
 
 def consumer_groups_command() -> None:
-    from argparse import ArgumentParser
     import json
+    from argparse import ArgumentParser
 
     parser = ArgumentParser(add_help=True)
     parser.add_argument("uri")

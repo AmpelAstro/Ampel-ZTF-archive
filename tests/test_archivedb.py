@@ -1,19 +1,17 @@
 import io
-import fastavro
-import pytest
+import operator
 import secrets
 import time
-import operator
 from math import isnan
 
+import fastavro
+import pytest
+from sqlalchemy import select
+from sqlalchemy.sql.expression import BinaryExpression, BooleanClauseList
+from sqlalchemy.sql.functions import count
 
 from ampel.ztf.archive.ArchiveDB import ArchiveDB
 from ampel.ztf.t0.ArchiveUpdater import ArchiveUpdater
-
-from sqlalchemy import select
-from sqlalchemy.sql.functions import count
-from sqlalchemy.sql.expression import BooleanClauseList, BinaryExpression
-
 
 
 def test_walk_tarball(alert_generator):
@@ -378,9 +376,10 @@ def test_serializability(empty_archive, alert_generator):
     """
     # the python implementation of writer throws more useful errors on schema
     # violations
-    from fastavro._write_py import writer
-    from fastavro import reader
     from io import BytesIO
+
+    from fastavro import reader
+    from fastavro._write_py import writer
 
     processor_id = 0
     updater = ArchiveUpdater(empty_archive)
@@ -400,7 +399,8 @@ def test_serializability(empty_archive, alert_generator):
 
 @pytest.fixture(params=["3.2", "3.3"])
 def alert_with_schema(request):
-    from os.path import join, dirname
+    from os.path import dirname, join
+
     import fastavro
 
     fname = join(dirname(__file__), "test-data", "schema_{}.avro".format(request.param))
@@ -411,9 +411,10 @@ def alert_with_schema(request):
 
 
 def test_schema_update(empty_archive, alert_with_schema):
-    from fastavro._write_py import writer
-    from fastavro import reader
     from io import BytesIO
+
+    from fastavro import reader
+    from fastavro._write_py import writer
 
     updater = ArchiveUpdater(empty_archive)
     db = ArchiveDB(empty_archive)

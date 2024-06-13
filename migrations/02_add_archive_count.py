@@ -2,13 +2,12 @@
 
 import logging
 from argparse import ArgumentParser
-import sqlalchemy as sa
-import fastavro
 
 import boto3
+import fastavro
+import sqlalchemy as sa
 
 from ampel.ztf.archive.server.s3 import get_key_for_url, get_stream
-
 
 logging.basicConfig(level="INFO", format="[%(asctime)s] %(message)s")
 log = logging.getLogger()

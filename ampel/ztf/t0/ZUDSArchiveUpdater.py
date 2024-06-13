@@ -7,12 +7,14 @@
 # Last Modified Date: 08.10.2020
 # Last Modified By  : Jakob van Santen <jakob.van.santen@desy.de>
 
-from ampel.ztf.archive.ArchiveDBClient import ArchiveDBClient
-from sqlalchemy import select, bindparam
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.dialects import postgresql
-from sqlalchemy.sql.expression import func
 from distutils.version import LooseVersion
+
+from sqlalchemy import bindparam, select
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.sql.expression import func
+
+from ampel.ztf.archive.ArchiveDBClient import ArchiveDBClient
 
 
 class ZUDSArchiveUpdater(ArchiveDBClient):

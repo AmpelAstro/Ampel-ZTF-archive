@@ -1,29 +1,30 @@
+import asyncio
 import base64
-from contextlib import contextmanager
 import io
-from pathlib import Path
 import secrets
+from contextlib import contextmanager
+from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
-from ampel.ztf.archive.server.cutouts import extract_alert, pack_records, ALERT_SCHEMAS
-from ampel.ztf.archive.server.db import get_archive, get_archive_updater
-from ampel.ztf.archive.server.s3 import get_range, get_s3_bucket
-from ampel.ztf.archive.server.tokens import AuthToken
-import asyncio
 from urllib.parse import urlsplit
-import fastavro
 
-import jwt
+import fastavro
 import httpx
+import jwt
 import pytest
-from fastapi import status
-from ampel.ztf.archive.ArchiveDB import ArchiveDB
 import sqlalchemy
+from fastapi import status
 from starlette.status import (
     HTTP_200_OK,
     HTTP_202_ACCEPTED,
     HTTP_404_NOT_FOUND,
 )
+
+from ampel.ztf.archive.ArchiveDB import ArchiveDB
+from ampel.ztf.archive.server.cutouts import ALERT_SCHEMAS, extract_alert, pack_records
+from ampel.ztf.archive.server.db import get_archive, get_archive_updater
+from ampel.ztf.archive.server.s3 import get_range, get_s3_bucket
+from ampel.ztf.archive.server.tokens import AuthToken
 
 if TYPE_CHECKING:
     from _pytest.monkeypatch import MonkeyPatch
@@ -44,8 +45,7 @@ class BearerAuth(httpx.Auth):
 @pytest.fixture
 def mocked_app(monkeypatch: "MonkeyPatch", mocker: "MockerFixture", mock_s3_bucket):
     monkeypatch.setenv("ALLOWED_IDENTITIES", '["someorg","someorg/a-team"]')
-    from ampel.ztf.archive.server import app
-    from ampel.ztf.archive.server import db
+    from ampel.ztf.archive.server import app, db
 
     mocker.patch.object(db, "ArchiveDB")
     mocker.patch.object(db, "ArchiveUpdater")

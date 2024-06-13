@@ -1,8 +1,8 @@
 import bisect
 import math
 from collections import defaultdict
-from typing import TypeVar, Generic, Generator
 from collections.abc import Iterable
+from typing import Generator, Generic, TypeVar
 
 T = TypeVar("T", bound=int)
 

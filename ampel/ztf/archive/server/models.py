@@ -2,9 +2,11 @@ import math
 from base64 import b64encode
 from datetime import datetime
 from typing import List, Literal, Optional, Union
-from pydantic import BaseModel, Field, validator, root_validator
-from ..types import FilterClause
+
+from pydantic import BaseModel, Field, root_validator, validator
+
 from ..ArchiveDBClient import ArchiveDBClient
+from ..types import FilterClause
 
 
 class StrictModel(BaseModel):

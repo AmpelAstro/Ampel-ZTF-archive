@@ -1,5 +1,5 @@
-from functools import lru_cache
 import io
+from functools import lru_cache
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
@@ -7,12 +7,13 @@ import boto3
 from botocore.exceptions import ClientError
 from starlette.status import HTTP_404_NOT_FOUND
 
+from .cutouts import ALERT_SCHEMAS, get_parsed_schema, read_schema
 from .settings import settings
-from .cutouts import get_parsed_schema, read_schema, ALERT_SCHEMAS
 
 if TYPE_CHECKING:
-    from mypy_boto3_s3.service_resource import Bucket
     from typing import BinaryIO
+
+    from mypy_boto3_s3.service_resource import Bucket
 
 
 class NoSuchKey(KeyError): ...

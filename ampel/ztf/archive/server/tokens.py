@@ -1,16 +1,17 @@
 from dataclasses import dataclass
-import sqlalchemy
-from ampel.ztf.archive.ArchiveDB import ArchiveDB, select
 from typing import List, Optional
-import jwt
 
-from pydantic import BaseModel, ValidationError
-from fastapi import APIRouter, Depends, status, HTTPException
+import jwt
+import sqlalchemy
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer
 from fastapi.security.http import HTTPAuthorizationCredentials
+from pydantic import BaseModel, ValidationError
 
-from .settings import settings
+from ampel.ztf.archive.ArchiveDB import ArchiveDB, select
+
 from .db import get_archive
+from .settings import settings
 
 user_bearer = HTTPBearer(scheme_name="Ampel API token")
 token_bearer = HTTPBearer(scheme_name="ZTF archive access token")

@@ -14,8 +14,8 @@ import time
 import fastavro
 import requests
 
-from ampel.pipeline.t0.alerts.TarAlertLoader import TarAlertLoader
 from ampel.archive import ArchiveDB
+from ampel.pipeline.t0.alerts.TarAlertLoader import TarAlertLoader
 
 
 def blobs_from_tarball(procnum, queue, date, partnership=True):
@@ -45,7 +45,7 @@ def blobs_from_tarball(procnum, queue, date, partnership=True):
         queue.put(procnum)
 
 
-from sqlalchemy import select, and_, bindparam
+from sqlalchemy import and_, bindparam, select
 from sqlalchemy.sql.schema import UniqueConstraint
 
 
@@ -211,10 +211,11 @@ def recover(args):
 
 
 def check(args):
+    import sys
+
     from astropy.time import Time
     from sqlalchemy import and_, func, select
     from sqlalchemy.sql.functions import count
-    import sys
 
     begin = datetime.datetime(2018, 6, 1)
     end = begin + datetime.timedelta((datetime.datetime.now() - begin).days)
@@ -261,7 +262,7 @@ def check(args):
 
 
 if __name__ == "__main__":
-    from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
+    from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 
     parser = ArgumentParser(
         description=__doc__, formatter_class=ArgumentDefaultsHelpFormatter

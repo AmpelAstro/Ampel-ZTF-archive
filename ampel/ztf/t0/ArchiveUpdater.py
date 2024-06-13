@@ -7,15 +7,17 @@
 # Last Modified Date: 14.11.2018
 # Last Modified By  : vb <vbrinnel@physik.hu-berlin.de>
 
-from typing import Any
-from ampel.ztf.archive.ArchiveDBClient import ArchiveDBClient
-from sqlalchemy import UniqueConstraint, select, bindparam
-import sqlalchemy
-from sqlalchemy.dialects import postgresql
-from sqlalchemy.sql.expression import tuple_, func
 from distutils.version import LooseVersion
+from typing import Any
+
+import sqlalchemy
 from astropy import units as u
 from astropy_healpix import lonlat_to_healpix
+from sqlalchemy import UniqueConstraint, bindparam, select
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.sql.expression import func, tuple_
+
+from ampel.ztf.archive.ArchiveDBClient import ArchiveDBClient
 
 
 class ArchiveUpdater(ArchiveDBClient):

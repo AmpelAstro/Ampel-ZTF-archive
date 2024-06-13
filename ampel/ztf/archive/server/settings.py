@@ -1,6 +1,5 @@
 import secrets
-
-from typing import Optional, Set, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional, Set
 
 from pydantic import (
     AnyHttpUrl,

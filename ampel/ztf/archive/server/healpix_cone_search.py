@@ -1,7 +1,8 @@
 from astropy import units as u
-from .skymap import gen_ranges, multirange
 from astropy_healpix import pixel_resolution_to_nside
 from astropy_healpix.high_level import healpix_cone_search
+
+from .skymap import gen_ranges, multirange
 
 
 def ranges_for_cone(
