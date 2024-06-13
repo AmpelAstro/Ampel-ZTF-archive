@@ -689,7 +689,8 @@ class ArchiveDB(ArchiveDBClient):
         Pivot = meta.tables["alert_prv_candidate_pivot"]
         UpperLimitPivot = meta.tables["alert_upper_limit_pivot"]
 
-        json_agg = lambda table: func.json_agg(literal_column('"' + table.name + '"'))
+        def json_agg(table):
+            return func.json_agg(literal_column('"' + table.name + '"'))
 
         alert = self._build_base_alert_query(
             [Alert.c.alert_id]
@@ -816,7 +817,8 @@ class ArchiveDB(ArchiveDBClient):
         Pivot = meta.tables["alert_prv_candidate_pivot"]
         UpperLimitPivot = meta.tables["alert_upper_limit_pivot"]
 
-        json_agg = lambda table: func.json_agg(literal_column('"' + table.name + '"'))
+        def json_agg(table):
+            return func.json_agg(literal_column('"' + table.name + '"'))
 
         prv_candidate_id = func.unnest(Pivot.c.prv_candidate_id).label(
             "prv_candidate_id"

@@ -54,7 +54,6 @@ def count_previous_candidates(alert):
 
 
 def test_insert_duplicate_alerts(empty_archive, alert_generator):
-
     processor_id = 0
     db = ArchiveUpdater(empty_archive)
     connection = db._engine.connect()
@@ -267,7 +266,8 @@ def test_delete_alert(empty_archive, alert_generator):
                     meta.tables["alert_prv_candidate_pivot"].columns.prv_candidate_id, 1
                 )
             )
-        ).first()[0] is None
+        ).first()[0]
+        is None
     )
     assert (
         connection.execute(
@@ -282,7 +282,8 @@ def test_delete_alert(empty_archive, alert_generator):
                     meta.tables["alert_upper_limit_pivot"].columns.upper_limit_id, 1
                 )
             )
-        ).first()[0] is None
+        ).first()[0]
+        is None
     )
     # array-joined tables don't participate in delete cascade, because ELEMENT REFERENCES is still not a thing
     # http://blog.2ndquadrant.com/postgresql-9-3-development-array-element-foreign-keys/
@@ -334,7 +335,10 @@ def assert_alerts_equivalent(alert, reco_alert):
     try:
         assert [c.get("candid") for c in prvs] == [c.get("candid") for c in reco_prvs]
     except:
-        jd_off = lambda cands: [c["jd"] - cands[0]["jd"] for c in cands]
+
+        def jd_off(cands):
+            return [c["jd"] - cands[0]["jd"] for c in cands]
+
         print(jd_off(prvs))
         print(jd_off(reco_alert["prv_candidates"]))
         raise

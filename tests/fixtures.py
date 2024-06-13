@@ -231,7 +231,6 @@ def aws_credentials():
 
 @pytest.fixture
 def mock_s3_bucket(aws_credentials):
-
     get_s3_bucket.cache_clear()
     with mock_s3():
         bucket = get_s3_bucket()
