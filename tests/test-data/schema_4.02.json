@@ -1,0 +1,1676 @@
+{
+    "type": "record",
+    "version": "4.02",
+    "name": "alert",
+    "namespace": "ztf",
+    "fields": [
+        {
+            "type": "string",
+            "name": "schemavsn",
+            "doc": "schema version used"
+        },
+        {
+            "type": "string",
+            "name": "publisher",
+            "doc": "origin of alert packet"
+        },
+        {
+            "type": "string",
+            "name": "objectId",
+            "doc": "object identifier or name"
+        },
+        {
+            "type": "long",
+            "name": "candid"
+        },
+        {
+            "type": {
+                "type": "record",
+                "version": "4.02",
+                "name": "candidate",
+                "namespace": "ztf.alert",
+                "fields": [
+                    {
+                        "type": "double",
+                        "name": "jd",
+                        "doc": "Observation Julian date at start of exposure [days]"
+                    },
+                    {
+                        "type": "int",
+                        "name": "fid",
+                        "doc": "Filter ID (1=g; 2=R; 3=i)"
+                    },
+                    {
+                        "type": "long",
+                        "name": "pid",
+                        "doc": "Processing ID for science image to facilitate archive retrieval"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "diffmaglim",
+                        "default": null,
+                        "doc": "Expected 5-sigma mag limit in difference image based on global noise estimate [mag]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "string"
+                        ],
+                        "name": "pdiffimfilename",
+                        "default": null,
+                        "doc": "filename of positive (sci minus ref) difference image"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "string"
+                        ],
+                        "name": "programpi",
+                        "default": null,
+                        "doc": "Principal investigator attached to program ID"
+                    },
+                    {
+                        "type": "int",
+                        "name": "programid",
+                        "doc": "Program ID: encodes either public, collab, or caltech mode"
+                    },
+                    {
+                        "type": "long",
+                        "name": "candid",
+                        "doc": "Candidate ID from operations DB"
+                    },
+                    {
+                        "type": "string",
+                        "name": "isdiffpos",
+                        "doc": "t or 1 => candidate is from positive (sci minus ref) subtraction; f or 0 => candidate is from negative (ref minus sci) subtraction"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "long"
+                        ],
+                        "name": "tblid",
+                        "default": null,
+                        "doc": "Internal pipeline table extraction ID"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "int"
+                        ],
+                        "name": "nid",
+                        "default": null,
+                        "doc": "Night ID"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "int"
+                        ],
+                        "name": "rcid",
+                        "default": null,
+                        "doc": "Readout channel ID [00 .. 63]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "int"
+                        ],
+                        "name": "field",
+                        "default": null,
+                        "doc": "ZTF field ID"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "xpos",
+                        "default": null,
+                        "doc": "x-image position of candidate [pixels]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "ypos",
+                        "default": null,
+                        "doc": "y-image position of candidate [pixels]"
+                    },
+                    {
+                        "type": "double",
+                        "name": "ra",
+                        "doc": "Right Ascension of candidate; J2000 [deg]"
+                    },
+                    {
+                        "type": "double",
+                        "name": "dec",
+                        "doc": "Declination of candidate; J2000 [deg]"
+                    },
+                    {
+                        "type": "float",
+                        "name": "magpsf",
+                        "doc": "Magnitude from PSF-fit photometry [mag]"
+                    },
+                    {
+                        "type": "float",
+                        "name": "sigmapsf",
+                        "doc": "1-sigma uncertainty in magpsf [mag]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "chipsf",
+                        "default": null,
+                        "doc": "Reduced chi-square for PSF-fit"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "magap",
+                        "default": null,
+                        "doc": "Aperture mag using 14 pixel diameter aperture [mag]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "sigmagap",
+                        "default": null,
+                        "doc": "1-sigma uncertainty in magap [mag]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "distnr",
+                        "default": null,
+                        "doc": "distance to nearest source in reference image PSF-catalog [pixels]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "magnr",
+                        "default": null,
+                        "doc": "magnitude of nearest source in reference image PSF-catalog [mag]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "sigmagnr",
+                        "default": null,
+                        "doc": "1-sigma uncertainty in magnr [mag]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "chinr",
+                        "default": null,
+                        "doc": "DAOPhot chi parameter of nearest source in reference image PSF-catalog"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "sharpnr",
+                        "default": null,
+                        "doc": "DAOPhot sharp parameter of nearest source in reference image PSF-catalog"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "sky",
+                        "default": null,
+                        "doc": "Local sky background estimate [DN]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "magdiff",
+                        "default": null,
+                        "doc": "Difference: magap - magpsf [mag]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "fwhm",
+                        "default": null,
+                        "doc": "Full Width Half Max assuming a Gaussian core, from SExtractor [pixels]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "classtar",
+                        "default": null,
+                        "doc": "Star/Galaxy classification score from SExtractor"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "mindtoedge",
+                        "default": null,
+                        "doc": "Distance to nearest edge in image [pixels]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "magfromlim",
+                        "default": null,
+                        "doc": "Difference: diffmaglim - magap [mag]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "seeratio",
+                        "default": null,
+                        "doc": "Ratio: difffwhm / fwhm"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "aimage",
+                        "default": null,
+                        "doc": "Windowed profile RMS afloat major axis from SExtractor [pixels]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "bimage",
+                        "default": null,
+                        "doc": "Windowed profile RMS afloat minor axis from SExtractor [pixels]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "aimagerat",
+                        "default": null,
+                        "doc": "Ratio: aimage / fwhm"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "bimagerat",
+                        "default": null,
+                        "doc": "Ratio: bimage / fwhm"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "elong",
+                        "default": null,
+                        "doc": "Ratio: aimage / bimage"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "int"
+                        ],
+                        "name": "nneg",
+                        "default": null,
+                        "doc": "number of negative pixels in a 5 x 5 pixel stamp"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "int"
+                        ],
+                        "name": "nbad",
+                        "default": null,
+                        "doc": "number of prior-tagged bad pixels in a 5 x 5 pixel stamp"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "rb",
+                        "default": null,
+                        "doc": "RealBogus quality score from Random Forest classifier; range is 0 to 1 where closer to 1 is more reliable"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "ssdistnr",
+                        "default": null,
+                        "doc": "distance to nearest known solar system object if exists within 30 arcsec [arcsec]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "ssmagnr",
+                        "default": null,
+                        "doc": "magnitude of nearest known solar system object if exists within 30 arcsec (usually V-band from MPC archive) [mag]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "string"
+                        ],
+                        "name": "ssnamenr",
+                        "default": null,
+                        "doc": "name of nearest known solar system object if exists within 30 arcsec (from MPC archive)"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "sumrat",
+                        "default": null,
+                        "doc": "Ratio: sum(pixels) / sum(|pixels|) in a 5 x 5 pixel stamp where stamp is first median-filtered to mitigate outliers"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "magapbig",
+                        "default": null,
+                        "doc": "Aperture mag using 18 pixel diameter aperture [mag]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "sigmagapbig",
+                        "default": null,
+                        "doc": "1-sigma uncertainty in magapbig [mag]"
+                    },
+                    {
+                        "type": "double",
+                        "name": "ranr",
+                        "doc": "Right Ascension of nearest source in reference image PSF-catalog; J2000 [deg]"
+                    },
+                    {
+                        "type": "double",
+                        "name": "decnr",
+                        "doc": "Declination of nearest source in reference image PSF-catalog; J2000 [deg]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "sgmag1",
+                        "default": null,
+                        "doc": "g-band PSF-fit magnitude of closest source from PS1 catalog; if exists within 30 arcsec [mag]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "srmag1",
+                        "default": null,
+                        "doc": "r-band PSF-fit magnitude of closest source from PS1 catalog; if exists within 30 arcsec [mag]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "simag1",
+                        "default": null,
+                        "doc": "i-band PSF-fit magnitude of closest source from PS1 catalog; if exists within 30 arcsec [mag]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "szmag1",
+                        "default": null,
+                        "doc": "z-band PSF-fit magnitude of closest source from PS1 catalog; if exists within 30 arcsec [mag]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "sgscore1",
+                        "default": null,
+                        "doc": "Star/Galaxy score of closest source from PS1 catalog; if exists within 30 arcsec: 0 <= sgscore <= 1 where closer to 1 implies higher likelihood of being a star"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "distpsnr1",
+                        "default": null,
+                        "doc": "Distance to closest source from PS1 catalog; if exists within 30 arcsec [arcsec]"
+                    },
+                    {
+                        "type": "int",
+                        "name": "ndethist",
+                        "doc": "Number of spatially-coincident detections falling within 1.5 arcsec going back to beginning of survey; only detections that fell on the same field and readout-channel ID where the input candidate was observed are counted. All raw detections down to a photometric S/N of ~ 3 are included."
+                    },
+                    {
+                        "type": "int",
+                        "name": "ncovhist",
+                        "doc": "Number of times input candidate position fell on any field and readout-channel going back to beginning of survey"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "double"
+                        ],
+                        "name": "jdstarthist",
+                        "default": null,
+                        "doc": "Earliest Julian date of epoch corresponding to ndethist [days]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "double"
+                        ],
+                        "name": "jdendhist",
+                        "default": null,
+                        "doc": "Latest Julian date of epoch corresponding to ndethist [days]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "double"
+                        ],
+                        "name": "scorr",
+                        "default": null,
+                        "doc": "Peak-pixel signal-to-noise ratio in point source matched-filtered detection image"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "int"
+                        ],
+                        "name": "tooflag",
+                        "default": null,
+                        "doc": "1 => candidate is from a Target-of-Opportunity (ToO) exposure; 0 => candidate is from a non-ToO exposure"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "long"
+                        ],
+                        "name": "objectidps1",
+                        "default": null,
+                        "doc": "Object ID of closest source from PS1 catalog; if exists within 30 arcsec"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "long"
+                        ],
+                        "name": "objectidps2",
+                        "default": null,
+                        "doc": "Object ID of second closest source from PS1 catalog; if exists within 30 arcsec"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "sgmag2",
+                        "default": null,
+                        "doc": "g-band PSF-fit magnitude of second closest source from PS1 catalog; if exists within 30 arcsec [mag]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "srmag2",
+                        "default": null,
+                        "doc": "r-band PSF-fit magnitude of second closest source from PS1 catalog; if exists within 30 arcsec [mag]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "simag2",
+                        "default": null,
+                        "doc": "i-band PSF-fit magnitude of second closest source from PS1 catalog; if exists within 30 arcsec [mag]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "szmag2",
+                        "default": null,
+                        "doc": "z-band PSF-fit magnitude of second closest source from PS1 catalog; if exists within 30 arcsec [mag]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "sgscore2",
+                        "default": null,
+                        "doc": "Star/Galaxy score of second closest source from PS1 catalog; if exists within 30 arcsec: 0 <= sgscore <= 1 where closer to 1 implies higher likelihood of being a star"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "distpsnr2",
+                        "default": null,
+                        "doc": "Distance to second closest source from PS1 catalog; if exists within 30 arcsec [arcsec]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "long"
+                        ],
+                        "name": "objectidps3",
+                        "default": null,
+                        "doc": "Object ID of third closest source from PS1 catalog; if exists within 30 arcsec"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "sgmag3",
+                        "default": null,
+                        "doc": "g-band PSF-fit magnitude of third closest source from PS1 catalog; if exists within 30 arcsec [mag]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "srmag3",
+                        "default": null,
+                        "doc": "r-band PSF-fit magnitude of third closest source from PS1 catalog; if exists within 30 arcsec [mag]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "simag3",
+                        "default": null,
+                        "doc": "i-band PSF-fit magnitude of third closest source from PS1 catalog; if exists within 30 arcsec [mag]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "szmag3",
+                        "default": null,
+                        "doc": "z-band PSF-fit magnitude of third closest source from PS1 catalog; if exists within 30 arcsec [mag]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "sgscore3",
+                        "default": null,
+                        "doc": "Star/Galaxy score of third closest source from PS1 catalog; if exists within 30 arcsec: 0 <= sgscore <= 1 where closer to 1 implies higher likelihood of being a star"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "distpsnr3",
+                        "default": null,
+                        "doc": "Distance to third closest source from PS1 catalog; if exists within 30 arcsec [arcsec]"
+                    },
+                    {
+                        "type": "int",
+                        "name": "nmtchps",
+                        "doc": "Number of source matches from PS1 catalog falling within 30 arcsec"
+                    },
+                    {
+                        "type": "long",
+                        "name": "rfid",
+                        "doc": "Processing ID for reference image to facilitate archive retrieval"
+                    },
+                    {
+                        "type": "double",
+                        "name": "jdstartref",
+                        "doc": "Observation Julian date of earliest exposure used to generate reference image [days]"
+                    },
+                    {
+                        "type": "double",
+                        "name": "jdendref",
+                        "doc": "Observation Julian date of latest exposure used to generate reference image [days]"
+                    },
+                    {
+                        "type": "int",
+                        "name": "nframesref",
+                        "doc": "Number of frames (epochal images) used to generate reference image"
+                    },
+                    {
+                        "type": "string",
+                        "name": "rbversion",
+                        "doc": "version of Random Forest classifier model used to assign RealBogus (rb) quality score"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "dsnrms",
+                        "default": null,
+                        "doc": "Ratio: D/stddev(D) on event position where D = difference image"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "ssnrms",
+                        "default": null,
+                        "doc": "Ratio: S/stddev(S) on event position where S = image of convolution: D (x) PSF(D)"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "dsdiff",
+                        "default": null,
+                        "doc": "Difference of statistics: dsnrms - ssnrms"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "magzpsci",
+                        "default": null,
+                        "doc": "Magnitude zero point for photometry estimates [mag]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "magzpsciunc",
+                        "default": null,
+                        "doc": "Magnitude zero point uncertainty (in magzpsci) [mag]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "magzpscirms",
+                        "default": null,
+                        "doc": "RMS (deviation from average) in all differences between instrumental photometry and matched photometric calibrators from science image processing [mag]"
+                    },
+                    {
+                        "type": "int",
+                        "name": "nmatches",
+                        "doc": "Number of PS1 photometric calibrators used to calibrate science image from science image processing"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "clrcoeff",
+                        "default": null,
+                        "doc": "Color coefficient from linear fit from photometric calibration of science image"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "clrcounc",
+                        "default": null,
+                        "doc": "Color coefficient uncertainty from linear fit (corresponding to clrcoeff)"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "zpclrcov",
+                        "default": null,
+                        "doc": "Covariance in magzpsci and clrcoeff from science image processing [mag^2]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "zpmed",
+                        "default": null,
+                        "doc": "Magnitude zero point from median of all differences between instrumental photometry and matched photometric calibrators from science image processing [mag]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "clrmed",
+                        "default": null,
+                        "doc": "Median color of all PS1 photometric calibrators used from science image processing [mag]: for filter (fid) = 1, 2, 3, PS1 color used = g-r, g-r, r-i respectively"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "clrrms",
+                        "default": null,
+                        "doc": "RMS color (deviation from average) of all PS1 photometric calibrators used from science image processing [mag]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "neargaia",
+                        "default": null,
+                        "doc": "Distance to closest source from Gaia DR1 catalog irrespective of magnitude; if exists within 90 arcsec [arcsec]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "neargaiabright",
+                        "default": null,
+                        "doc": "Distance to closest source from Gaia DR1 catalog brighter than magnitude 14; if exists within 90 arcsec [arcsec]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "maggaia",
+                        "default": null,
+                        "doc": "Gaia (G-band) magnitude of closest source from Gaia DR1 catalog irrespective of magnitude; if exists within 90 arcsec [mag]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "maggaiabright",
+                        "default": null,
+                        "doc": "Gaia (G-band) magnitude of closest source from Gaia DR1 catalog brighter than magnitude 14; if exists within 90 arcsec [mag]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "exptime",
+                        "default": null,
+                        "doc": "Integration time of camera exposure [sec]"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "name": "drb",
+                        "default": null,
+                        "doc": "RealBogus quality score from Deep-Learning-based classifier; range is 0 to 1 where closer to 1 is more reliable"
+                    },
+                    {
+                        "type": "string",
+                        "name": "drbversion",
+                        "doc": "version of Deep-Learning-based classifier model used to assign RealBogus (drb) quality score"
+                    }
+                ],
+                "doc": "avro alert schema"
+            },
+            "name": "candidate"
+        },
+        {
+            "type": [
+                "null",
+                {
+                    "type": "array",
+                    "items": {
+                        "type": "record",
+                        "version": "4.02",
+                        "name": "prv_candidate",
+                        "namespace": "ztf.alert",
+                        "fields": [
+                            {
+                                "type": "double",
+                                "name": "jd",
+                                "doc": "Observation Julian date at start of exposure [days]"
+                            },
+                            {
+                                "type": "int",
+                                "name": "fid",
+                                "doc": "Filter ID (1=g; 2=R; 3=i)"
+                            },
+                            {
+                                "type": "long",
+                                "name": "pid",
+                                "doc": "Processing ID for image"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "diffmaglim",
+                                "default": null,
+                                "doc": "Expected 5-sigma mag limit in difference image based on global noise estimate [mag]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "name": "pdiffimfilename",
+                                "default": null,
+                                "doc": "filename of positive (sci minus ref) difference image"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "name": "programpi",
+                                "default": null,
+                                "doc": "Principal investigator attached to program ID"
+                            },
+                            {
+                                "type": "int",
+                                "name": "programid",
+                                "doc": "Program ID: encodes either public, collab, or caltech mode"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "long"
+                                ],
+                                "name": "candid",
+                                "doc": "Candidate ID from operations DB"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "name": "isdiffpos",
+                                "doc": "t or 1 => candidate is from positive (sci minus ref) subtraction; f or 0 => candidate is from negative (ref minus sci) subtraction"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "long"
+                                ],
+                                "name": "tblid",
+                                "default": null,
+                                "doc": "Internal pipeline table extraction ID"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "int"
+                                ],
+                                "name": "nid",
+                                "default": null,
+                                "doc": "Night ID"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "int"
+                                ],
+                                "name": "rcid",
+                                "default": null,
+                                "doc": "Readout channel ID [00 .. 63]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "int"
+                                ],
+                                "name": "field",
+                                "default": null,
+                                "doc": "ZTF field ID"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "xpos",
+                                "default": null,
+                                "doc": "x-image position of candidate [pixels]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "ypos",
+                                "default": null,
+                                "doc": "y-image position of candidate [pixels]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "double"
+                                ],
+                                "name": "ra",
+                                "doc": "Right Ascension of candidate; J2000 [deg]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "double"
+                                ],
+                                "name": "dec",
+                                "doc": "Declination of candidate; J2000 [deg]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "magpsf",
+                                "doc": "Magnitude from PSF-fit photometry [mag]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "sigmapsf",
+                                "doc": "1-sigma uncertainty in magpsf [mag]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "chipsf",
+                                "default": null,
+                                "doc": "Reduced chi-square for PSF-fit"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "magap",
+                                "default": null,
+                                "doc": "Aperture mag using 14 pixel diameter aperture [mag]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "sigmagap",
+                                "default": null,
+                                "doc": "1-sigma uncertainty in magap [mag]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "distnr",
+                                "default": null,
+                                "doc": "distance to nearest source in reference image PSF-catalog [pixels]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "magnr",
+                                "default": null,
+                                "doc": "magnitude of nearest source in reference image PSF-catalog [mag]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "sigmagnr",
+                                "default": null,
+                                "doc": "1-sigma uncertainty in magnr [mag]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "chinr",
+                                "default": null,
+                                "doc": "DAOPhot chi parameter of nearest source in reference image PSF-catalog"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "sharpnr",
+                                "default": null,
+                                "doc": "DAOPhot sharp parameter of nearest source in reference image PSF-catalog"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "sky",
+                                "default": null,
+                                "doc": "Local sky background estimate [DN]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "magdiff",
+                                "default": null,
+                                "doc": "Difference: magap - magpsf [mag]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "fwhm",
+                                "default": null,
+                                "doc": "Full Width Half Max assuming a Gaussian core, from SExtractor [pixels]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "classtar",
+                                "default": null,
+                                "doc": "Star/Galaxy classification score from SExtractor"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "mindtoedge",
+                                "default": null,
+                                "doc": "Distance to nearest edge in image [pixels]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "magfromlim",
+                                "default": null,
+                                "doc": "Difference: diffmaglim - magap [mag]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "seeratio",
+                                "default": null,
+                                "doc": "Ratio: difffwhm / fwhm"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "aimage",
+                                "default": null,
+                                "doc": "Windowed profile RMS afloat major axis from SExtractor [pixels]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "bimage",
+                                "default": null,
+                                "doc": "Windowed profile RMS afloat minor axis from SExtractor [pixels]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "aimagerat",
+                                "default": null,
+                                "doc": "Ratio: aimage / fwhm"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "bimagerat",
+                                "default": null,
+                                "doc": "Ratio: bimage / fwhm"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "elong",
+                                "default": null,
+                                "doc": "Ratio: aimage / bimage"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "int"
+                                ],
+                                "name": "nneg",
+                                "default": null,
+                                "doc": "number of negative pixels in a 5 x 5 pixel stamp"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "int"
+                                ],
+                                "name": "nbad",
+                                "default": null,
+                                "doc": "number of prior-tagged bad pixels in a 5 x 5 pixel stamp"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "rb",
+                                "default": null,
+                                "doc": "RealBogus quality score; range is 0 to 1 where closer to 1 is more reliable"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "ssdistnr",
+                                "default": null,
+                                "doc": "distance to nearest known solar system object if exists within 30 arcsec [arcsec]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "ssmagnr",
+                                "default": null,
+                                "doc": "magnitude of nearest known solar system object if exists within 30 arcsec (usually V-band from MPC archive) [mag]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "name": "ssnamenr",
+                                "default": null,
+                                "doc": "name of nearest known solar system object if exists within 30 arcsec (from MPC archive)"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "sumrat",
+                                "default": null,
+                                "doc": "Ratio: sum(pixels) / sum(|pixels|) in a 5 x 5 pixel stamp where stamp is first median-filtered to mitigate outliers"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "magapbig",
+                                "default": null,
+                                "doc": "Aperture mag using 18 pixel diameter aperture [mag]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "sigmagapbig",
+                                "default": null,
+                                "doc": "1-sigma uncertainty in magapbig [mag]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "double"
+                                ],
+                                "name": "ranr",
+                                "doc": "Right Ascension of nearest source in reference image PSF-catalog; J2000 [deg]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "double"
+                                ],
+                                "name": "decnr",
+                                "doc": "Declination of nearest source in reference image PSF-catalog; J2000 [deg]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "double"
+                                ],
+                                "name": "scorr",
+                                "default": null,
+                                "doc": "Peak-pixel signal-to-noise ratio in point source matched-filtered detection image"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "magzpsci",
+                                "default": null,
+                                "doc": "Magnitude zero point for photometry estimates [mag]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "magzpsciunc",
+                                "default": null,
+                                "doc": "Magnitude zero point uncertainty (in magzpsci) [mag]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "magzpscirms",
+                                "default": null,
+                                "doc": "RMS (deviation from average) in all differences between instrumental photometry and matched photometric calibrators from science image processing [mag]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "clrcoeff",
+                                "default": null,
+                                "doc": "Color coefficient from linear fit from photometric calibration of science image"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "clrcounc",
+                                "default": null,
+                                "doc": "Color coefficient uncertainty from linear fit (corresponding to clrcoeff)"
+                            },
+                            {
+                                "type": "string",
+                                "name": "rbversion",
+                                "doc": "version of RealBogus model/classifier used to assign rb quality score"
+                            }
+                        ],
+                        "doc": "avro alert schema"
+                    }
+                }
+            ],
+            "name": "prv_candidates",
+            "default": null
+        },
+        {
+            "type": [
+                "null",
+                {
+                    "type": "array",
+                    "items": {
+                        "type": "record",
+                        "version": "4.02",
+                        "name": "fp_hist",
+                        "namespace": "ztf.alert",
+                        "fields": [
+                            {
+                                "type": [
+                                    "null",
+                                    "int"
+                                ],
+                                "name": "field",
+                                "default": null,
+                                "doc": "ZTF field ID"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "int"
+                                ],
+                                "name": "rcid",
+                                "default": null,
+                                "doc": "Readout channel ID [00 .. 63]"
+                            },
+                            {
+                                "type": "int",
+                                "name": "fid",
+                                "doc": "Filter ID (1=g; 2=R; 3=i)"
+                            },
+                            {
+                                "type": "long",
+                                "name": "pid",
+                                "doc": "Processing ID for image"
+                            },
+                            {
+                                "type": "long",
+                                "name": "rfid",
+                                "doc": "Processing ID for reference image to facilitate archive retrieval"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "sciinpseeing",
+                                "default": null,
+                                "doc": "Effective FWHM of sci image [pixels]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "scibckgnd",
+                                "default": null,
+                                "doc": "Background level in sci image [DN]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "scisigpix",
+                                "default": null,
+                                "doc": "Robust sigma per pixel in sci image [DN]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "magzpsci",
+                                "default": null,
+                                "doc": "Magnitude zero point for photometry estimates [mag]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "magzpsciunc",
+                                "default": null,
+                                "doc": "Magnitude zero point uncertainty (in magzpsci) [mag]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "magzpscirms",
+                                "default": null,
+                                "doc": "RMS (deviation from average) in all differences between instrumental photometry and matched photometric calibrators from science image processing [mag]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "clrcoeff",
+                                "default": null,
+                                "doc": "Color coefficient from linear fit from photometric calibration of science image"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "clrcounc",
+                                "default": null,
+                                "doc": "Color coefficient uncertainty from linear fit (corresponding to clrcoeff)"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "exptime",
+                                "default": null,
+                                "doc": "Integration time of camera exposure [sec]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "adpctdif1",
+                                "default": null,
+                                "doc": "Full sci image astrometric RMS along R.A. with respect to Gaia1 [arcsec]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "adpctdif2",
+                                "default": null,
+                                "doc": "Full sci image astrometric RMS along Dec. with respect to Gaia1 [arcsec]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "diffmaglim",
+                                "default": null,
+                                "doc": "Expected 5-sigma mag limit in difference image based on global noise estimate [mag]"
+                            },
+                            {
+                                "type": "int",
+                                "name": "programid",
+                                "doc": "Program ID: encodes either public, collab, or caltech mode"
+                            },
+                            {
+                                "type": "double",
+                                "name": "jd",
+                                "doc": "Observation Julian date at start of exposure [days]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "forcediffimflux",
+                                "default": null,
+                                "doc": "Forced difference image PSF-fit flux [DN]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "forcediffimfluxunc",
+                                "default": null,
+                                "doc": "1-sigma uncertainty in forcediffimflux [DN]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "string"
+                                ],
+                                "name": "procstatus",
+                                "default": null,
+                                "doc": "Forced photometry processing status codes (0 => no warnings); see documentation"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "distnr",
+                                "default": null,
+                                "doc": "distance to nearest source in reference image PSF-catalog [arcsec]"
+                            },
+                            {
+                                "type": "double",
+                                "name": "ranr",
+                                "doc": "Right Ascension of nearest source in reference image PSF-catalog; J2000 [deg]"
+                            },
+                            {
+                                "type": "double",
+                                "name": "decnr",
+                                "doc": "Declination of nearest source in reference image PSF-catalog; J2000 [deg]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "magnr",
+                                "default": null,
+                                "doc": "magnitude of nearest source in reference image PSF-catalog [mag]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "sigmagnr",
+                                "default": null,
+                                "doc": "1-sigma uncertainty in magnr [mag]"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "chinr",
+                                "default": null,
+                                "doc": "DAOPhot chi parameter of nearest source in reference image PSF-catalog"
+                            },
+                            {
+                                "type": [
+                                    "null",
+                                    "float"
+                                ],
+                                "name": "sharpnr",
+                                "default": null,
+                                "doc": "DAOPhot sharp parameter of nearest source in reference image PSF-catalog"
+                            }
+                        ],
+                        "doc": "avro alert schema"
+                    }
+                }
+            ],
+            "name": "fp_hists",
+            "default": null
+        },
+        {
+            "type": [
+                "null",
+                {
+                    "type": "record",
+                    "version": "4.02",
+                    "name": "cutout",
+                    "namespace": "ztf.alert",
+                    "fields": [
+                        {
+                            "type": "string",
+                            "name": "fileName"
+                        },
+                        {
+                            "type": "bytes",
+                            "name": "stampData",
+                            "doc": "fits.gz"
+                        }
+                    ],
+                    "doc": "avro alert schema"
+                }
+            ],
+            "name": "cutoutScience",
+            "default": null
+        },
+        {
+            "type": [
+                "null",
+                "ztf.alert.cutout"
+            ],
+            "name": "cutoutTemplate",
+            "default": null
+        },
+        {
+            "type": [
+                "null",
+                "ztf.alert.cutout"
+            ],
+            "name": "cutoutDifference",
+            "default": null
+        }
+    ],
+    "doc": "avro alert schema for ZTF (www.ztf.caltech.edu)"
+}

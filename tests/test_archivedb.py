@@ -1,3 +1,5 @@
+import io
+import fastavro
 import pytest
 import os
 import secrets
@@ -383,25 +385,6 @@ def assert_alerts_equivalent(alert, reco_alert):
             assert reco_candidate[k] == candidate[k]
 
 
-def test_get_cutout(empty_archive, alert_generator):
-    processor_id = 0
-    updater = ArchiveUpdater(empty_archive)
-    db = ArchiveDB(empty_archive)
-    for idx, (alert, schema) in enumerate(alert_generator(with_schema=True)):
-        processor_id = idx % 16
-        updater.insert_alert(alert, schema, processor_id, 0)
-
-    for idx, alert in enumerate(alert_generator()):
-        processor_id = idx % 16
-        cutouts = db.get_cutout(alert["candid"])
-        alert_cutouts = {
-            k[len("cutout") :].lower(): v["stampData"]
-            for k, v in alert.items()
-            if k.startswith("cutout")
-        }
-        assert cutouts == alert_cutouts
-
-
 def test_serializability(empty_archive, alert_generator):
     """
     Ensure that we can recover avro alerts from the db
@@ -421,7 +404,7 @@ def test_serializability(empty_archive, alert_generator):
         updater.insert_alert(alert, schema, processor_id, 0)
 
     for idx, alert in enumerate(alert_generator()):
-        reco = db.get_alert(alert["candid"], with_history=True, with_cutouts=True)
+        reco = db.get_alert(alert["candid"], with_history=True)
         # round-trip to avro and back
         f = BytesIO()
         writer(f, schema, [reco])
@@ -451,10 +434,14 @@ def test_schema_update(empty_archive, alert_with_schema):
 
     alert, schema = alert_with_schema
     updater.insert_alert(alert, schema, 0, 0)
-    reco = db.get_alert(alert["candid"], with_history=True, with_cutouts=True)
+    reco = db.get_alert(alert["candid"], with_history=True)
     f = BytesIO()
     writer(f, schema, [reco])
     deserialized = next(reader(BytesIO(f.getvalue())))
+    # remove cutouts, as they're not stored in the archive
+    for k in list(deserialized.keys()):
+        if k.startswith("cutout"):
+            del deserialized[k]
     assert deserialized.keys() == reco.keys()
     for k in reco:
         if not "candidate" in k or "cutout" in k:
@@ -497,16 +484,20 @@ def test_archive_object(alert_generator, empty_archive) -> None:
     db = ArchiveDB(empty_archive)
 
     for alert in islice(alert_generator(), 10):
-        reco_alert = db.get_alert(alert["candid"], with_history=True, with_cutouts=True)
+        reco_alert = db.get_alert(alert["candid"], with_history=True)
         # some necessary normalization on the alert
         for k, v in alert["candidate"].items():
             if isinstance(v, float) and isnan(v):
                 alert["candidate"][k] = None
+        # remove cutouts, as they're not stored in the archive
+        for k in list(alert.keys()):
+            if k.startswith("cutout"):
+                del alert[k]
         assert_alerts_equivalent(alert, reco_alert)
 
     alerts = list(islice(alert_generator(), 10))
     candids = [a["candid"] for a in alerts]
-    reco_candids = [a["candid"] for a in db.get_alerts(candids)]
+    reco_candids = [a["candid"] for a in db.get_alerts(candids)[1]]
     assert reco_candids == candids
 
     jds = sorted([a["candidate"]["jd"] for a in alerts])
@@ -515,7 +506,7 @@ def test_archive_object(alert_generator, empty_archive) -> None:
         a["candidate"]["jd"]
         for a in db.get_alerts_in_time_range(
             jd_start=min(jds) - sec, jd_end=max(jds) + sec
-        )
+        )[1]
     ]
     assert reco_jds == jds
 
@@ -525,7 +516,7 @@ def test_archive_object(alert_generator, empty_archive) -> None:
             ra=alerts[0]["candidate"]["ra"],
             dec=alerts[0]["candidate"]["dec"],
             radius=2.0,
-        )
+        )[1]
     ]
     assert alerts[0]["candid"] in reco_candids
 
@@ -535,39 +526,9 @@ def test_archive_object(alert_generator, empty_archive) -> None:
 
 def test_partitioned_read_single(alert_archive):
     db = ArchiveDB(alert_archive)
-    alerts = db.get_alerts_in_time_range(jd_start=0, jd_end=1e8, group_name="testy")
+    alerts = db.get_alerts_in_time_range(jd_start=0, jd_end=1e8, group_name="testy")[1]
     l = list((alert["candid"] for alert in alerts))
     assert len(l) == 10
-
-
-def test_partitioned_read_double(alert_archive):
-    import itertools
-
-    db1 = ArchiveDB(alert_archive)
-    db2 = ArchiveDB(alert_archive)
-    # kwargs = dict(group_name='testy', block_size=2, with_history=False, with_cutouts=False)
-    kwargs = dict(group_name="testy", block_size=2)
-
-    l1 = list(
-        (
-            alert["candid"]
-            for alert in itertools.islice(
-                db1.get_alerts_in_time_range(jd_start=0, jd_end=1e8, **kwargs), 5
-            )
-        )
-    )
-    l2 = list(
-        (
-            alert["candid"]
-            for alert in db2.get_alerts_in_time_range(jd_start=0, jd_end=1e8, **kwargs)
-        )
-    )
-
-    assert set(l1).intersection(l2) == {
-        l1[-1]
-    }, "both clients see alert in last partial block, as it was never committed"
-    assert len(l1) == 5, "first client sees all alerts it consumed"
-    assert len(l2) == 6, "alerts in uncommitted block read by second client"
 
 
 def test_insert_future_schema(alert_generator, empty_archive):
@@ -612,21 +573,25 @@ def test_topic_to_read_queue(alert_archive, selection):
     assert queue_info["chunks"] == 2
     assert queue_info["items"] == 3
 
-    assert [alert["candid"] for alert in db.get_chunk_from_queue(group)] == candids[:2]
-    assert [alert["candid"] for alert in db.get_chunk_from_queue(group)] == candids[2:]
-    assert [alert["candid"] for alert in db.get_chunk_from_queue(group)] == []
+    def get_chunk(group):
+        chunk_id, alerts = db.get_chunk_from_queue(group)
+        db.acknowledge_chunk_from_queue(group, chunk_id)
+        return alerts
+
+    assert {alert["candid"] for alert in get_chunk(group)} == set(candids[:2])
+    assert {alert["candid"] for alert in get_chunk(group)} == set(candids[2:])
+    assert [alert["candid"] for alert in get_chunk(group)] == []
 
 
 def test_cone_search(alert_archive):
     db = ArchiveDB(alert_archive)
     group = secrets.token_urlsafe()
-    alerts = list(
+    chunk_id, alerts = list(
         db.get_alerts_in_cone(
             ra=0,
             dec=0,
             radius=1,
             with_history=False,
-            with_cutouts=False,
             group_name=group,
         )
     )
@@ -634,29 +599,72 @@ def test_cone_search(alert_archive):
 
 
 @pytest.mark.parametrize("nside", [32, 64, 128])
-def test_healpix_search(empty_archive, nside: int) -> None:
+@pytest.mark.parametrize("ipix", [13, [13]])
+def test_healpix_search(empty_archive, nside, ipix):
     db = ArchiveDB(empty_archive)
     group = secrets.token_urlsafe()
-    ipix = 13
     condition, order = db._healpix_search_condition(
-        pixels={nside: [ipix]}, jd_min=-1, jd_max=1
+        pixels={nside: ipix}, jd_min=-1, jd_max=1
     )
     assert isinstance(condition, BooleanClauseList)
     assert condition.operator == operator.and_
 
     ops = []
-    if nside == 64:
-        ops.append(condition.get_children()[0])
-    else:
-        ops.extend(condition.get_children()[0].get_children())
+    ops.extend(condition.get_children()[0].get_children())
 
-    nsides = []
     for op in ops:
         assert isinstance(op, BinaryExpression)
-        assert isinstance(func := op.get_children()[0], Function)
-        assert func.name == "healpix_ang2ipix_nest"
-        assert isinstance(arg := func.clauses.get_children()[0], BindParameter)
-        nsides.append(arg.value)
-    assert any(
-        [n == 64 for n in nsides]
-    ), "pixel lookups used indexed expression at least once"
+        assert op.left.name == "_hpx"
+        assert op.operator in {operator.ge, operator.lt}
+
+
+@pytest.mark.parametrize("cutouts", [False, True])
+def test_seekable_avro(alert_generator, cutouts: bool):
+    """
+    We can read an individual block straight out of an AVRO file
+    """
+    from fastavro._read_py import BLOCK_READERS, BinaryDecoder
+
+    alerts = []
+    for alert, schema in alert_generator(with_schema=True):
+        if not cutouts:
+            for k in list(alert.keys()):
+                if k.startswith("cutout"):
+                    alert[k] = None
+                    pass
+        alerts.append(alert)
+    buf = io.BytesIO()
+    fastavro.writer(buf, schema, alerts, codec="deflate")
+    buf.seek(0)
+    assert buf.tell() == 0
+    reader = fastavro.block_reader(buf)
+    pos = buf.tell()
+    ranges = {}
+    for block in reader:
+        if cutouts:
+            assert block.num_records == 1
+        else:
+            assert block.num_records > 0
+        end = buf.tell()
+        for alert in block:
+            ranges[alert["candid"]] = (pos, end)
+        pos = end
+
+    print(buf.tell() / 2 ** 20)
+
+    codec = reader.metadata["avro.codec"]
+    read_block = BLOCK_READERS.get(codec)
+
+    for alert in alerts:
+        decoder = BinaryDecoder(
+            io.BytesIO(buf.getvalue()[slice(*ranges[alert["candid"]])])
+        )
+        assert (nrecords := decoder.read_long()) > 0
+        slicebuf = read_block(decoder)
+        for _ in range(nrecords):
+            reco = fastavro.schemaless_reader(slicebuf, reader.writer_schema)
+            if reco["candid"] == alert["candid"]:
+                assert reco == alert
+                break
+        else:
+            raise ValueError(f'{alert["candid"]} not found')

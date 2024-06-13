@@ -7,35 +7,41 @@
 # Last Modified Date: 02.12.2020
 # Last Modified By  : Jakob van Santen <jakob.van.santen@desy.de>
 
+import datetime
+import itertools
 import json
 import math
+import operator
+import time
 from typing import (
     Any,
     Dict,
-    Sequence,
+    Mapping,
     Tuple,
     Optional,
     List,
     TYPE_CHECKING,
     Union,
     cast,
+    TypedDict,
 )
+from contextlib import contextmanager
 
-from sqlalchemy import select, update, and_, or_, bindparam
+from sqlalchemy import select, update, and_, or_
 from sqlalchemy.engine.base import Connection
 from sqlalchemy.sql.elements import (
     BooleanClauseList,
     ClauseElement,
     ColumnClause,
-    ColumnElement,
     UnaryExpression,
 )
-from sqlalchemy.sql.expression import func, literal_column, Select, Alias
+from sqlalchemy.sql.expression import func
 from sqlalchemy.sql.schema import Column, Table
 from sqlalchemy.exc import IntegrityError
 import sqlalchemy, collections
 
 from ampel.ztf.archive.ArchiveDBClient import ArchiveDBClient
+from .types import FilterClause
 
 if TYPE_CHECKING:
     from sqlalchemy.sql.visitors import Visitable
@@ -45,15 +51,34 @@ import logging
 log = logging.getLogger("ampel.ztf.archive")
 
 
-def without_keys(table):
+def without_keys(table, filter=lambda name: True):
     keys = set(table.primary_key.columns)
     for fk in table.foreign_keys:
         keys.update(fk.constraint.columns)
-    return [c for c in table.columns if c not in keys]
+    return [c for c in table.columns if c not in keys and filter(c.name)]
 
 
 class GroupNotFoundError(KeyError):
     ...
+
+
+class NoSuchColumnError(KeyError):
+    ...
+
+
+class ChunkCount(TypedDict):
+    chunks: int
+    items: int
+
+
+class GroupInfo(TypedDict):
+    error: Optional[bool]
+    msg: Optional[str]
+    chunk_size: int
+    remaining: ChunkCount
+    pending: ChunkCount
+    started_at: datetime.datetime
+    finished_at: Optional[datetime.datetime]
 
 
 class ArchiveDB(ArchiveDBClient):
@@ -61,11 +86,20 @@ class ArchiveDB(ArchiveDBClient):
 
     _CLIENTS: Dict[str, "ArchiveDB"] = {}
 
-    def __init__(self, *args, **kwargs):
+    query_debug = False
+
+    def __init__(self, *args, default_statement_timeout: int = 60000, **kwargs):
         """ """
         super().__init__(*args, **kwargs)
         self._alert_id_column = self.get_alert_id_column()
-        self._table_mapping = {}
+        self._table_mapping: dict[str, str] = {}
+        self._default_statement_timeout = default_statement_timeout
+
+    @contextmanager
+    def connect(self):
+        with self._engine.connect() as conn:
+            conn.execute(f"set statement_timeout={self._default_statement_timeout}")
+            yield conn
 
     def _get_alert_column(self, name: str) -> ColumnClause:
         if "alert" in self._meta.tables and name in self._meta.tables["alert"].c:
@@ -92,7 +126,7 @@ class ArchiveDB(ArchiveDBClient):
     def get_statistics(self) -> Dict[str, Any]:
         """ """
         stats = {}
-        with self._engine.connect() as conn:
+        with self.connect() as conn:
             sql = "select relname, n_live_tup from pg_catalog.pg_stat_user_tables"
             rows = dict(conn.execute(sql).fetchall())
             sql = """SELECT TABLE_NAME, index_bytes, toast_bytes, table_bytes
@@ -130,7 +164,7 @@ class ArchiveDB(ArchiveDBClient):
             .group_by(Groups.c.group_id)
             .order_by(Groups.c.group_id)
         )
-        with self._engine.connect() as conn:
+        with self.connect() as conn:
             return conn.execute(query).fetchall()
 
     def create_topic(
@@ -140,7 +174,7 @@ class ArchiveDB(ArchiveDBClient):
         Queue = self._meta.tables["topic"]
         Alert = self._meta.tables["alert"]
         # TODO: chunk inputs, add update operation
-        with self._engine.connect() as conn:
+        with self.connect() as conn:
             result = conn.execute(
                 Groups.insert(),
                 topic_name=name,
@@ -164,7 +198,7 @@ class ArchiveDB(ArchiveDBClient):
     def get_topic_info(self, topic: str) -> Dict[str, Any]:
         Topic = self._meta.tables["topic"]
         TopicGroups = self._meta.tables["topic_groups"]
-        with self._engine.connect() as conn:
+        with self.connect() as conn:
             if (
                 row := conn.execute(
                     select(
@@ -199,7 +233,7 @@ class ArchiveDB(ArchiveDBClient):
         Queue = self._meta.tables["read_queue"]
         Topic = self._meta.tables["topic"]
         TopicGroups = self._meta.tables["topic_groups"]
-        with self._engine.connect() as conn:
+        with self.connect() as conn:
             if (
                 row := conn.execute(
                     select([TopicGroups.c.topic_id]).where(
@@ -211,7 +245,9 @@ class ArchiveDB(ArchiveDBClient):
             else:
                 topic_id: int = row.topic_id
             group_id = conn.execute(
-                Groups.insert(), group_name=group_name
+                Groups.insert(),
+                group_name=group_name,
+                chunk_size=block_size,
             ).inserted_primary_key[0]
 
             unnested = (
@@ -253,6 +289,8 @@ class ArchiveDB(ArchiveDBClient):
             )
 
             conn.execute(q)
+
+            conn.execute(Groups.update(Groups.c.group_id == group_id, {"error": False}))
             col = Queue.c.alert_ids
             return conn.execute(
                 select(
@@ -266,36 +304,72 @@ class ArchiveDB(ArchiveDBClient):
     def remove_consumer_group(self, pattern: str) -> None:
         Groups = self._meta.tables["read_queue_groups"]
         Queue = self._meta.tables["read_queue"]
-        with self._engine.connect() as conn:
+        with self.connect() as conn:
             return conn.execute(
                 Groups.delete().where(Groups.c.group_name.like(pattern))
             )
 
-    def _populate_read_queue(
-        self, conn, group_id, block_size, condition, order: List[UnaryExpression] = []
+    def _select_alert_ids(
+        self, group_id, block_size, condition, order: List[UnaryExpression] = []
     ):
-        Queue = self._meta.tables["read_queue"]
+        """Generate a statement that selects blocks of alert_id"""
+
+        # harvest tables involved in condition
+        tables = set()
+        sqlalchemy.sql.visitors.traverse(
+            condition,
+            visitors={"column": lambda column: tables.add(column.table)},
+            opts={},
+        )
+        # join alert table only if needed
+        if self._alert_id_column.table in tables:
+            alert_id = self._alert_id_column
+            source = self._alert_id_column.table.join(self.get_table("candidate"))
+        else:
+            alert_id = self.get_table("candidate").c.alert_id
+            source = alert_id.table
         numbered = (
             select(
                 [
-                    self._alert_id_column,
+                    alert_id,
                     func.row_number().over(order_by=order).label("row_number"),
                 ]
             )
-            .select_from(
-                self._alert_id_column.table.join(self._meta.tables["candidate"])
-            )
+            .select_from(source)
             .where(condition)
             .alias("numbered")
         )
-        alert_id, row_number = numbered.columns
+        alert_ids, row_number = numbered.columns
         block = func.div(row_number - 1, block_size)
+        return (
+            select([group_id, func.array_agg(alert_ids)])
+            .group_by(block)
+            .order_by(block)
+        )
+
+    def _populate_read_queue(
+        self,
+        conn: Connection,
+        group_id: int,
+        block_size: int,
+        condition,
+        order: List[UnaryExpression] = [],
+    ):
+        Queue = self._meta.tables["read_queue"]
+        blocks = self._select_alert_ids(group_id, block_size, condition, order)
+        if self.query_debug:
+            log.warn(
+                str(
+                    blocks.compile(
+                        dialect=sqlalchemy.dialects.postgresql.dialect(),
+                        compile_kwargs={"literal_binds": True},
+                    )
+                )
+            )
         conn.execute(
             Queue.insert().from_select(
                 [Queue.c.group_id, Queue.c.alert_ids],
-                select([group_id, func.array_agg(alert_id)])
-                .group_by(block)
-                .order_by(block),
+                blocks,
             )
         )
         col = Queue.c.alert_ids
@@ -311,83 +385,108 @@ class ArchiveDB(ArchiveDBClient):
     def _create_read_queue(
         self,
         conn: Connection,
-        condition: BooleanClauseList,
-        order: List[UnaryExpression],
         group_name: str,
         block_size: int,
-    ) -> Tuple[int, int]:
+    ) -> int:
+        Groups = self._meta.tables["read_queue_groups"]
+
+        result = conn.execute(
+            Groups.insert(), group_name=group_name, chunk_size=block_size
+        )
+        return result.inserted_primary_key[0]
+
+    def _fill_read_queue(
+        self,
+        conn: Connection,
+        condition: BooleanClauseList,
+        order: List[UnaryExpression],
+        group_id: int,
+        block_size: int,
+    ) -> int:
 
         Groups = self._meta.tables["read_queue_groups"]
-        Queue = self._meta.tables["read_queue"]
-        with conn.begin() as transaction:
-            try:
-                # Create the group. This will raise IntegrityError if the
-                # group already exists
-                result = conn.execute(Groups.insert(), group_name=group_name)
-                group_id = result.inserted_primary_key[0]
-                # Populate the group queue in the same transaction
-                queue_info = self._populate_read_queue(
-                    conn, group_id, block_size, condition, order
-                )
-                transaction.commit()
-                chunks = queue_info["chunks"]
-                log.info(
-                    "Created group {} with id {} ({} items in {} chunks)".format(
-                        group_name, group_id, queue_info["items"], queue_info["chunks"]
-                    )
-                )
-            except IntegrityError as e:
-                # If we arrive here, then another client already committed
-                # the group name and populated the queue.
-                transaction.rollback()
-                group_id = conn.execute(
-                    select([Groups.c.group_id]).where(Groups.c.group_name == group_name)
-                ).fetchone()[0]
-                chunks = conn.execute(
-                    select([func.count(Queue.c.alert_ids).label("chunks")]).where(
-                        Queue.c.group_id == group_id
-                    )
-                ).fetchone()[0]
-                # Update the access time to keep the group from being deleted
-                # after 24 hours of inactivity. If another client has already
-                # updated the access time, rollback.
-                with conn.begin() as transaction:
-                    try:
-                        conn.execute(
-                            update(Groups)
-                            .where(Groups.c.group_id == group_id)
-                            .values(last_accessed=func.now())
-                        )
-                    except IntegrityError:
-                        transaction.rollback()
 
-                log.info(
-                    "Subscribed to group {} with id {} ({} chunks remaining)".format(
-                        group_name, group_id, chunks
-                    )
+        try:
+            queue_info = self._populate_read_queue(
+                conn, group_id, block_size, condition, order
+            )
+            conn.execute(
+                Groups.update(
+                    Groups.columns.group_id == group_id,
+                    values={"error": False, "resolved": func.now()},
                 )
-            except Exception as e:
-                log.error(e)
-                raise
-        return group_id, chunks
+            )
 
-    def get_remaining_chunks(self, group_name: str) -> int:
+            chunks = queue_info["chunks"]
+            log.info(
+                "Created group with id {} ({} items in {} chunks)".format(
+                    group_id, queue_info["items"], queue_info["chunks"]
+                )
+            )
+            return chunks
+        except sqlalchemy.exc.SQLAlchemyError as exc:
+            conn.execute(
+                Groups.update(
+                    Groups.columns.group_id == group_id,
+                    values={"error": True, "msg": str(exc)},
+                )
+            )
+            log.exception(f"Failed to populate group {group_id}")
+            return 0
+
+    def get_group_info(self, group_name: str) -> GroupInfo:
         Groups = self._meta.tables["read_queue_groups"]
         Queue = self._meta.tables["read_queue"]
-        with self._engine.connect() as conn:
+        with self.connect() as conn:
             if (
                 row := conn.execute(
-                    select([Groups.c.group_id]).where(Groups.c.group_name == group_name)
+                    select(
+                        [
+                            Groups.c.group_id,
+                            Groups.c.chunk_size,
+                            Groups.c.error,
+                            Groups.c.msg,
+                            Groups.c.created,
+                            Groups.c.resolved
+                        ]
+                    ).where(Groups.c.group_name == group_name)
                 ).fetchone()
             ) is not None:
-                group_id: int = row.group_id
+                group_id: int = row["group_id"]
+                chunk_size: int = row["chunk_size"]
+                error: bool = row["error"]
+                msg: Optional[str] = row["msg"]
+                created: datetime.datetime = row["created"]
+                resolved: Optional[datetime.datetime] = row["resolved"]
             else:
                 raise GroupNotFoundError
-            return conn.execute(
-                select([func.count(Queue.c.alert_ids).label("chunks")]).where(
-                    Queue.c.group_id == group_id
+            col = Queue.c.alert_ids
+            pending = (Queue.c.issued != sqlalchemy.sql.null()).label("pending")
+            info: GroupInfo = {
+                "error": error,
+                "msg": msg,
+                "chunk_size": chunk_size,
+                "remaining": {"chunks": 0, "items": 0},
+                "pending": {"chunks": 0, "items": 0},
+                "started_at": created,
+                "finished_at": resolved,
+            }
+            for row in conn.execute(
+                select(
+                    [
+                        pending,
+                        func.count(col).label("chunks"),
+                        func.sum(func.array_length(col, 1)).label("items"),
+                    ]
                 )
-            ).fetchone()[0]
+                .where(Queue.c.group_id == group_id)
+                .group_by(pending)
+            ):
+                target = info["pending"] if row["pending"] else info["remaining"]
+                target["chunks"] = row["chunks"]
+                target["items"] = row["items"]
+
+            return info
 
     def _fetch_alerts_with_condition(
         self,
@@ -396,65 +495,44 @@ class ArchiveDB(ArchiveDBClient):
         order: List[UnaryExpression] = [],
         *,
         distinct: bool = False,
-        with_history=False,
-        with_cutouts=False,
-        group_name=None,
-        block_size=None,
-        max_blocks=None,
-    ):
+        with_history: bool=False,
+        group_name: Optional[str]=None,
+        block_size: Optional[int]=None,
+        max_blocks: Optional[int]=None,
+        limit: Optional[int] = None,
+        skip: int = 0,
+    ) -> tuple[int, list[dict[str, Any]]]:
         """ """
-
         if group_name is not None:
             if distinct:
                 # TODO
                 raise NotImplementedError(
                     "latest sorting is not implemented for queues"
                 )
-            group_id, _ = self._create_read_queue(
-                conn, condition, order, group_name, block_size
+            assert block_size is not None
+            group_id = self._create_read_queue(conn, group_name, block_size)
+            self._fill_read_queue(
+                conn, condition, order, group_id, block_size, 
             )
-            Queue = self._meta.tables["read_queue"]
-            # Pop a block of alert IDs from the queue that is not already
-            # locked by another client, and lock it for the duration of the
-            # transaction.
-            item_id = Queue.c.item_id
-            popped_item = (
-                Queue.delete()
-                .where(
-                    Queue.c.item_id
-                    == select([item_id])
-                    .where(Queue.c.group_id == group_id)
-                    .order_by(item_id.asc())
-                    .with_for_update(skip_locked=True)
-                    .limit(1)
-                )
-                .returning(Queue.c.alert_ids)
-                .cte()
-            )
-            # Query for alerts whose IDs were in the block
-            alert_query = self._build_alert_query(
-                self._alert_id_column.in_(
-                    select([func.unnest(popped_item.c.alert_ids)])
-                ),
-                with_history=with_history,
-                with_cutouts=with_cutouts,
-            )
-        else:
-            alert_query = self._build_alert_query(
-                condition,
-                order=order,
-                distinct=distinct,
-                with_history=with_history,
-                with_cutouts=with_cutouts,
-            )
+            return self.get_chunk_from_queue(group_name, with_history=with_history)
 
+        alert_query = self._build_alert_query(
+            condition,
+            order=order,
+            distinct=distinct,
+            with_history=with_history,
+            limit=limit,
+            skip=skip,
+        )
+
+        alerts = []
         while True:
             nrows = 0
             nchunks = 0
             with conn.begin() as transaction:
                 for result in conn.execute(alert_query):
                     nrows += 1
-                    yield self._apply_schema(result)
+                    alerts.append(self._apply_schema(result))
                 # If we reach this point, all alerts from the block have been
                 # consumed. Commit the transaction to delete the queue item. If
                 # the generator is destroyed before we reach this point,
@@ -473,24 +551,12 @@ class ArchiveDB(ArchiveDBClient):
                 or (max_blocks is not None and nchunks >= max_blocks)
             ):
                 break
-            else:
-                chunks = conn.execute(
-                    select([func.count(Queue.c.alert_ids).label("chunks")]).where(
-                        Queue.c.group_id == group_id
-                    )
-                ).fetchone()[0]
-                log.info(
-                    "Query complete after {} alerts, {} chunks remaining".format(
-                        nrows, chunks
-                    )
-                )
+        return -1, alerts
 
-    def get_chunk_from_queue(
-        self, group_name: str, with_history: bool = True, with_cutouts: bool = False
-    ):
+    def get_chunk_from_queue(self, group_name: str, with_history: bool = True):
         Groups = self._meta.tables["read_queue_groups"]
         Queue = self._meta.tables["read_queue"]
-        with self._engine.connect() as conn:
+        with self.connect() as conn:
             # Update the access time to keep the group from being deleted
             # after 24 hours of inactivity.
             group_id = (
@@ -514,36 +580,60 @@ class ArchiveDB(ArchiveDBClient):
             # transaction.
             item_id = Queue.c.item_id
             popped_item = (
-                Queue.delete()
+                Queue.update()
                 .where(
                     Queue.c.item_id
                     == select([item_id])
                     .where(Queue.c.group_id == group_id)
+                    .where(Queue.c.issued == sqlalchemy.sql.null())
                     .order_by(item_id.asc())
                     .with_for_update(skip_locked=True)
                     .limit(1)
                 )
-                .returning(Queue.c.alert_ids)
+                .values(issued=sqlalchemy.func.now())
+                .returning(Queue.c.item_id)
                 .cte()
             )
             # Query for alerts whose IDs were in the block
-            alert_query = self._build_alert_query(
-                self._alert_id_column.in_(
-                    select([func.unnest(popped_item.c.alert_ids)])
-                ),
-                with_history=with_history,
-                with_cutouts=with_cutouts,
+            alert_ids = select([func.unnest(Queue.c.alert_ids)]).where(
+                Queue.c.item_id == popped_item.c.item_id
             )
-            with conn.begin() as transaction:
-                for result in conn.execute(alert_query):
-                    yield self._apply_schema(result)
-                # If we reach this point, all alerts from the block have been
-                # consumed. Commit the transaction to delete the queue item. If
-                # the generator is destroyed before we reach this point,
-                # however, the transaction will be rolled back, releasing the
-                # lock on the queue item and allowing another client to claim
-                # it.
-                transaction.commit()
+            alert_query = self._build_alert_query(
+                self._alert_id_column.in_(alert_ids),
+                with_history=with_history,
+            )
+            alert_query.append_column(popped_item.c.item_id.label("_chunk_id"))
+
+            alerts = []
+            chunk_id = None
+            for row in conn.execute(alert_query):
+                chunk_id = row["_chunk_id"]
+                alerts.append(self._apply_schema(row))
+
+            return chunk_id, alerts
+
+    def acknowledge_chunk_from_queue(self, group_name: str, item_id: int):
+        Groups = self._meta.tables["read_queue_groups"]
+        Queue = self._meta.tables["read_queue"]
+        with self.connect() as conn:
+            conn.execute(
+                Queue.delete()
+                .where(Queue.c.group_id == Groups.c.group_id)
+                .where(Groups.c.group_name == group_name)
+                .where(Queue.c.item_id == item_id)
+            )
+
+    def release_chunk_from_queue(self, group_name: str, item_id: int):
+        Groups = self._meta.tables["read_queue_groups"]
+        Queue = self._meta.tables["read_queue"]
+        with self.connect() as conn:
+            conn.execute(
+                Queue.update()
+                .where(Queue.c.group_id == Groups.c.group_id)
+                .where(Groups.c.group_name == group_name)
+                .where(Queue.c.item_id == item_id)
+                .values(issued=sqlalchemy.sql.null)
+            )
 
     def _build_base_alert_query(
         self,
@@ -552,6 +642,8 @@ class ArchiveDB(ArchiveDBClient):
         *,
         order: List[UnaryExpression] = [],
         distinct: bool = False,
+        limit: Optional[int] = None,
+        skip: int = 0,
     ):
         meta = self._meta
         Candidate = self.get_table("candidate")
@@ -565,6 +657,8 @@ class ArchiveDB(ArchiveDBClient):
             .where(condition)
             .order_by(*(([Alert.c.objectId.asc()] if distinct else []) + order))
         )
+        if limit is not None:
+            alert_base = alert_base.limit(limit).offset(skip)
         if distinct:
             return alert_base.distinct(Alert.c.objectId)
         else:
@@ -577,7 +671,8 @@ class ArchiveDB(ArchiveDBClient):
         order: List[UnaryExpression] = [],
         distinct: bool = False,
         with_history: bool = True,
-        with_cutouts: bool = False,
+        limit: Optional[int] = None,
+        skip: int = 0,
     ):
         """
         Build a query whose results _mostly_ match the structure of the orginal
@@ -593,15 +688,17 @@ class ArchiveDB(ArchiveDBClient):
         Alert = meta.tables["alert"]
         Pivot = meta.tables["alert_prv_candidate_pivot"]
         UpperLimitPivot = meta.tables["alert_upper_limit_pivot"]
-        Cutout = meta.tables["cutout"]
 
         json_agg = lambda table: func.json_agg(literal_column('"' + table.name + '"'))
 
         alert = self._build_base_alert_query(
-            [Alert.c.alert_id] + without_keys(Alert),
+            [Alert.c.alert_id]
+            + without_keys(Alert, lambda k: not k.startswith("avro_archive_")),
             condition,
             order=order,
             distinct=distinct,
+            limit=limit,
+            skip=skip,
         ).alias()
 
         candidate = (
@@ -655,22 +752,21 @@ class ArchiveDB(ArchiveDBClient):
                 upper_limits.lateral(), true()
             )
 
-        if with_cutouts:
-            cutout = (
-                select([json_agg(Cutout).label("cutouts")])
-                .select_from(Cutout)
-                .where(Cutout.c.alert_id == alert.c.alert_id)
-            )
-            query = query.join(cutout.lateral(), true())
-
         return query.select()
 
     def _apply_schema(self, candidate_row):
         alert = dict(candidate_row)
 
         # trim artifacts of schema adaptation
-        for k in ("alert_id", "jd", "programid", "partition_id", "ingestion_time"):
-            alert.pop(k)
+        for k in (
+            "alert_id",
+            "jd",
+            "programid",
+            "partition_id",
+            "ingestion_time",
+            "_chunk_id",
+        ):
+            alert.pop(k, None)
         alert["publisher"] = "Ampel"
         fluff = {"alert_id", "prv_candidate_id", "upper_limit_id"}
         missing = {"programpi", "pdiffimfilename"}
@@ -702,7 +798,9 @@ class ArchiveDB(ArchiveDBClient):
 
         return alert
 
-    def _fetch_photopoints_with_condition(self, conn, condition):
+    def _fetch_photopoints_with_condition(
+        self, conn, condition, include_upper_limits: bool = True
+    ):
         """
         Get all photopoints from alerts that match the condition, deduplicating
         history. This can be up to 100x faster than repeated queries for
@@ -717,6 +815,8 @@ class ArchiveDB(ArchiveDBClient):
         Alert = meta.tables["alert"]
         Pivot = meta.tables["alert_prv_candidate_pivot"]
         UpperLimitPivot = meta.tables["alert_upper_limit_pivot"]
+
+        json_agg = lambda table: func.json_agg(literal_column('"' + table.name + '"'))
 
         prv_candidate_id = func.unnest(Pivot.c.prv_candidate_id).label(
             "prv_candidate_id"
@@ -733,33 +833,48 @@ class ArchiveDB(ArchiveDBClient):
             prv_candidate_ids.c.prv_candidate_id == PrvCandidate.c.prv_candidate_id,
         )
 
-        upper_limit_id = func.unnest(UpperLimitPivot.c.upper_limit_id).label(
-            "upper_limit_id"
-        )
-        upper_limit_ids = (
-            select([upper_limit_id])
-            .select_from(Alert.join(UpperLimitPivot, isouter=True))
-            .where(condition)
-            .distinct(upper_limit_id)
-            .alias()
-        )
-        upper_limits = UpperLimit.join(
-            upper_limit_ids,
-            upper_limit_ids.c.upper_limit_id == UpperLimit.c.upper_limit_id,
-        )
-
-        json_agg = lambda table: func.json_agg(literal_column('"' + table.name + '"'))
-        q = union_all(
-            select([json_agg(UpperLimit).label("upper_limits")]).select_from(
-                upper_limits
-            ),
+        selects = [
             select([json_agg(PrvCandidate).label("prv_candidates")]).select_from(
                 prv_candidates
             ),
             select([json_agg(Candidate).label("candidates")])
             .select_from(Candidate.join(Alert))
             .where(condition),
-        )
+        ]
+
+        if include_upper_limits:
+            upper_limit_id = func.unnest(UpperLimitPivot.c.upper_limit_id).label(
+                "upper_limit_id"
+            )
+            upper_limit_ids = (
+                select([upper_limit_id])
+                .select_from(Alert.join(UpperLimitPivot, isouter=True))
+                .where(condition)
+                .distinct(upper_limit_id)
+                .alias()
+            )
+            upper_limits = UpperLimit.join(
+                upper_limit_ids,
+                upper_limit_ids.c.upper_limit_id == UpperLimit.c.upper_limit_id,
+            )
+            selects.insert(
+                0,
+                select([json_agg(UpperLimit).label("upper_limits")]).select_from(
+                    upper_limits
+                ),
+            )
+
+        q = union_all(*selects)
+
+        if self.query_debug:
+            log.warn(
+                str(
+                    q.compile(
+                        dialect=sqlalchemy.dialects.postgresql.dialect(),
+                        compile_kwargs={"literal_binds": True},
+                    )
+                )
+            )
 
         # ensure exactly one observation per jd. in case of conflicts, sort by
         # candidate > prv_candidate > upper_limit, then pid
@@ -771,14 +886,12 @@ class ArchiveDB(ArchiveDBClient):
         return [photopoints[k] for k in sorted(photopoints.keys(), reverse=True)]
 
     def count_alerts(self):
-        with self._engine.connect() as conn:
+        with self.connect() as conn:
             return conn.execute(select([func.count(self._alert_id_column)])).fetchone()[
                 0
             ]
 
-    def get_alert(
-        self, candid: int, *, with_history: bool = True, with_cutouts: bool = False
-    ):
+    def get_alert(self, candid: int, *, with_history: bool = True):
         """
         Retrieve an alert from the archive database
 
@@ -790,27 +903,38 @@ class ArchiveDB(ArchiveDBClient):
         """
         Alert = self._meta.tables["alert"]
 
-        with self._engine.connect() as conn:
-            for alert in self._fetch_alerts_with_condition(
+        with self.connect() as conn:
+            chunk_id, alerts = self._fetch_alerts_with_condition(
                 conn,
                 Alert.c.candid == candid,
                 with_history=with_history,
-                with_cutouts=with_cutouts,
-            ):
-                return alert
+            )
+            if alerts:
+                return alerts[0]
         return None
 
-    def get_cutout(self, candid):
+    def get_archive_segment(self, candid):
         """ """
         Alert = self._meta.tables["alert"]
-        Cutout = self._meta.tables["cutout"]
+        AvroArchive = self._meta.tables["avro_archive"]
         q = (
-            select([Cutout.c.kind, Cutout.c.stampData])
-            .select_from(Cutout.join(Alert))
+            select(
+                [
+                    AvroArchive.c.uri,
+                    Alert.c.avro_archive_start,
+                    Alert.c.avro_archive_end,
+                ]
+            )
+            .select_from(
+                Alert.join(
+                    AvroArchive,
+                    AvroArchive.c.avro_archive_id == Alert.c.avro_archive_id,
+                )
+            )
             .where(Alert.c.candid == candid)
         )
-        with self._engine.connect() as conn:
-            return dict(conn.execute(q).fetchall())
+        with self.connect() as conn:
+            return conn.execute(q).fetchone()
 
     def get_alerts_for_object(
         self,
@@ -818,8 +942,10 @@ class ArchiveDB(ArchiveDBClient):
         *,
         jd_start: Optional[float] = None,
         jd_end: Optional[float] = None,
+        programid: Optional[int] = None,
         with_history: bool = False,
-        with_cutouts: bool = False,
+        limit: Optional[int] = None,
+        start: int = 0,
     ):
         """
         Retrieve alerts from the archive database by ID
@@ -830,7 +956,6 @@ class ArchiveDB(ArchiveDBClient):
         :param jd_start: minimum JD of exposure start
         :param jd_end: maximum JD of exposure start
         :param with_history: return alert with previous detections and upper limits
-        :param with_cutout: return alert with cutout images
         :returns: a generator of alerts matching the condition
         """
         Alert = self._meta.tables["alert"]
@@ -847,15 +972,18 @@ class ArchiveDB(ArchiveDBClient):
             conditions.insert(0, Alert.c.jd < jd_end)
         if jd_start is not None:
             conditions.insert(0, Alert.c.jd >= jd_start)
+        if programid is not None:
+            conditions.insert(0, Alert.c.programid == programid)
         in_range = and_(*conditions)
 
-        with self._engine.connect() as conn:
-            yield from self._fetch_alerts_with_condition(
+        with self.connect() as conn:
+            return self._fetch_alerts_with_condition(
                 conn,
                 in_range,
-                [Alert.c.jd.asc()],
+                [Alert.c.alert_id.asc()],
                 with_history=with_history,
-                with_cutouts=with_cutouts,
+                limit=limit,
+                skip=start,
             )
 
     def get_photopoints_for_object(
@@ -865,6 +993,7 @@ class ArchiveDB(ArchiveDBClient):
         programid: Optional[int] = None,
         jd_start: Optional[float] = None,
         jd_end: Optional[float] = None,
+        include_upper_limits: bool = True,
     ):
         """
         Retrieve unique photopoints from the archive database by object ID.
@@ -885,8 +1014,10 @@ class ArchiveDB(ArchiveDBClient):
             conditions.append(self._get_alert_column("programid") == programid)
         in_range = and_(*conditions)
 
-        with self._engine.connect() as conn:
-            datapoints = self._fetch_photopoints_with_condition(conn, in_range)
+        with self.connect() as conn:
+            datapoints = self._fetch_photopoints_with_condition(
+                conn, in_range, include_upper_limits=include_upper_limits
+            )
         if datapoints:
             candidate = datapoints.pop(0)
             return {
@@ -895,6 +1026,7 @@ class ArchiveDB(ArchiveDBClient):
                 "programid": candidate["programid"],
                 "candidate": candidate,
                 "prv_candidates": datapoints,
+                "schemavsn": "3.3",
             }
         else:
             return None
@@ -904,7 +1036,6 @@ class ArchiveDB(ArchiveDBClient):
         candids: List[int],
         *,
         with_history: bool = True,
-        with_cutouts: bool = False,
     ):
         """
         Retrieve alerts from the archive database by ID
@@ -921,22 +1052,45 @@ class ArchiveDB(ArchiveDBClient):
             sqlalchemy.text(",".join(("alert.candid=%d DESC" % i for i in candids))),
         )
 
-        with self._engine.connect() as conn:
-            yield from self._fetch_alerts_with_condition(
+        with self.connect() as conn:
+            return self._fetch_alerts_with_condition(
                 conn,
                 Alert.c.candid.in_(candids),
                 [order],
                 with_history=with_history,
-                with_cutouts=with_cutouts,
             )
+
+    def _candidate_filter_condition(
+        self, candidate_filter: FilterClause
+    ) -> BooleanClauseList:
+        Candidate = self.get_table("candidate")
+        ops = {
+            "$eq": operator.eq,
+            "$ne": operator.ne,
+            "$gt": operator.gt,
+            "$gte": operator.ge,
+            "$lt": operator.lt,
+            "$lte": operator.le,
+            "$in": sqlalchemy.Column.in_,
+            "$nin": sqlalchemy.Column.notin_,
+        }
+        conditions = []
+        for column_name, opspec in candidate_filter.items():
+            if column_name not in Candidate.c:
+                raise NoSuchColumnError(column_name)
+            for op, value in opspec.items():
+                conditions.append(ops[op](Candidate.c[column_name], value))
+        return and_(*conditions)
 
     def _time_range_condition(
         self,
         programid: Optional[int] = None,
         jd_start: Optional[float] = None,
         jd_end: Optional[float] = None,
+        candidate_filter: Optional[FilterClause] = None,
     ) -> Tuple[BooleanClauseList, List[UnaryExpression]]:
         jd = self._get_alert_column("jd")
+        Candidate = self.get_table("candidate")
 
         conditions: List[ClauseElement] = []
         if jd_end is not None:
@@ -945,6 +1099,8 @@ class ArchiveDB(ArchiveDBClient):
             conditions.insert(0, jd >= jd_start)
         if programid is not None:
             conditions.insert(0, self._get_alert_column("programid") == programid)
+        if candidate_filter is not None:
+            conditions.append(self._candidate_filter_condition(candidate_filter))
 
         return and_(*conditions), [jd.asc()]
 
@@ -954,9 +1110,9 @@ class ArchiveDB(ArchiveDBClient):
         jd_start: float,
         jd_end: float,
         programid: Optional[int] = None,
+        candidate_filter: Optional[FilterClause] = None,
         with_history: bool = True,
-        with_cutouts: bool = False,
-        group_name: str = None,
+        group_name: Optional[str] = None,
         block_size: int = 5000,
         max_blocks: Optional[int] = None,
     ):
@@ -971,15 +1127,16 @@ class ArchiveDB(ArchiveDBClient):
             results of the query among clients in the same group.
         :param block_size: partition results in chunks with this many alerts
         """
-        condition, order = self._time_range_condition(programid, jd_start, jd_end)
+        condition, order = self._time_range_condition(
+            programid, jd_start, jd_end, candidate_filter
+        )
 
-        with self._engine.connect() as conn:
-            yield from self._fetch_alerts_with_condition(
+        with self.connect() as conn:
+            return self._fetch_alerts_with_condition(
                 conn,
                 condition,
                 order,
                 with_history=with_history,
-                with_cutouts=with_cutouts,
                 group_name=group_name,
                 block_size=block_size,
                 max_blocks=max_blocks,
@@ -995,103 +1152,136 @@ class ArchiveDB(ArchiveDBClient):
         jd_min: Optional[float] = None,
         jd_max: Optional[float] = None,
         latest: bool = False,
+        candidate_filter: Optional[FilterClause] = None,
     ) -> Tuple[BooleanClauseList, List[UnaryExpression]]:
-        from sqlalchemy import func
-        from sqlalchemy.sql.expression import BinaryExpression
+        from sqlalchemy import func, or_
+        from .server.healpix_cone_search import ranges_for_cone
 
         Alert = self._meta.tables["alert"]
         Candidate = self.get_table("candidate")
 
         center = func.ll_to_earth(dec, ra)
-        box = func.earth_box(center, radius)
         loc = func.ll_to_earth(Candidate.c.dec, Candidate.c.ra)
 
-        in_range = and_(
-            BinaryExpression(box, loc, "@>"),  # type: ignore
+        pix = Candidate.c._hpx
+
+        nside, ranges = ranges_for_cone(ra, dec, radius, max_nside=self.NSIDE)
+        scale = (self.NSIDE // nside)**2
+        conditions = [
+            or_(
+                *[
+                    and_(pix >= int(left*scale), pix < int(right*scale))
+                    for left, right in ranges
+                ]
+            ),
             func.earth_distance(center, loc) < radius,
-        )
+        ]
         # NB: filtering on jd from Candidate here is ~2x faster than _also_
         #      filtering on Alert (rows that pass are joined on the indexed
         #      primary key)
         if jd_min is not None:
-            in_range = and_(in_range, Candidate.c.jd >= jd_min)
+            conditions.insert(0, Candidate.c.jd >= jd_min)
         if jd_max is not None:
-            in_range = and_(in_range, Candidate.c.jd < jd_max)
+            conditions.insert(0, Candidate.c.jd < jd_max)
         if isinstance(programid, int):
-            in_range = and_(in_range, self._get_alert_column("programid") == programid)
+            conditions.insert(0, self._get_alert_column("programid") == programid)
+        if candidate_filter is not None:
+            conditions.append(self._candidate_filter_condition(candidate_filter))
 
-        return in_range, [Alert.c.jd.asc()] if not latest else [
-            Alert.c.jd.desc(),
-            Alert.c.candid.desc(),  # NB: reprocessed points may have identical jds; break ties with candid
+        return and_(*conditions), [Candidate.c.jd.asc()] if not latest else [
+            Candidate.c.jd.desc(),
+            Candidate.c.candid.desc(),  # NB: reprocessed points may have identical jds; break ties with candid
         ]
-
-    def _healpix_pixel_condition(
-        self,
-        *,
-        nside: int,
-        ipix: Union[int, List[int]],
-    ) -> BooleanClauseList:
-        Candidate = self.get_table("candidate")
-
-        pix = func.healpix_ang2ipix_nest(64, Candidate.c.ra, Candidate.c.dec)
-
-        if not (nside <= 8192 and nside >= 1 and math.log2(nside).is_integer()):
-            raise ValueError("nside must be >= 1, <= 8192, and a power of 2")
-        elif nside == 64:
-            # native resolution; use indices verbatim
-            in_pixels = pix == ipix if isinstance(ipix, int) else pix.in_(ipix)
-        elif nside > 64:
-            # higher resolution; filter by (indexed) native pixel and provided subpixel
-            subpix = func.healpix_ang2ipix_nest(nside, Candidate.c.ra, Candidate.c.dec)
-            scale = (nside // 64) ** 2
-            isuperpix = (
-                ipix // scale
-                if isinstance(ipix, int)
-                else list(set([p // scale for p in ipix]))
-            )
-            in_pixels = and_(
-                pix == isuperpix if isinstance(isuperpix, int) else pix.in_(isuperpix),
-                subpix == ipix if isinstance(ipix, int) else subpix.in_(ipix),
-            )
-        elif nside < 64:
-            # lower resolution: treat provided superpixels as the ranges of native
-            # pixels they contain
-            scale = (64 // nside) ** 2
-            nside = 64
-            in_pixels = or_(
-                *(
-                    and_(pix >= i * scale, pix < (i + 1) * scale)
-                    for i in ([ipix] if isinstance(ipix, int) else ipix)
-                )
-            )
-
-        return in_pixels
 
     def _healpix_search_condition(
         self,
         *,
-        pixels: Dict[int, Union[int, List[int]]],
+        pixels: Mapping[int, Union[int, List[int]]],
         jd_min: float,
         jd_max: float,
         latest: bool = False,
+        programid: Optional[int] = None,
+        candidate_filter: Optional[FilterClause] = None,
     ) -> Tuple[BooleanClauseList, List[UnaryExpression]]:
+        from .server.skymap import multirange
         Candidate = self.get_table("candidate")
 
-        return (
-            and_(
-                or_(
-                    *(
-                        self._healpix_pixel_condition(nside=nside, ipix=ipix)
-                        for nside, ipix in pixels.items()
-                    )
-                ),
-                Candidate.c.jd >= jd_min,
-                Candidate.c.jd < jd_max,
+        # NB: searches against sets of pixel indices are reasonably efficient for nside=64,
+        # but target lists could become unfeasibly long for large nside. use multiranges
+        # with postgres >= 14 for a more efficient search in this case.
+        # NBB: expressing range checks as an giant OR clause can be horribly inefficient if
+        # if the pixel index is an expression, as postgres does not elide multiple evaluations
+        # of healpix_ang2ipix_nest, even though it is marked IMMUTABLE. this can result in
+        # e.g. the pixel index being calculated 300 times for every row if you have 300
+        # elements in your OR clause, which can end up dominating the runtime of the query.
+
+        # use stored healpix column
+        pix = Candidate.c._hpx
+
+        ranges: multirange[int] = multirange()
+
+        for nside, ipix in pixels.items():
+            if not (nside <= self.NSIDE and nside >= 1 and math.log2(nside).is_integer()):
+                raise ValueError(f"nside must be >= 1, <= {self.NSIDE}, and a power of 2")
+            scale = (self.NSIDE // nside) ** 2
+            for i in ([ipix] if isinstance(ipix, int) else ipix):
+                ranges.add(i*scale, (i+1)*scale)
+
+        and_conditions = [
+            or_(
+                *[
+                    and_(pix >= int(left), pix < int(right))
+                    for left, right in ranges
+                ]
             ),
+            Candidate.c.jd >= jd_min,
+            Candidate.c.jd < jd_max,
+        ]
+        if programid is not None:
+            and_conditions.append(Candidate.c.programid == programid)
+        if candidate_filter is not None:
+            and_conditions.append(self._candidate_filter_condition(candidate_filter))
+
+        return (
+            and_(*and_conditions),
             [Candidate.c.jd.asc()]
             if not latest
             else [Candidate.c.jd.desc(), Candidate.c.candid.desc()],
         )
+
+    def _object_search_condition(
+        self,
+        objectId: Union[str, List[str]],
+        programid: Optional[int] = None,
+        jd_start: Optional[float] = None,
+        jd_end: Optional[float] = None,
+        candidate_filter: Optional[FilterClause] = None,
+    ) -> Tuple[BooleanClauseList, List[UnaryExpression]]:
+
+        Alert = self._meta.tables["alert"]
+        if isinstance(objectId, str):
+            match = Alert.c.objectId == objectId
+        elif isinstance(objectId, collections.Collection):
+            match = Alert.c.objectId.in_(objectId)
+        else:
+            raise TypeError(
+                "objectId must be str or collection, got {}".format(type(objectId))
+            )
+        conditions = [match]
+
+        jd = self._get_alert_column("jd")
+        Candidate = self.get_table("candidate")
+
+        if jd_end is not None:
+            conditions.insert(0, jd < jd_end)
+        if jd_start is not None:
+            conditions.insert(0, jd >= jd_start)
+        if programid is not None:
+            conditions.insert(0, self._get_alert_column("programid") == programid)
+        if candidate_filter is not None:
+            conditions.append(self._candidate_filter_condition(candidate_filter))
+
+        return and_(*conditions), [jd.asc()]
 
     def get_alerts_in_cone(
         self,
@@ -1102,9 +1292,9 @@ class ArchiveDB(ArchiveDBClient):
         programid: Optional[int] = None,
         jd_start: Optional[float] = None,
         jd_end: Optional[float] = None,
+        candidate_filter: Optional[FilterClause] = None,
         latest: bool = False,
         with_history: bool = False,
-        with_cutouts: bool = False,
         group_name: Optional[str] = None,
         block_size: int = 5000,
         max_blocks: Optional[int] = None,
@@ -1130,20 +1320,47 @@ class ArchiveDB(ArchiveDBClient):
             jd_min=jd_start,
             jd_max=jd_end,
             latest=latest,
+            candidate_filter=candidate_filter,
         )
 
-        with self._engine.connect() as conn:
-            yield from self._fetch_alerts_with_condition(
+        with self.connect() as conn:
+            return self._fetch_alerts_with_condition(
                 conn,
                 condition,
                 orders,
                 with_history=with_history,
-                with_cutouts=with_cutouts,
                 distinct=latest,
                 group_name=group_name,
                 block_size=block_size,
                 max_blocks=max_blocks,
             )
+
+
+    def get_random_alerts(
+        self,
+        *,
+        count: int,
+        with_history: bool = False,
+    ):
+
+        Alert = self._meta.tables["alert"]
+
+        with self.connect() as conn:
+            ids = [
+                conn.execute("select alert_id from alert TABLESAMPLE system_rows(1)").fetchone()[0]
+                for _ in range(count)
+            ]
+            condition = Alert.c.alert_id.in_(ids)
+
+            t0 = time.time()
+            _, alerts = self._fetch_alerts_with_condition(
+                conn,
+                condition,
+                with_history=with_history,
+            )
+            dt = time.time() - t0
+            return alerts, dt
+
 
     def get_objects_in_cone(
         self,
@@ -1152,6 +1369,7 @@ class ArchiveDB(ArchiveDBClient):
         dec: float,
         radius: float,
         programid: Optional[int] = None,
+        candidate_filter: Optional[FilterClause] = None,
         jd_start: Optional[float] = None,
         jd_end: Optional[float] = None,
     ):
@@ -1173,10 +1391,11 @@ class ArchiveDB(ArchiveDBClient):
             programid=programid,
             jd_min=jd_start,
             jd_max=jd_end,
+            candidate_filter=candidate_filter,
             latest=True,
         )
 
-        with self._engine.connect() as conn:
+        with self.connect() as conn:
             for row in conn.execute(
                 self._build_base_alert_query(
                     [self._meta.tables["alert"].c.objectId],
@@ -1190,12 +1409,13 @@ class ArchiveDB(ArchiveDBClient):
     def get_alerts_in_healpix(
         self,
         *,
-        pixels: Dict[int, Union[int, List[int]]],
+        pixels: Mapping[int, Union[int, List[int]]],
         jd_start: float,
         jd_end: float,
         latest: bool = False,
+        programid: Optional[int] = None,
+        candidate_filter: Optional[FilterClause] = None,
         with_history: bool = False,
-        with_cutouts: bool = False,
         group_name: Optional[str] = None,
         block_size: int = 5000,
         max_blocks: Optional[int] = None,
@@ -1211,21 +1431,52 @@ class ArchiveDB(ArchiveDBClient):
 
         """
         condition, orders = self._healpix_search_condition(
-            pixels=pixels, jd_min=jd_start, jd_max=jd_end, latest=latest
+            pixels=pixels,
+            jd_min=jd_start,
+            jd_max=jd_end,
+            latest=latest,
+            programid=programid,
+            candidate_filter=candidate_filter,
         )
 
-        with self._engine.connect() as conn:
-            yield from self._fetch_alerts_with_condition(
+        with self.connect() as conn:
+            return self._fetch_alerts_with_condition(
                 conn,
                 condition,
                 orders,
                 distinct=latest,
                 with_history=with_history,
-                with_cutouts=with_cutouts,
                 group_name=group_name,
                 block_size=block_size,
-                max_blocks=max_blocks,
             )
+
+    def count_alerts_in_healpix(
+        self,
+        *,
+        pixels: Mapping[int, Union[int, List[int]]],
+        jd_start: float,
+        jd_end: float,
+        programid: Optional[int] = None,
+        candidate_filter: Optional[FilterClause] = None
+    ) -> int:
+        """
+        Count alerts in HEALpix pixels
+
+        :param pixels: dict of nside->pixel index (nested ordering)
+        :param jd_start: minimum JD of exposure start
+        :param jd_end: maximum JD of exposure start
+        """
+        condition, orders = self._healpix_search_condition(
+            pixels=pixels,
+            jd_min=jd_start,
+            jd_max=jd_end,
+            latest=False,
+            programid=programid,
+            candidate_filter=candidate_filter,
+        )
+
+        with self.connect() as conn:
+            return conn.execute(self._build_base_alert_query([func.count()], condition)).fetchone()[0]
 
 
 def consumer_groups_command() -> None:

@@ -1,6 +1,11 @@
+import math
 from base64 import b64encode
-from typing import List, Dict, Any, Literal, Optional
+from datetime import datetime
+from chunk import Chunk
+from typing import List, Dict, Any, Literal, Optional, Union
 from pydantic import BaseModel, Field, validator, root_validator
+from ..types import FilterClause
+from ..ArchiveDBClient import ArchiveDBClient
 
 
 class StrictModel(BaseModel):
@@ -8,10 +13,21 @@ class StrictModel(BaseModel):
         extra = "forbid"
 
 
-class StreamDescription(BaseModel):
+class Stream(BaseModel):
     resume_token: str
     chunk_size: int
+
+
+class ChunkCount(BaseModel):
+    items: int
     chunks: int
+
+
+class StreamDescription(Stream):
+    remaining: ChunkCount
+    pending: ChunkCount
+    started_at: datetime
+    finished_at: Optional[datetime]
 
 
 class Topic(BaseModel):
@@ -50,19 +66,30 @@ class ConeConstraint(StrictModel):
 
 
 class TimeConstraint(StrictModel):
-    lt: Optional[float] = Field(None)
-    gt: Optional[float] = Field(None)
+    lt: Optional[float] = Field(None, alias="$lt")
+    gt: Optional[float] = Field(None, alias="$gt")
 
 
 class StrictTimeConstraint(TimeConstraint):
-    lt: float
-    gt: float
+    lt: float = Field(..., alias="$lt")
+    gt: float = Field(..., alias="$gt")
 
 
-class AlertQuery(StrictModel):
+class CandidateFilterable(StrictModel):
+    candidate: Optional[FilterClause] = None
+
+    @validator("candidate", pre=True, each_item=True)
+    def validate_operator(cls, v):
+        if isinstance(v, dict):
+            return v
+        else:
+            return {"$eq": v}
+
+
+class AlertQuery(CandidateFilterable):
     cone: Optional[ConeConstraint] = None
-    jd: TimeConstraint = TimeConstraint()
-    programid: Optional[int] = None
+    jd: TimeConstraint = TimeConstraint()  # type: ignore[call-arg]
+    candidate: Optional[FilterClause] = None
     chunk_size: int = Field(
         100, gte=0, lte=10000, description="Number of alerts per chunk"
     )
@@ -74,10 +101,18 @@ class AlertQuery(StrictModel):
         return values
 
 
-class HEALpixMapQuery(StrictModel):
-    nside: int
-    pixels: List[int]
-    jd: StrictTimeConstraint
+class ObjectQuery(CandidateFilterable):
+    objectId: Union[str, List[str]]
+    jd: TimeConstraint = TimeConstraint()  # type: ignore[call-arg]
+    candidate: Optional[FilterClause] = None
+    chunk_size: int = Field(
+        100, gte=0, lte=10000, description="Number of alerts per chunk"
+    )
+
+
+class AlertChunkQueryBase(StrictModel):
+    """Options for queries that will return a chunk of alerts"""
+
     latest: bool = Field(
         False, description="Return only the latest alert for each objectId"
     )
@@ -92,14 +127,35 @@ class HEALpixMapQuery(StrictModel):
     )
 
 
-class AlertCutouts(BaseModel):
-    """
-    Images are gzipped FITS files, b64 encoded
-    """
+class MapQueryBase(CandidateFilterable):
+    jd: StrictTimeConstraint
 
-    template: str
-    science: str
-    difference: str
+
+class HEALpixMapRegion(StrictModel):
+    nside: int = Field(..., gt=0, le=ArchiveDBClient.NSIDE)
+    pixels: list[int]
+
+    @validator("nside")
+    def power_of_two(cls, nside):
+        if not math.log2(nside).is_integer():
+            raise ValueError("nside must be a power of 2")
+        return nside
+
+
+class HEALpixMapQuery(AlertChunkQueryBase, MapQueryBase, HEALpixMapRegion):
+    ...
+
+
+class HEALpixRegionQueryBase(MapQueryBase):
+    regions: list[HEALpixMapRegion]
+
+
+class HEALpixRegionQuery(AlertChunkQueryBase, HEALpixRegionQueryBase):
+    ...
+
+
+class HEALpixRegionCountQuery(HEALpixRegionQueryBase):
+    ...
 
 
 # Generated from tests/test-data/schema_3.3.json
@@ -281,38 +337,90 @@ class PrvCandidate(BaseModel):
     rbversion: Optional[str]
 
 
+class FPHist(BaseModel):
+    field: Optional[int]
+    rcid: Optional[int]
+    fid: int
+    pid: int
+    rfid: int
+    sciinpseeing: Optional[float]
+    scibckgnd: Optional[float]
+    scisigpix: Optional[float]
+    magzpsci: Optional[float]
+    magzpsciunc: Optional[float]
+    magzpscirms: Optional[float]
+    clrcoeff: Optional[float]
+    clrcounc: Optional[float]
+    exptime: Optional[float]
+    adpctdif1: Optional[float]
+    adpctdif2: Optional[float]
+    diffmaglim: Optional[float]
+    programid: int
+    jd: float
+    forcediffimflux: Optional[float]
+    forcediffimfluxunc: Optional[float]
+    procstatus: Optional[str]
+    distnr: Optional[float]
+    ranr: float
+    decnr: float
+    magnr: Optional[float]
+    sigmagnr: Optional[float]
+    chinr: Optional[float]
+    sharpnr: Optional[float]
+
+
 class Cutout(BaseModel):
     """
-    avro alert schema
+    stampData is a gzipped FITS file, b64 encoded
     """
 
     fileName: str
     stampData: bytes
 
 
-class Alert(BaseModel):
-    """
-    avro alert schema for ZTF (www.ztf.caltech.edu)
-    """
-
-    schemavsn: str = "3.3"
-    publisher: str = "Ampel"
-    objectId: str
+class AlertBase(BaseModel):
     candid: int
-    candidate: Candidate
-    prv_candidates: Optional[List[PrvCandidate]]
+    objectId: str
+
+    class Config:
+        json_encoders = {bytes: lambda v: b64encode(v).decode()}
+
+
+class AlertCutouts(AlertBase):
     cutoutScience: Optional[Cutout]
     cutoutTemplate: Optional[Cutout]
     cutoutDifference: Optional[Cutout]
 
-    class Config:
-        json_encoders = {bytes: lambda v: b64encode(v).decode()}
+
+class Alert_33(AlertCutouts):
+    """
+    avro alert schema for ZTF (www.ztf.caltech.edu)
+    """
+
+    schemavsn: Union[Literal["1.9"], Literal["2.0"], Literal["3.0"], Literal["3.1"], Literal["3.2"], Literal["3.3"]]
+    publisher: str = "Ampel"
+    candidate: Candidate
+    prv_candidates: Optional[List[PrvCandidate]]
+
+
+class Alert_402(Alert_33):
+    schemavsn: Literal["4.02"]  # type: ignore[assignment]
+    fp_hists: Optional[List[FPHist]]
+
+
+Alert = Union[Alert_33, Alert_402]
 
 
 class AlertChunk(BaseModel):
     resume_token: str
-    chunks_remaining: int
+    chunk: Optional[int]
     alerts: List[Alert]
+    remaining: ChunkCount
+    pending: ChunkCount
 
     class Config:
         json_encoders = {bytes: lambda v: b64encode(v).decode()}
+
+
+class AlertCount(BaseModel):
+    count: int

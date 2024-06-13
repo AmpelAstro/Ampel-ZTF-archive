@@ -1,13 +1,32 @@
+import base64
+from contextlib import contextmanager
+import io
+from pathlib import Path
 import secrets
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
+from ampel.ztf.archive.server.cutouts import extract_alert, pack_records, ALERT_SCHEMAS
+from ampel.ztf.archive.server.db import get_archive, get_archive_updater
+from ampel.ztf.archive.server.s3 import get_object, get_range, get_s3_bucket
+from ampel.ztf.archive.server.tokens import AuthToken
+import asyncio
+from fastapi.security import http
+from urllib.parse import urlsplit
+import fastavro
 
 import jwt
 import httpx
 import pytest
 from fastapi import status
-from ampel.ztf.archive.ArchiveDB import ArchiveDB
+from ampel.ztf.archive.ArchiveDB import ArchiveDB, GroupInfo
 import sqlalchemy
+from starlette.status import (
+    HTTP_200_OK,
+    HTTP_201_CREATED,
+    HTTP_202_ACCEPTED,
+    HTTP_404_NOT_FOUND,
+)
+from tests.fixtures import walk_tarball
 
 if TYPE_CHECKING:
     from _pytest.monkeypatch import MonkeyPatch
@@ -26,21 +45,30 @@ class BearerAuth(httpx.Auth):
 
 
 @pytest.fixture
-def mocked_app(monkeypatch: "MonkeyPatch", mocker: "MockerFixture"):
+def mocked_app(monkeypatch: "MonkeyPatch", mocker: "MockerFixture", mock_s3_bucket):
     monkeypatch.setenv("ALLOWED_IDENTITIES", '["someorg","someorg/a-team"]')
     from ampel.ztf.archive.server import app
     from ampel.ztf.archive.server.settings import settings
     from ampel.ztf.archive.server import db
 
     mocker.patch.object(db, "ArchiveDB")
+    mocker.patch.object(db, "ArchiveUpdater")
+    get_archive.cache_clear()
+    get_archive_updater.cache_clear()
     yield app
+    get_archive.cache_clear()
+    get_archive_updater.cache_clear()
 
 
 @pytest.fixture
 def mock_auth(mocker: "MockerFixture"):
     from ampel.ztf.archive.server import tokens
 
-    mocker.patch.object(tokens, "find_access_token", side_effect=lambda *args: True)
+    mocker.patch.object(
+        tokens,
+        "find_access_token",
+        side_effect=lambda *args: AuthToken(0, "writer", False),
+    )
     yield
 
 
@@ -55,9 +83,18 @@ def mock_db(mocked_app, alert_generator):
     # add fake drbversion to pre-drb alert
     alert["candidate"]["drbversion"] = "0.0"
     db.get_alert.return_value = alert
-    db.get_alerts_for_object.return_value = [alert]
+    db.get_alerts_for_object.return_value = (-1, [alert])
+    db.get_group_info.return_value = {
+        "error": False,
+        "msg": None,
+        "chunk_size": 5000,
+        "remaining": {"chunks": 1, "items": 37},
+        "pending": {"chunks": 0, "items": 0},
+    }
+    db.get_alerts_in_healpix.return_value = (-1, [alert])
     yield db
     mocked_app.get_archive.cache_clear()
+    mocked_app.get_archive_updater.cache_clear()
 
 
 @pytest.fixture
@@ -71,18 +108,24 @@ async def mock_client(mocked_app):
 
 
 @pytest.fixture
-def integration_app(monkeypatch: "MonkeyPatch", alert_archive):
-    monkeypatch.setenv("ALLOWED_IDENTITIES", '["someorg","someorg/a-team"]')
+def integration_app(monkeypatch: "MonkeyPatch", alert_archive, localstack_s3_bucket):
     monkeypatch.setattr(
         "ampel.ztf.archive.server.settings.settings.archive_uri", alert_archive
+    )
+    monkeypatch.setattr(
+        "ampel.ztf.archive.server.settings.settings.allowed_identities",
+        {"someorg", "someorg/a-team"},
     )
 
     from ampel.ztf.archive.server import app
 
     assert app.settings.archive_uri == alert_archive
+    assert app.settings.allowed_identities == {"someorg", "someorg/a-team"}
     app.get_archive.cache_clear()
+    app.get_archive_updater.cache_clear()
     yield app
     app.get_archive.cache_clear()
+    app.get_archive_updater.cache_clear()
 
 
 @pytest.fixture
@@ -94,22 +137,69 @@ async def integration_client(integration_app):
         yield client
 
 
+@contextmanager
+def set_token_role(token: str, role: str):
+    db = get_archive()
+    Token = db._meta.tables["access_token"]
+    with db._engine.connect() as conn:
+        prev_role = conn.execute(
+            Token.select().where(Token.c.token == token)
+        ).fetchone()["role"]
+        try:
+            conn.execute(
+                Token.update(values={"role": role}).where(Token.c.token == token)
+            )
+            yield
+        finally:
+            conn.execute(
+                Token.update(values={"role": prev_role}).where(Token.c.token == token)
+            )
+
+
 @pytest.fixture
-async def authed_integration_client(integration_app, access_token):
+def write_token(integration_app, access_token):
+    with set_token_role(access_token, "writer"):
+        yield access_token
+
+
+@pytest.fixture
+async def authed_integration_client(integration_app, write_token):
     async with httpx.AsyncClient(
         app=integration_app.app,
         base_url="http://test",
-        auth=BearerAuth(access_token),
+        auth=BearerAuth(write_token),
     ) as client:
         yield client
 
 
+def test_parse_json_from_env(monkeypatch):
+    """
+    JSON gets parsed from env variables
+    """
+    from ampel.ztf.archive.server.settings import Settings
+
+    assert Settings().allowed_identities != {"someorg", "someorg/a-team"}
+    monkeypatch.setenv("ALLOWED_IDENTITIES", '["someorg","someorg/a-team"]')
+    assert Settings().allowed_identities == {"someorg", "someorg/a-team"}
+
+
+@pytest.mark.parametrize("schemavsn", ["3.3", "4.02"])
 @pytest.mark.asyncio
-async def test_get_alert(mock_client: httpx.AsyncClient, mock_db: MagicMock):
+async def test_get_alert(mock_client: httpx.AsyncClient, mock_db: MagicMock, schemavsn):
+    with open(Path(__file__).parent / "test-data" / f"schema_{schemavsn}.avro", "rb") as f:
+        alert: dict = next(fastavro.reader(f))
+    mock_db.get_alert.return_value = alert
     response = await mock_client.get("/alert/123")
     response.raise_for_status()
     assert mock_db.get_alert.called_once
     assert mock_db.get_alert.call_args.args[0] == 123
+    assert response.json().keys() == alert.keys()
+
+
+# metafixture as suggested in https://github.com/pytest-dev/pytest/issues/349#issuecomment-189370273
+@pytest.fixture(params=["mock_client", "authed_integration_client"])
+def client(request):
+    yield request.getfixturevalue(request.param)
 
 
 @pytest.mark.parametrize(
@@ -129,7 +219,7 @@ async def test_basic_auth(
     mocker,
 ):
     mocker.patch("ampel.ztf.archive.server.tokens.find_access_token").return_value = (
-        auth is not BearerAuth
+        None if auth is BearerAuth else AuthToken(0, "jiminy", False)
     )
     kwargs = {}
     if auth is DEFAULT or auth is BearerAuth:
@@ -138,6 +228,49 @@ async def test_basic_auth(
         kwargs["auth"] = None
     response = await mock_client.get("/object/thingamajig/alerts", **kwargs)
     assert response.status_code == status
+
+
+@pytest.mark.parametrize(
+    "partnership",
+    [False, True],
+)
+@pytest.mark.parametrize(
+    "params,status_code",
+    [
+        ({}, status.HTTP_200_OK),
+        ({"programid": 1}, status.HTTP_200_OK),
+        ({"programid": 2}, status.HTTP_401_UNAUTHORIZED),
+    ],
+)
+@pytest.mark.asyncio
+async def test_programid_auth(
+    mock_client: httpx.AsyncClient,
+    mock_db: MagicMock,
+    mocker,
+    partnership,
+    params,
+    status_code,
+):
+    mocker.patch(
+        "ampel.ztf.archive.server.tokens.find_access_token"
+    ).return_value = AuthToken(0, "reader", partnership)
+
+    response = await mock_client.get(
+        "/object/thingamajig/alerts", auth=BearerAuth("tokeytoken"), params=params
+    )
+    if partnership:
+        assert response.status_code == status.HTTP_200_OK
+        assert mock_db.get_alerts_for_object.call_args.kwargs[
+            "programid"
+        ] == params.get(
+            "programid"
+        ), "programid is passed through for partnership token"
+    else:
+        assert response.status_code == status_code
+        if response.status_code == status.HTTP_200_OK:
+            assert (
+                mock_db.get_alerts_for_object.call_args.kwargs["programid"] == 1
+            ), "non-partnership tokens always query programid 1"
 
 
 @pytest.mark.asyncio
@@ -183,7 +316,7 @@ async def test_get_healpix_skymap(
         "pixels": [0, 56, 79, 81]
         + list(range(10 * 16, 11 * 16))
         + list(range(4 * 4, 5 * 4)),
-        "jd": {"gt": 0, "lt": 1},
+        "jd": {"$gt": 0, "$lt": 1},
     }
     response = await mock_client.post("/alerts/healpix/skymap", json=query)
     response.raise_for_status()
@@ -193,6 +326,20 @@ async def test_get_healpix_skymap(
         2: [4],
         4: [0, 56, 79, 81],
     }, "map is decomposed into superpixels"
+
+
+@pytest.mark.parametrize("nside", [0, ArchiveDB.NSIDE * 2, ArchiveDB.NSIDE - 1])
+@pytest.mark.asyncio
+async def test_get_healpix_validation(
+    mock_client: httpx.AsyncClient, mock_db: MagicMock, mock_auth, nside
+):
+    query = {
+        "jd": {"$gt": 0, "$lt": 1},
+        "nside": nside,
+        "pixels": [0],
+    }
+    response = await mock_client.post("/alerts/healpix/skymap", json=query)
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
 
 @pytest.mark.parametrize(
@@ -214,16 +361,85 @@ async def test_get_photopoints(
         assert len(response.json()["prv_candidates"]) == 48
 
 
+@pytest.fixture
+def instant_timeout(monkeypatch: pytest.MonkeyPatch):
+    """
+    Set statement timeout to 1 ms
+    """
+    from ampel.ztf.archive.server import db
+
+    monkeypatch.setattr(
+        "ampel.ztf.archive.server.db.settings.default_statement_timeout", 1e-3
+    )
+    db.get_archive.cache_clear()
+    yield
+    db.get_archive.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_query_canceled(
+    authed_integration_client: httpx.AsyncClient,
+    instant_timeout,
+):
+    """
+    Statement timeouts raise a helpful error
+    """
+    response = await authed_integration_client.get(
+        "/object/ZTF18abaqwse/photopoints",
+    )
+    assert response.status_code == status.HTTP_504_GATEWAY_TIMEOUT
+
+
 @pytest.mark.asyncio
 async def test_create_stream(
     authed_integration_client: httpx.AsyncClient, integration_app
 ):
     response = await authed_integration_client.post("/streams/from_query", json={})
-    assert response.status_code == 201
+    assert response.status_code == HTTP_202_ACCEPTED
     body = response.json()
-    assert body["chunks"] > 0
-    archive: ArchiveDB = integration_app.get_archive()
-    assert body["chunks"] == archive.get_remaining_chunks(body["resume_token"])
+    response = await authed_integration_client.get(f"/stream/{body['resume_token']}")
+    response.raise_for_status()
+    assert response.json()["remaining"]["chunks"] > 0
+    response = await authed_integration_client.get(
+        f"/stream/{body['resume_token']}/chunk"
+    )
+    response.raise_for_status()
+    body = response.json()
+    assert body["remaining"]["chunks"] == 0
+    assert body["pending"]["chunks"] == 1
+    response = await authed_integration_client.post(
+        f"/stream/{body['resume_token']}/chunk/{body['chunk']}/acknowledge"
+    )
+    assert response.status_code == status.HTTP_200_OK
+
+    response = await authed_integration_client.get(f"/stream/{body['resume_token']}")
+    response.raise_for_status()
+    assert response.json()["remaining"]["chunks"] == 0
+
+
+@pytest.mark.asyncio
+async def test_create_stream_bad(
+    authed_integration_client: httpx.AsyncClient, integration_app
+):
+    response = await authed_integration_client.post(
+        "/streams/from_query",
+        json={
+            "jd": {"$gt": 2459550.5, "$lt": 2459550.5},
+            "candidate": {
+                "drb": {"$gt": 0.9},
+                "ndethist": {"$gt": 10, "$lte": 10000},
+                "distpsnr1": {"$gt": 0.00001, "$lte": 0.5},
+                "isdiffpos": {"$in": ["t", 1]},
+            },
+        },
+    )
+    assert response.status_code == HTTP_202_ACCEPTED
+    body = response.json()
+    response = await authed_integration_client.get(f"/stream/{body['resume_token']}")
+    assert response.status_code == status.HTTP_424_FAILED_DEPENDENCY
+    assert response.json()["detail"]["msg"].startswith(
+        "(psycopg2.errors.UndefinedFunction) operator does not exist"
+    )
 
 
 @pytest.mark.asyncio
@@ -232,20 +448,36 @@ async def test_read_stream(
     authed_integration_client: httpx.AsyncClient,
 ):
     response = await authed_integration_client.post("/streams/from_query", json={})
-    assert response.status_code == 201
+    assert response.status_code == HTTP_202_ACCEPTED
     body = response.json()
 
-    response = await integration_client.get(f"/stream/{body['resume_token']}/chunk")
+    for _ in range(10):
+        response = await integration_client.get(f"/stream/{body['resume_token']}/chunk")
+        if response.status_code < 400:
+            break
+        await asyncio.sleep(1)
     response.raise_for_status()
     chunk = response.json()
     assert len(chunk["alerts"]) == 10
-    assert chunk["chunks_remaining"] == 0
+    assert chunk["remaining"]["chunks"] == 0
+    assert chunk["pending"]["chunks"] == 1
+
+    response = await integration_client.post(
+        f"/stream/{chunk['resume_token']}/chunk/{chunk['chunk']}/acknowledge"
+    )
+    response.raise_for_status()
+    response = await integration_client.get(f"/stream/{chunk['resume_token']}")
+    response.raise_for_status()
+    info = response.json()
+    assert info["remaining"]["chunks"] == 0
+    assert info["pending"]["chunks"] == 0
 
     response = await integration_client.get(f"/stream/{body['resume_token']}/chunk")
     response.raise_for_status()
     chunk = response.json()
     assert len(chunk["alerts"]) == 0
-    assert chunk["chunks_remaining"] == 0
+    assert info["remaining"]["chunks"] == 0
+    assert info["pending"]["chunks"] == 0
 
     # read a nonexistant chunk
     response = await integration_client.get(
@@ -285,8 +517,8 @@ async def test_read_topic(
 
     response = await integration_client.get(f"/stream/{stream['resume_token']}/chunk")
     response.raise_for_status()
-    assert [alert["candid"] for alert in response.json()["alerts"]] == candids
-    assert response.json()["chunks_remaining"] == 0
+    assert {alert["candid"] for alert in response.json()["alerts"]} == set(candids)
+    assert response.json()["remaining"]["chunks"] == 0
 
 
 @pytest.mark.asyncio
@@ -401,3 +633,164 @@ async def test_forbidden_identity(
     )
     response = await integration_client.get("/tokens", auth=BearerAuth(user_token))
     assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.fixture
+def packed_alert_chunk(
+    alert_generator,
+) -> tuple[dict, bytes, list[dict], list[tuple[int, int]]]:
+    records, schemas = zip(*alert_generator(with_schema=True))
+
+    blob, ranges = pack_records(records, schema=schemas[0])
+
+    return schemas[0], blob, records, ranges
+
+
+def test_extract_block(
+    packed_alert_chunk: tuple[dict, bytes, list[dict], list[tuple[int, int]]]
+):
+    """
+    We can read an individual block straight out of an AVRO file
+    """
+    schema, blob, records, ranges = packed_alert_chunk
+
+    for record, span in zip(records, ranges):
+        reco = extract_alert(record["candid"], io.BytesIO(blob[slice(*span)]), schema)
+        assert reco == record
+
+
+def test_extract_block_from_s3(
+    packed_alert_chunk: tuple[dict, bytes, list[dict], list[tuple[int, int]]],
+    mock_s3_bucket,
+):
+    schema, blob, records, ranges = packed_alert_chunk
+
+    bucket = get_s3_bucket()
+    obj = bucket.Object("blobsy.avro")
+    response = obj.put(
+        Body=blob,
+        Metadata={"schema-name": schema["name"], "schema-version": schema["version"]},
+    )
+
+    obj.load()
+    assert obj.metadata == {
+        "schema-name": schema["name"],
+        "schema-version": schema["version"],
+    }
+
+    for record, span in zip(records, ranges):
+        start, end = span
+        reco = extract_alert(record["candid"], *get_range(bucket, obj.key, start, end))
+        assert reco == record
+
+
+@pytest.fixture
+async def post_alert_chunk(
+    authed_integration_client: httpx.AsyncClient, alert_generator
+):
+    records, schemas = zip(*alert_generator(with_schema=True))
+
+    payload, _ = pack_records(records, schema=schemas[0])
+
+    response = await authed_integration_client.post(f"/alerts", content=payload)
+    response.raise_for_status()
+    assert response.status_code == HTTP_200_OK
+
+    return records
+
+
+def test_post_alert_chunk(
+    authed_integration_client: httpx.AsyncClient, post_alert_chunk
+):
+
+    bucket = get_s3_bucket()
+    objects = list(bucket.objects.all())
+    assert len(objects) == 1
+    obj = bucket.Object(objects[0].key)
+
+    db = get_archive_updater()
+    with db._engine.connect() as conn:
+        result = conn.execute(db._meta.tables["avro_archive"].select()).fetchall()
+        assert len(result) == 1
+        assert urlsplit(result[0]["uri"]).path.split("/")[-1] == obj.key
+
+
+@pytest.mark.asyncio
+async def test_get_cutouts_from_chunk(
+    authed_integration_client: httpx.AsyncClient, post_alert_chunk
+):
+    response = await authed_integration_client.get("/alert/0/cutouts")
+    assert response.status_code == HTTP_404_NOT_FOUND, "nonexistant alert not found"
+
+    response = await authed_integration_client.get(
+        f"/alert/{post_alert_chunk[0]['candid']}/cutouts"
+    )
+    assert response.status_code == HTTP_200_OK, "found alert cutouts"
+
+    bucket = get_s3_bucket()
+    objects = list(bucket.objects.all())
+    assert len(objects) == 1
+    obj = bucket.Object(objects[0].key)
+    obj.delete()
+
+    response = await authed_integration_client.get(
+        f"/alert/{post_alert_chunk[0]['candid']}/cutouts"
+    )
+    assert response.status_code == HTTP_404_NOT_FOUND, "archive blob missing"
+
+
+@pytest.mark.asyncio
+async def test_repost_alert_chunk(
+    authed_integration_client: httpx.AsyncClient, alert_generator
+):
+    records, schemas = zip(*alert_generator(with_schema=True))
+
+    payload, _ = pack_records(records, schema=schemas[0])
+
+    for _ in range(2):
+        response = await authed_integration_client.post(f"/alerts", content=payload)
+        response.raise_for_status()
+        assert response.status_code == HTTP_200_OK
+
+    bucket = get_s3_bucket()
+    objects = list(bucket.objects.all())
+    assert len(objects) == 1
+    obj = bucket.Object(objects[0].key)
+
+    db = get_archive()
+
+    ALERT_SCHEMAS.clear()
+
+    for record in records:
+        response = await authed_integration_client.get(f"/alert/{record['candid']}")
+        response.raise_for_status()
+        assert response.json()["candid"] == record["candid"]
+
+        uri, start, end = db.get_archive_segment(record["candid"])
+        assert urlsplit(uri).path.split("/")[-1] == obj.key
+        assert end - start > 0
+
+        response = await authed_integration_client.get(
+            f"/alert/{record['candid']}/cutouts"
+        )
+        response.raise_for_status()
+        cutouts = response.json()
+        for kind in ("template", "science", "difference"):
+            key = f"cutout{kind.capitalize()}"
+            assert (
+                base64.b64encode(record[key]["stampData"]).decode()
+                == cutouts[key]["stampData"]
+            )
+
+
+@pytest.mark.asyncio
+async def test_post_alert_unauthorized(integration_client: httpx.AsyncClient):
+    response = await integration_client.post("/alerts", content=b"")
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.asyncio
+async def test_post_alert_malformed(mock_client: httpx.AsyncClient, mock_auth):
+    response = await mock_client.post("/alerts", content=b"")
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    assert response.headers["x-exception"] == "cannot read header - is it an avro file?"

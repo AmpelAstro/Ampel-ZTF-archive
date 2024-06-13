@@ -20,6 +20,9 @@ class ArchiveDBClient:
     """
     """
 
+    # healpix nside to use for ~3 arcsec resolution
+    NSIDE = 1<<16
+
     def __init__(self, *args, **kwargs) -> None:
         """
         Initialize and connect to archive database. Arguments will be passed on
