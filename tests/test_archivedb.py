@@ -350,7 +350,7 @@ def assert_alerts_equivalent(alert, reco_alert):
         assert {k for k, v in prv.items() if v is not None} == {
             k for k, v in reco_prv.items() if v is not None
         }
-        for k in prv.keys():
+        for k in prv:
             # print(k, prv[k], reco_prv[k])
             try:
                 if prv[k] is None:

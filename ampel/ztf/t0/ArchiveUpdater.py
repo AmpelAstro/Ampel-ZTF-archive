@@ -81,12 +81,11 @@ class ArchiveUpdater(ArchiveDBClient):
                 )
             )
 
-        with self._engine.connect() as conn:
-            with conn.begin() as transaction:
-                if self._insert_alert(conn, alert, partition_id, ingestion_time):
-                    transaction.commit()
-                else:
-                    transaction.rollback()
+        with self._engine.connect() as conn, conn.begin() as transaction:
+            if self._insert_alert(conn, alert, partition_id, ingestion_time):
+                transaction.commit()
+            else:
+                transaction.rollback()
 
     def _insert_alert(self, conn, alert, partition_id=0, ingestion_time=0):
         """
