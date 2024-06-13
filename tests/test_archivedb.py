@@ -343,7 +343,7 @@ def assert_alerts_equivalent(alert, reco_alert):
         print(jd_off(reco_alert["prv_candidates"]))
         raise
     for prv, reco_prv in zip(prvs, reco_prvs):
-        prv = strip(prv)
+        prv = strip(prv)  # noqa: PLW2901
         # remove keys not in original alert (because it came from an older schema)
         for k in set(reco_prv.keys()).difference(prv.keys()):
             del reco_prv[k]

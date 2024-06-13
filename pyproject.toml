@@ -100,12 +100,15 @@ select = [
     "SIM",
     # # "ARG", # sometimes your arguments have to conform to an interface
     # # "ERA", # seems to prohibit all comments, that's bad
-    # "PL",
+    "PL",
     # "PERF",
     # "RUF",
+]
+ignore = [
+    "PLR09", # too many (arguments|branches)
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "ampel/ztf/archive/server/*" = ["B008"]
 "migrations/*" = ["T201"]
-"tests/*" = ["T201", "SLF001"]
+"tests/*" = ["T201", "SLF001", "PLR2004", "RUF018"]

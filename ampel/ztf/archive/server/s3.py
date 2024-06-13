@@ -39,7 +39,7 @@ def get_object(bucket: "Bucket", key: str) -> bytes:
 
 def get_stream(bucket: "Bucket", key: str) -> "BinaryIO":
     response = bucket.Object(key).get()
-    if response["ResponseMetadata"]["HTTPStatusCode"] <= 400:
+    if response["ResponseMetadata"]["HTTPStatusCode"] <= 400:  # noqa: PLR2004
         return response["Body"]  # type: ignore[return-value]
     raise KeyError
 
@@ -52,7 +52,7 @@ def get_range(
         response = obj.get(Range=f"={start}-{end}")
     except bucket.meta.client.exceptions.NoSuchKey as err:
         raise KeyError(f"bucket {bucket.name} has no key {key}") from err
-    if response["ResponseMetadata"]["HTTPStatusCode"] <= 400:
+    if response["ResponseMetadata"]["HTTPStatusCode"] <= 400:  # noqa: PLR2004
         schema_key = (
             obj.metadata["schema-name"],
             obj.metadata["schema-version"],

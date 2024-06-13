@@ -90,5 +90,4 @@ def extract_alert(
         alert = fastavro.schemaless_reader(buf, get_parsed_schema(schema), None)
         if isinstance(alert, dict) and alert["candid"] == candid:
             return alert
-    else:
-        raise KeyError(f"{candid} not found in block")
+    raise KeyError(f"{candid} not found in block")

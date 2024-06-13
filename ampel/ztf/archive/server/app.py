@@ -169,7 +169,7 @@ def post_alert_chunk(
         ContentMD5=md5,
         Metadata={"schema-name": schema["name"], "schema-version": schema["version"]},
     )
-    assert 200 <= s3_response["ResponseMetadata"]["HTTPStatusCode"] < 300
+    assert 200 <= s3_response["ResponseMetadata"]["HTTPStatusCode"] < 300  # noqa: PLR2004
 
     try:
         archive.insert_alert_chunk(

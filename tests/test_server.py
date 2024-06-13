@@ -65,7 +65,6 @@ def _mock_auth(mocker: "MockerFixture"):
         "find_access_token",
         side_effect=lambda *args: AuthToken(0, "writer", False),
     )
-    return
 
 
 @pytest.fixture()
