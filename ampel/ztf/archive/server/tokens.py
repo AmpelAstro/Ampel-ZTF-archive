@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Optional
 
 import jwt
 import sqlalchemy
@@ -19,11 +19,11 @@ token_bearer = HTTPBearer(scheme_name="ZTF archive access token")
 
 class User(BaseModel):
     name: str
-    orgs: List[str]
-    teams: List[str]
+    orgs: list[str]
+    teams: list[str]
 
     @property
-    def identities(self) -> List[str]:
+    def identities(self) -> list[str]:
         return [self.name] + self.orgs + self.teams
 
 

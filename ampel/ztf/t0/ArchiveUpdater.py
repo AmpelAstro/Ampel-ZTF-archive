@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 # File              : ampel/ztf/t0/ArchiveUpdater.py
 # License           : BSD-3-Clause
 # Author            : Jakob van Santen <jakob.van.santen@desy.de>
@@ -179,11 +178,11 @@ class ArchiveUpdater(ArchiveDBClient):
         target = tuple_(*identifiers).in_(keys)
 
         # collect the ids of the rows in an array and insert into the bridge table
-        bridge = self._meta.tables["alert_{}_pivot".format(label)]
+        bridge = self._meta.tables[f"alert_{label}_pivot"]
         source = select(
             [
                 bindparam("alert_id"),
-                func.array_agg(history.columns["{}_id".format(label)]),
+                func.array_agg(history.columns[f"{label}_id"]),
             ]
         ).where(target)
 

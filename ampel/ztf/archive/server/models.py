@@ -1,7 +1,7 @@
 import math
 from base64 import b64encode
 from datetime import datetime
-from typing import List, Literal, Optional, Union
+from typing import Literal, Optional, Union
 
 from pydantic import BaseModel, Field, root_validator, validator
 
@@ -33,7 +33,7 @@ class StreamDescription(Stream):
 
 class Topic(BaseModel):
     description: str = Field(..., description="Informative string for this topic")
-    candids: List[int] = Field(
+    candids: list[int] = Field(
         ..., description="IPAC candidate ids to associate with this topic"
     )
 
@@ -103,7 +103,7 @@ class AlertQuery(CandidateFilterable):
 
 
 class ObjectQuery(CandidateFilterable):
-    objectId: Union[str, List[str]]
+    objectId: Union[str, list[str]]
     jd: TimeConstraint = TimeConstraint()  # type: ignore[call-arg]
     candidate: Optional[FilterClause] = None
     chunk_size: int = Field(
@@ -405,12 +405,12 @@ class Alert_33(AlertCutouts):
     ]
     publisher: str = "Ampel"
     candidate: Candidate
-    prv_candidates: Optional[List[PrvCandidate]]
+    prv_candidates: Optional[list[PrvCandidate]]
 
 
 class Alert_402(Alert_33):
     schemavsn: Literal["4.02"]  # type: ignore[assignment]
-    fp_hists: Optional[List[FPHist]]
+    fp_hists: Optional[list[FPHist]]
 
 
 Alert = Union[Alert_33, Alert_402]
@@ -419,7 +419,7 @@ Alert = Union[Alert_33, Alert_402]
 class AlertChunk(BaseModel):
     resume_token: str
     chunk: Optional[int]
-    alerts: List[Alert]
+    alerts: list[Alert]
     remaining: ChunkCount
     pending: ChunkCount
 

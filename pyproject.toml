@@ -79,3 +79,28 @@ module = [
   "astropy_healpix.*",
 ]
 ignore_missing_imports = true
+
+[tool.ruff]
+target-version = "py39"
+
+[tool.ruff.lint]
+select = [
+    "E4",
+    "E7",
+    "E9",
+    "F",
+    "I",
+    "UP",
+    # "B",
+    # "DTZ",
+    # "T20",
+    # "PT",
+    # "RET",
+    # "SLF",
+    # "SIM",
+    # # "ARG", # sometimes your arguments have to conform to an interface
+    # # "ERA", # seems to prohibit all comments, that's bad
+    # "PL",
+    # "PERF",
+    # "RUF",
+]

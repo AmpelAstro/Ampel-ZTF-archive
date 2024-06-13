@@ -49,7 +49,7 @@ def test_insert_unique_alerts(empty_archive, alert_generator):
 
 
 def count_previous_candidates(alert):
-    upper_limits = sum((1 for c in alert["prv_candidates"] if c["candid"] is None))
+    upper_limits = sum(1 for c in alert["prv_candidates"] if c["candid"] is None)
     return len(alert["prv_candidates"]) - upper_limits, upper_limits
 
 
@@ -407,7 +407,7 @@ def alert_with_schema(request):
 
     import fastavro
 
-    fname = join(dirname(__file__), "test-data", "schema_{}.avro".format(request.param))
+    fname = join(dirname(__file__), "test-data", f"schema_{request.param}.avro")
     with open(fname, "rb") as f:
         r = fastavro.reader(f)
         alert, schema = next(r), r.writer_schema

@@ -3,7 +3,7 @@ import hashlib
 import io
 import json
 import secrets
-from typing import TYPE_CHECKING, Any, List, Literal, Optional, Union
+from typing import TYPE_CHECKING, Any, Literal, Optional, Union
 from urllib.parse import urlsplit
 
 import fastavro
@@ -251,7 +251,7 @@ def verify_authorized_programid(
 @app.get(
     "/object/{objectId}/alerts",
     tags=["alerts"],
-    response_model=List[Alert],
+    response_model=list[Alert],
     response_model_exclude_none=True,
 )
 def get_alerts_for_object(
@@ -453,7 +453,7 @@ def get_objects_in_cone(
     archive: ArchiveDB = Depends(get_archive),
     auth: bool = Depends(verify_access_token),
     programid: Optional[int] = Depends(verify_authorized_programid),
-) -> List[str]:
+) -> list[str]:
     chunk = list(
         archive.get_objects_in_cone(
             ra=ra,
@@ -490,7 +490,7 @@ def get_alerts_in_healpix_pixel(
         "4096",
         "8192",
     ] = Query("64", description="NSide of (nested) HEALpix grid"),
-    ipix: List[int] = Query(..., description="Pixel index"),
+    ipix: list[int] = Query(..., description="Pixel index"),
     jd_start: float = Query(..., description="Earliest observation jd"),
     jd_end: float = Query(..., description="Latest observation jd"),
     latest: bool = Query(

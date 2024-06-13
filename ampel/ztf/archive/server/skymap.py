@@ -1,8 +1,8 @@
 import bisect
 import math
 from collections import defaultdict
-from collections.abc import Iterable
-from typing import Generator, Generic, TypeVar
+from collections.abc import Generator, Iterable
+from typing import Generic, TypeVar
 
 T = TypeVar("T", bound=int)
 
@@ -42,7 +42,7 @@ class multirange(Generic[T]):
 
     def __init__(self, intervals: Iterable[tuple[T, T]] = []):
         if intervals:
-            self.lefts, self.rights = [list(side) for side in zip(*intervals)]
+            self.lefts, self.rights = (list(side) for side in zip(*intervals))
         else:
             self.lefts = []
             self.rights = []
