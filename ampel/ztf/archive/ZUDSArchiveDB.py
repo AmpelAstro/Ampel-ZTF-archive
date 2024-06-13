@@ -1,4 +1,4 @@
-from sqlalchemy import select, and_, bindparam, case
+from sqlalchemy import select, bindparam, case
 from sqlalchemy.sql.expression import func
 
 from ampel.ztf.archive.ArchiveDB import ArchiveDB
@@ -22,8 +22,6 @@ class ZUDSArchiveDB(ArchiveDB):
     @classmethod
     def _build_queries(cls, meta):
         """ """
-        from sqlalchemy.sql import null
-        from sqlalchemy.sql.functions import array_agg
 
         Photopoint = meta.tables["photopoint"]
         Candidate = meta.tables["candidate"]

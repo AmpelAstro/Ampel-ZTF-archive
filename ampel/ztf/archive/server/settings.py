@@ -6,7 +6,6 @@ from pydantic import (
     AnyHttpUrl,
     AnyUrl,
     BaseSettings,
-    DirectoryPath,
     Field,
     stricturl,
 )

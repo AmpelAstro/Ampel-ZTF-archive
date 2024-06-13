@@ -7,10 +7,9 @@ from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 from ampel.ztf.archive.server.cutouts import extract_alert, pack_records, ALERT_SCHEMAS
 from ampel.ztf.archive.server.db import get_archive, get_archive_updater
-from ampel.ztf.archive.server.s3 import get_object, get_range, get_s3_bucket
+from ampel.ztf.archive.server.s3 import get_range, get_s3_bucket
 from ampel.ztf.archive.server.tokens import AuthToken
 import asyncio
-from fastapi.security import http
 from urllib.parse import urlsplit
 import fastavro
 
@@ -18,15 +17,13 @@ import jwt
 import httpx
 import pytest
 from fastapi import status
-from ampel.ztf.archive.ArchiveDB import ArchiveDB, GroupInfo
+from ampel.ztf.archive.ArchiveDB import ArchiveDB
 import sqlalchemy
 from starlette.status import (
     HTTP_200_OK,
-    HTTP_201_CREATED,
     HTTP_202_ACCEPTED,
     HTTP_404_NOT_FOUND,
 )
-from tests.fixtures import walk_tarball
 
 if TYPE_CHECKING:
     from _pytest.monkeypatch import MonkeyPatch
@@ -48,7 +45,6 @@ class BearerAuth(httpx.Auth):
 def mocked_app(monkeypatch: "MonkeyPatch", mocker: "MockerFixture", mock_s3_bucket):
     monkeypatch.setenv("ALLOWED_IDENTITIES", '["someorg","someorg/a-team"]')
     from ampel.ztf.archive.server import app
-    from ampel.ztf.archive.server.settings import settings
     from ampel.ztf.archive.server import db
 
     mocker.patch.object(db, "ArchiveDB")

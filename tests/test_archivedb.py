@@ -1,28 +1,19 @@
 import io
 import fastavro
 import pytest
-import os
 import secrets
 import time
 import operator
 from math import isnan
-from collections import defaultdict
-from sqlalchemy.sql.elements import BindParameter
 
-from sqlalchemy.sql.sqltypes import Binary
 
 from ampel.ztf.archive.ArchiveDB import ArchiveDB
 from ampel.ztf.t0.ArchiveUpdater import ArchiveUpdater
 
-from sqlalchemy import select, create_engine, MetaData
-import sqlalchemy
+from sqlalchemy import select
 from sqlalchemy.sql.functions import count
-from sqlalchemy.exc import SAWarning
-from sqlalchemy.sql.expression import BooleanClauseList, BinaryExpression, Function
-import warnings
+from sqlalchemy.sql.expression import BooleanClauseList, BinaryExpression
 
-from collections.abc import Iterable
-import json
 
 
 def test_walk_tarball(alert_generator):
@@ -65,7 +56,6 @@ def count_previous_candidates(alert):
 
 
 def test_insert_duplicate_alerts(empty_archive, alert_generator):
-    import itertools
 
     processor_id = 0
     db = ArchiveUpdater(empty_archive)
@@ -124,7 +114,7 @@ def test_insert_duplicate_photopoints(empty_archive, alert_generator):
     db = ArchiveUpdater(empty_archive)
     connection = db._engine.connect()
     meta = db._meta
-    from sqlalchemy.sql.expression import tuple_, func
+    from sqlalchemy.sql.expression import func
     from sqlalchemy.sql.functions import sum
 
     # find an alert with at least 1 previous detection
@@ -249,7 +239,7 @@ def test_delete_alert(empty_archive, alert_generator):
     db = ArchiveUpdater(empty_archive)
     connection = db._engine.connect()
     meta = db._meta
-    from sqlalchemy.sql.expression import tuple_, func
+    from sqlalchemy.sql.expression import func
     from sqlalchemy.sql.functions import sum
 
     alert, schema = next(alert_generator(with_schema=True))
@@ -423,7 +413,6 @@ def alert_with_schema(request):
 
 
 def test_schema_update(empty_archive, alert_with_schema):
-    from os.path import join, dirname
     from fastavro._write_py import writer
     from fastavro import reader
     from io import BytesIO

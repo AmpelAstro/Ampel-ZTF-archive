@@ -11,9 +11,7 @@ from typing import Any
 from ampel.ztf.archive.ArchiveDBClient import ArchiveDBClient
 from sqlalchemy import UniqueConstraint, select, bindparam
 import sqlalchemy
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.sql.elements import literal_column
 from sqlalchemy.sql.expression import tuple_, func
 from distutils.version import LooseVersion
 from astropy import units as u

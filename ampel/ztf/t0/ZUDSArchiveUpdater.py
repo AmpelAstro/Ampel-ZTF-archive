@@ -8,10 +8,10 @@
 # Last Modified By  : Jakob van Santen <jakob.van.santen@desy.de>
 
 from ampel.ztf.archive.ArchiveDBClient import ArchiveDBClient
-from sqlalchemy import UniqueConstraint, select, bindparam
+from sqlalchemy import select, bindparam
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.sql.expression import tuple_, func
+from sqlalchemy.sql.expression import func
 from distutils.version import LooseVersion
 
 

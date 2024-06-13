@@ -5,13 +5,11 @@ Recover missing columns in the archive database from UW tarballs
 """
 
 import datetime
-import itertools
 import io
 import logging
 import multiprocessing
 import tarfile
 import time
-import queue
 
 import fastavro
 import requests
@@ -47,7 +45,7 @@ def blobs_from_tarball(procnum, queue, date, partnership=True):
         queue.put(procnum)
 
 
-from sqlalchemy import select, and_, bindparam, exists
+from sqlalchemy import select, and_, bindparam
 from sqlalchemy.sql.schema import UniqueConstraint
 
 

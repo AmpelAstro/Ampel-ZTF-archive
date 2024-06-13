@@ -1,17 +1,15 @@
 import base64
 import io
-import time
 import hashlib
 import json
 from urllib.parse import urlsplit
-from ampel.ztf.archive.server.cutouts import extract_alert, pack_records, repack_alert
+from ampel.ztf.archive.server.cutouts import extract_alert, pack_records
 from ampel.ztf.t0.ArchiveUpdater import ArchiveUpdater
 from pydantic.fields import Field
 import sqlalchemy
 from ampel.ztf.archive.server.models import AlertChunk
 import secrets
 import fastavro
-from base64 import b64encode
 from typing import TYPE_CHECKING, Any, List, Literal, Optional, Union
 
 from fastapi import (
@@ -27,9 +25,6 @@ from fastapi import (
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import JSONResponse
 
 from .settings import settings
 from .db import (
@@ -38,7 +33,7 @@ from .db import (
     OperationalError,
     handle_operationalerror,
 )
-from .s3 import get_object, get_range, get_s3_bucket, get_url_for_key
+from .s3 import get_range, get_s3_bucket, get_url_for_key
 from .tokens import (
     router as token_router,
     verify_access_token,

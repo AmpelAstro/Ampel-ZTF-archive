@@ -8,7 +8,7 @@ from fastapi.encoders import jsonable_encoder
 
 from ampel.ztf.t0.ArchiveUpdater import ArchiveUpdater
 
-from ..ArchiveDB import ArchiveDB, GroupNotFoundError
+from ..ArchiveDB import ArchiveDB
 
 from .settings import settings
 

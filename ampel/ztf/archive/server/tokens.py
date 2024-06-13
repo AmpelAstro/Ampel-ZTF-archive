@@ -1,8 +1,7 @@
 from dataclasses import dataclass
-from functools import cached_property
 import sqlalchemy
 from ampel.ztf.archive.ArchiveDB import ArchiveDB, select
-from typing import Any, List, Optional
+from typing import List, Optional
 import jwt
 
 from pydantic import BaseModel, ValidationError

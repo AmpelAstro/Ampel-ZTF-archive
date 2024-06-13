@@ -8,7 +8,6 @@
 # Last Modified By  : Jakob van Santen <jakob.van.santen@desy.de>
 
 import datetime
-import itertools
 import json
 import math
 import operator
@@ -37,7 +36,6 @@ from sqlalchemy.sql.elements import (
 )
 from sqlalchemy.sql.expression import func
 from sqlalchemy.sql.schema import Column, Table
-from sqlalchemy.exc import IntegrityError
 import sqlalchemy, collections
 
 from ampel.ztf.archive.ArchiveDBClient import ArchiveDBClient

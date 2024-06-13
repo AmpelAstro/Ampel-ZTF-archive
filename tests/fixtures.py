@@ -5,7 +5,6 @@ import secrets
 import subprocess
 import tarfile
 from pathlib import Path
-from os import environ
 from os.path import dirname, join
 from ampel.ztf.archive.server.s3 import get_s3_bucket
 import httpx
@@ -231,7 +230,6 @@ def aws_credentials():
 
 @pytest.fixture
 def mock_s3_bucket(aws_credentials):
-    from ampel.ztf.archive.server.settings import settings
 
     get_s3_bucket.cache_clear()
     with mock_s3():

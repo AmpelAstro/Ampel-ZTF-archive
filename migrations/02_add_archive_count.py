@@ -1,16 +1,13 @@
 #!/usr/bin/env python
 
 import logging
-import time
-import sys
 from argparse import ArgumentParser
 import sqlalchemy as sa
 import fastavro
 
 import boto3
 
-from ampel.ztf.t0.ArchiveUpdater import ArchiveUpdater
-from ampel.ztf.archive.server.s3 import get_object, get_key_for_url, get_stream
+from ampel.ztf.archive.server.s3 import get_key_for_url, get_stream
 
 
 logging.basicConfig(level="INFO", format="[%(asctime)s] %(message)s")
