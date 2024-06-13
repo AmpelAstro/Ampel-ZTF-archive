@@ -59,4 +59,5 @@ settings = Settings()  # type: ignore[call-arg]
 
 if settings.query_debug:
     from ampel.ztf.archive.ArchiveDB import ArchiveDB
+
     ArchiveDB.query_debug = True

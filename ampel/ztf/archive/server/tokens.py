@@ -18,7 +18,6 @@ token_bearer = HTTPBearer(scheme_name="ZTF archive access token")
 
 
 class User(BaseModel):
-
     name: str
     orgs: List[str]
     teams: List[str]

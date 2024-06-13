@@ -30,7 +30,9 @@ def archive(integration):
         yield os.environ["POSTGRES_URI"]
         return
     elif not integration:
-        raise pytest.skip("integration tests require --integration flag or POSTGRES_URI env var")
+        raise pytest.skip(
+            "integration tests require --integration flag or POSTGRES_URI env var"
+        )
     password = secrets.token_hex()
     container = None
     try:
@@ -85,9 +87,7 @@ def archive(integration):
         yield f"postgresql://ampel:{password}@localhost:{port}/ztfarchive"
     finally:
         if container is not None:
-            subprocess.call(
-                ["docker", "stop", container], stdout=subprocess.DEVNULL
-            )
+            subprocess.call(["docker", "stop", container], stdout=subprocess.DEVNULL)
             subprocess.check_call(
                 ["docker", "rm", container], stdout=subprocess.DEVNULL
             )
@@ -99,7 +99,9 @@ def localstack_s3(integration):
         yield f"http://localhost:{os.environ['LOCALSTACK_PORT']}"
         return
     elif not integration:
-        raise pytest.skip("integration tests require --integration flag or LOCALSTACK_PORT env var")
+        raise pytest.skip(
+            "integration tests require --integration flag or LOCALSTACK_PORT env var"
+        )
     container = None
     try:
         container = (
@@ -127,15 +129,20 @@ def localstack_s3(integration):
 
         for _ in range(30):
             try:
-                with httpx.Client(event_hooks={"response": [raise_on_4xx_5xx]}) as client:
+                with httpx.Client(
+                    event_hooks={"response": [raise_on_4xx_5xx]}
+                ) as client:
                     if (
-                        (status := client.get(f"http://localhost:{port}/_localstack/health").json()["services"]["s3"])
-                        == "available"
-                    ):
+                        status := client.get(
+                            f"http://localhost:{port}/_localstack/health"
+                        ).json()["services"]["s3"]
+                    ) == "available":
                         break
                     print(f"s3 status: {status}")
             except httpx.HTTPError as exc:
-                print(f"Failed to fetch http://localhost:{port}/_localstack/health: {exc}")
+                print(
+                    f"Failed to fetch http://localhost:{port}/_localstack/health: {exc}"
+                )
             time.sleep(1)
         else:
             subprocess.call(["docker", "logs", container])
@@ -144,9 +151,7 @@ def localstack_s3(integration):
         yield f"http://localhost:{port}"
     finally:
         if container is not None:
-            subprocess.call(
-                ["docker", "stop", container], stdout=subprocess.DEVNULL
-            )
+            subprocess.call(["docker", "stop", container], stdout=subprocess.DEVNULL)
             subprocess.check_call(
                 ["docker", "rm", container], stdout=subprocess.DEVNULL
             )

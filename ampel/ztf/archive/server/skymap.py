@@ -18,7 +18,7 @@ def deres(nside, ipix, min_nside=1):
     remaining_pixels = set(ipix)
     decomposed = defaultdict(list)
     for log2_nside in range(int(math.log2(min_nside)), int(math.log2(nside)) + 1):
-        super_nside = 2 ** log2_nside
+        super_nside = 2**log2_nside
         # number of base_nside pixels per nside superpixel
         scale = (nside // super_nside) ** 2
         # sort remaining base_nside pixels by superpixel

@@ -79,7 +79,6 @@ with engine.connect() as connection:
 
     log.info("cleaning up blobs not referenced by any alert")
     with connection.begin() as transaction:
-
         i = 0
         for i, row in enumerate(
             connection.execute(
@@ -137,6 +136,8 @@ with engine.connect() as connection:
                 log.info(f"would delete {key}")
             else:
                 log.info(bucket.Object(key).delete())
-        log.info(f"Deleted {len(missing_in_archive)} objects not referenced by any avro_archive row")
+        log.info(
+            f"Deleted {len(missing_in_archive)} objects not referenced by any avro_archive row"
+        )
     else:
         log.warning("skipped bucket check; enable with --check-bucket")

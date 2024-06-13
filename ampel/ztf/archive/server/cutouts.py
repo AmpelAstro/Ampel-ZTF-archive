@@ -10,16 +10,19 @@ with open(pathlib.Path(__file__).parent / "cutout_schema.json") as f:
 
 ALERT_SCHEMAS: dict[tuple[str, str], Any] = {}
 
+
 def get_parsed_schema(schema: dict):
     key = schema["name"], schema["version"]
     if key not in ALERT_SCHEMAS:
         ALERT_SCHEMAS[key] = fastavro.parse_schema(schema)
     return ALERT_SCHEMAS[key]
 
+
 def read_schema(fo: BinaryIO) -> dict[str, Any]:
     reader = fastavro.reader(fo)
     assert isinstance(reader.writer_schema, dict)
     return reader.writer_schema
+
 
 def repack_alert(alert: dict) -> bytes:
     """

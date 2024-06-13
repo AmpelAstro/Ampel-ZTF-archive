@@ -16,32 +16,30 @@ from distutils.version import LooseVersion
 import logging
 import warnings
 
+
 class ArchiveDBClient:
-    """
-    """
+    """ """
 
     # healpix nside to use for ~3 arcsec resolution
-    NSIDE = 1<<16
+    NSIDE = 1 << 16
 
     def __init__(self, *args, **kwargs) -> None:
         """
         Initialize and connect to archive database. Arguments will be passed on
         to :py:func:`sqlalchemy.create_engine`.
         """
-        logging.getLogger('sqlalchemy').setLevel(logging.ERROR)
+        logging.getLogger("sqlalchemy").setLevel(logging.ERROR)
         self._engine = create_engine(*args, **kwargs)
-    
+
     @cached_property
     def _alert_version(self) -> LooseVersion:
-        Versions = self._meta.tables['versions']
+        Versions = self._meta.tables["versions"]
         with self._engine.connect() as conn:
             return LooseVersion(
                 conn.execute(
-                    select(
-                        [Versions.c.alert_version]
-                    ).order_by(
-                        Versions.c.version_id.desc()
-                    ).limit(1)
+                    select([Versions.c.alert_version])
+                    .order_by(Versions.c.version_id.desc())
+                    .limit(1)
                 ).first()[0]
             )
 
@@ -53,6 +51,3 @@ class ArchiveDBClient:
             warnings.simplefilter("ignore", category=SAWarning)
             meta.reflect(bind=self._engine)
         return meta
-
-
-

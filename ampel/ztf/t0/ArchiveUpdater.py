@@ -40,7 +40,6 @@ class ArchiveUpdater(ArchiveDBClient):
         AvroArchive = self._meta.tables["avro_archive"]
 
         with self._engine.connect() as conn:
-
             if row := conn.execute(
                 select([AvroArchive.c.avro_archive_id]).where(
                     AvroArchive.c.uri == archive_uri

@@ -58,12 +58,10 @@ def without_keys(table, filter=lambda name: True):
     return [c for c in table.columns if c not in keys and filter(c.name)]
 
 
-class GroupNotFoundError(KeyError):
-    ...
+class GroupNotFoundError(KeyError): ...
 
 
-class NoSuchColumnError(KeyError):
-    ...
+class NoSuchColumnError(KeyError): ...
 
 
 class ChunkCount(TypedDict):
@@ -403,7 +401,6 @@ class ArchiveDB(ArchiveDBClient):
         group_id: int,
         block_size: int,
     ) -> int:
-
         Groups = self._meta.tables["read_queue_groups"]
 
         try:
@@ -447,7 +444,7 @@ class ArchiveDB(ArchiveDBClient):
                             Groups.c.error,
                             Groups.c.msg,
                             Groups.c.created,
-                            Groups.c.resolved
+                            Groups.c.resolved,
                         ]
                     ).where(Groups.c.group_name == group_name)
                 ).fetchone()
@@ -495,10 +492,10 @@ class ArchiveDB(ArchiveDBClient):
         order: List[UnaryExpression] = [],
         *,
         distinct: bool = False,
-        with_history: bool=False,
-        group_name: Optional[str]=None,
-        block_size: Optional[int]=None,
-        max_blocks: Optional[int]=None,
+        with_history: bool = False,
+        group_name: Optional[str] = None,
+        block_size: Optional[int] = None,
+        max_blocks: Optional[int] = None,
         limit: Optional[int] = None,
         skip: int = 0,
     ) -> tuple[int, list[dict[str, Any]]]:
@@ -512,7 +509,11 @@ class ArchiveDB(ArchiveDBClient):
             assert block_size is not None
             group_id = self._create_read_queue(conn, group_name, block_size)
             self._fill_read_queue(
-                conn, condition, order, group_id, block_size, 
+                conn,
+                condition,
+                order,
+                group_id,
+                block_size,
             )
             return self.get_chunk_from_queue(group_name, with_history=with_history)
 
@@ -1166,11 +1167,11 @@ class ArchiveDB(ArchiveDBClient):
         pix = Candidate.c._hpx
 
         nside, ranges = ranges_for_cone(ra, dec, radius, max_nside=self.NSIDE)
-        scale = (self.NSIDE // nside)**2
+        scale = (self.NSIDE // nside) ** 2
         conditions = [
             or_(
                 *[
-                    and_(pix >= int(left*scale), pix < int(right*scale))
+                    and_(pix >= int(left * scale), pix < int(right * scale))
                     for left, right in ranges
                 ]
             ),
@@ -1188,10 +1189,15 @@ class ArchiveDB(ArchiveDBClient):
         if candidate_filter is not None:
             conditions.append(self._candidate_filter_condition(candidate_filter))
 
-        return and_(*conditions), [Candidate.c.jd.asc()] if not latest else [
-            Candidate.c.jd.desc(),
-            Candidate.c.candid.desc(),  # NB: reprocessed points may have identical jds; break ties with candid
-        ]
+        return (
+            and_(*conditions),
+            [Candidate.c.jd.asc()]
+            if not latest
+            else [
+                Candidate.c.jd.desc(),
+                Candidate.c.candid.desc(),  # NB: reprocessed points may have identical jds; break ties with candid
+            ],
+        )
 
     def _healpix_search_condition(
         self,
@@ -1204,6 +1210,7 @@ class ArchiveDB(ArchiveDBClient):
         candidate_filter: Optional[FilterClause] = None,
     ) -> Tuple[BooleanClauseList, List[UnaryExpression]]:
         from .server.skymap import multirange
+
         Candidate = self.get_table("candidate")
 
         # NB: searches against sets of pixel indices are reasonably efficient for nside=64,
@@ -1221,19 +1228,18 @@ class ArchiveDB(ArchiveDBClient):
         ranges: multirange[int] = multirange()
 
         for nside, ipix in pixels.items():
-            if not (nside <= self.NSIDE and nside >= 1 and math.log2(nside).is_integer()):
-                raise ValueError(f"nside must be >= 1, <= {self.NSIDE}, and a power of 2")
+            if not (
+                nside <= self.NSIDE and nside >= 1 and math.log2(nside).is_integer()
+            ):
+                raise ValueError(
+                    f"nside must be >= 1, <= {self.NSIDE}, and a power of 2"
+                )
             scale = (self.NSIDE // nside) ** 2
-            for i in ([ipix] if isinstance(ipix, int) else ipix):
-                ranges.add(i*scale, (i+1)*scale)
+            for i in [ipix] if isinstance(ipix, int) else ipix:
+                ranges.add(i * scale, (i + 1) * scale)
 
         and_conditions = [
-            or_(
-                *[
-                    and_(pix >= int(left), pix < int(right))
-                    for left, right in ranges
-                ]
-            ),
+            or_(*[and_(pix >= int(left), pix < int(right)) for left, right in ranges]),
             Candidate.c.jd >= jd_min,
             Candidate.c.jd < jd_max,
         ]
@@ -1257,7 +1263,6 @@ class ArchiveDB(ArchiveDBClient):
         jd_end: Optional[float] = None,
         candidate_filter: Optional[FilterClause] = None,
     ) -> Tuple[BooleanClauseList, List[UnaryExpression]]:
-
         Alert = self._meta.tables["alert"]
         if isinstance(objectId, str):
             match = Alert.c.objectId == objectId
@@ -1335,19 +1340,19 @@ class ArchiveDB(ArchiveDBClient):
                 max_blocks=max_blocks,
             )
 
-
     def get_random_alerts(
         self,
         *,
         count: int,
         with_history: bool = False,
     ):
-
         Alert = self._meta.tables["alert"]
 
         with self.connect() as conn:
             ids = [
-                conn.execute("select alert_id from alert TABLESAMPLE system_rows(1)").fetchone()[0]
+                conn.execute(
+                    "select alert_id from alert TABLESAMPLE system_rows(1)"
+                ).fetchone()[0]
                 for _ in range(count)
             ]
             condition = Alert.c.alert_id.in_(ids)
@@ -1360,7 +1365,6 @@ class ArchiveDB(ArchiveDBClient):
             )
             dt = time.time() - t0
             return alerts, dt
-
 
     def get_objects_in_cone(
         self,
@@ -1457,7 +1461,7 @@ class ArchiveDB(ArchiveDBClient):
         jd_start: float,
         jd_end: float,
         programid: Optional[int] = None,
-        candidate_filter: Optional[FilterClause] = None
+        candidate_filter: Optional[FilterClause] = None,
     ) -> int:
         """
         Count alerts in HEALpix pixels
@@ -1476,7 +1480,9 @@ class ArchiveDB(ArchiveDBClient):
         )
 
         with self.connect() as conn:
-            return conn.execute(self._build_base_alert_query([func.count()], condition)).fetchone()[0]
+            return conn.execute(
+                self._build_base_alert_query([func.count()], condition)
+            ).fetchone()[0]
 
 
 def consumer_groups_command() -> None:

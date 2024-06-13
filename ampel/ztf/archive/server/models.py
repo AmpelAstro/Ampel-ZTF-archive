@@ -142,20 +142,17 @@ class HEALpixMapRegion(StrictModel):
         return nside
 
 
-class HEALpixMapQuery(AlertChunkQueryBase, MapQueryBase, HEALpixMapRegion):
-    ...
+class HEALpixMapQuery(AlertChunkQueryBase, MapQueryBase, HEALpixMapRegion): ...
 
 
 class HEALpixRegionQueryBase(MapQueryBase):
     regions: list[HEALpixMapRegion]
 
 
-class HEALpixRegionQuery(AlertChunkQueryBase, HEALpixRegionQueryBase):
-    ...
+class HEALpixRegionQuery(AlertChunkQueryBase, HEALpixRegionQueryBase): ...
 
 
-class HEALpixRegionCountQuery(HEALpixRegionQueryBase):
-    ...
+class HEALpixRegionCountQuery(HEALpixRegionQueryBase): ...
 
 
 # Generated from tests/test-data/schema_3.3.json
@@ -397,7 +394,14 @@ class Alert_33(AlertCutouts):
     avro alert schema for ZTF (www.ztf.caltech.edu)
     """
 
-    schemavsn: Union[Literal["1.9"], Literal["2.0"], Literal["3.0"], Literal["3.1"], Literal["3.2"], Literal["3.3"]]
+    schemavsn: Union[
+        Literal["1.9"],
+        Literal["2.0"],
+        Literal["3.0"],
+        Literal["3.1"],
+        Literal["3.2"],
+        Literal["3.3"],
+    ]
     publisher: str = "Ampel"
     candidate: Candidate
     prv_candidates: Optional[List[PrvCandidate]]

@@ -186,7 +186,9 @@ def test_parse_json_from_env(monkeypatch):
 @pytest.mark.parametrize("schemavsn", ["3.3", "4.02"])
 @pytest.mark.asyncio
 async def test_get_alert(mock_client: httpx.AsyncClient, mock_db: MagicMock, schemavsn):
-    with open(Path(__file__).parent / "test-data" / f"schema_{schemavsn}.avro", "rb") as f:
+    with open(
+        Path(__file__).parent / "test-data" / f"schema_{schemavsn}.avro", "rb"
+    ) as f:
         alert: dict = next(fastavro.reader(f))
     mock_db.get_alert.return_value = alert
     response = await mock_client.get("/alert/123")
@@ -491,7 +493,6 @@ async def test_read_topic(
     integration_client: httpx.AsyncClient,
     authed_integration_client: httpx.AsyncClient,
 ):
-
     candids = [595147624915010001, 595193335915010017, 595211874215015018]
     description = "the bird is the word"
     response = await authed_integration_client.post(
@@ -647,7 +648,7 @@ def packed_alert_chunk(
 
 
 def test_extract_block(
-    packed_alert_chunk: tuple[dict, bytes, list[dict], list[tuple[int, int]]]
+    packed_alert_chunk: tuple[dict, bytes, list[dict], list[tuple[int, int]]],
 ):
     """
     We can read an individual block straight out of an AVRO file
@@ -702,7 +703,6 @@ async def post_alert_chunk(
 def test_post_alert_chunk(
     authed_integration_client: httpx.AsyncClient, post_alert_chunk
 ):
-
     bucket = get_s3_bucket()
     objects = list(bucket.objects.all())
     assert len(objects) == 1

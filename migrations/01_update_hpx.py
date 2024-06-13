@@ -45,7 +45,9 @@ with engine.connect() as connection:
         .values(_hpx=sa.bindparam("hpx"))
     )
 
-    total = connection.execute("select reltuples as estimate from pg_class where relname = 'candidate';").fetchone()[0]
+    total = connection.execute(
+        "select reltuples as estimate from pg_class where relname = 'candidate';"
+    ).fetchone()[0]
 
     min_id = args.min_id
     updated = 0
@@ -77,27 +79,3 @@ with engine.connect() as connection:
         )
         dt = time.time() - t0
         log.info(f"updated {len(rows)/dt:.1f} rows/s")
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    

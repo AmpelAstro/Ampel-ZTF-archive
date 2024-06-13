@@ -315,7 +315,6 @@ def test_delete_alert(empty_archive, alert_generator):
 
 
 def assert_alerts_equivalent(alert, reco_alert):
-
     # some necessary normalization on the alert
     fluff = ["pdiffimfilename", "programpi"]
     alert = dict(alert)
@@ -650,7 +649,7 @@ def test_seekable_avro(alert_generator, cutouts: bool):
             ranges[alert["candid"]] = (pos, end)
         pos = end
 
-    print(buf.tell() / 2 ** 20)
+    print(buf.tell() / 2**20)
 
     codec = reader.metadata["avro.codec"]
     read_block = BLOCK_READERS.get(codec)

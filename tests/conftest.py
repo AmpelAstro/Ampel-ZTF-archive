@@ -4,6 +4,7 @@ import pytest
 
 pytest_plugins = ["tests.fixtures"]
 
+
 def pytest_addoption(parser):
     parser.addoption(
         "--integration",
