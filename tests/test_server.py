@@ -688,7 +688,7 @@ async def post_alert_chunk(
 
     payload, _ = pack_records(records, schema=schemas[0])
 
-    response = await authed_integration_client.post(f"/alerts", content=payload)
+    response = await authed_integration_client.post("/alerts", content=payload)
     response.raise_for_status()
     assert response.status_code == HTTP_200_OK
 
@@ -743,7 +743,7 @@ async def test_repost_alert_chunk(
     payload, _ = pack_records(records, schema=schemas[0])
 
     for _ in range(2):
-        response = await authed_integration_client.post(f"/alerts", content=payload)
+        response = await authed_integration_client.post("/alerts", content=payload)
         response.raise_for_status()
         assert response.status_code == HTTP_200_OK
 

@@ -96,7 +96,7 @@ class AlertQuery(CandidateFilterable):
     @root_validator
     def at_least_one_constraint(cls, values):
         if not {"cone", "jd"}.intersection(values.keys()):
-            raise ValueError(f"At least one constraint (cone or jd) must be specified")
+            raise ValueError("At least one constraint (cone or jd) must be specified")
         return values
 
 
