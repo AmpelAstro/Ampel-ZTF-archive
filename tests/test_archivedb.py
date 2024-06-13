@@ -518,8 +518,7 @@ def test_archive_object(alert_generator, empty_archive) -> None:
 def test_partitioned_read_single(alert_archive):
     db = ArchiveDB(alert_archive)
     alerts = db.get_alerts_in_time_range(jd_start=0, jd_end=1e8, group_name="testy")[1]
-    l = list((alert["candid"] for alert in alerts))
-    assert len(l) == 10
+    assert len([alert["candid"] for alert in alerts]) == 10
 
 
 def test_insert_future_schema(alert_generator, empty_archive):
