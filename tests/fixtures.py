@@ -157,7 +157,7 @@ def localstack_s3(integration):
             )
 
 
-@pytest.fixture
+@pytest.fixture()
 def empty_archive(archive):
     """
     Yield archive database, dropping all rows when finished
@@ -180,7 +180,7 @@ def empty_archive(archive):
                     connection.execute(table.delete())
 
 
-@pytest.fixture
+@pytest.fixture()
 def alert_archive(empty_archive, alert_generator):
     from ampel.ztf.t0.ArchiveUpdater import ArchiveUpdater
 
@@ -190,7 +190,7 @@ def alert_archive(empty_archive, alert_generator):
     for alert, schema in islice(alert_generator(with_schema=True), 10):
         assert schema["version"] == "3.0", "Need alerts with current schema"
         updater.insert_alert(alert, schema, 0, 0)
-    yield empty_archive
+    return empty_archive
 
 
 @pytest.fixture(scope="session")
@@ -224,13 +224,13 @@ def alert_generator(alert_tarball):
 
 
 @pytest.fixture(scope="module")
-def aws_credentials():
+def _aws_credentials():
     os.environ["AWS_ACCESS_KEY_ID"] = "KEY"
     os.environ["AWS_SECRET_ACCESS_KEY"] = "SEEKRIT"
 
 
-@pytest.fixture
-def mock_s3_bucket(aws_credentials):
+@pytest.fixture()
+def mock_s3_bucket(_aws_credentials):
     get_s3_bucket.cache_clear()
     with mock_s3():
         bucket = get_s3_bucket()
@@ -239,8 +239,8 @@ def mock_s3_bucket(aws_credentials):
     get_s3_bucket.cache_clear()
 
 
-@pytest.fixture
-def localstack_s3_bucket(aws_credentials, localstack_s3, monkeypatch):
+@pytest.fixture()
+def localstack_s3_bucket(_aws_credentials, localstack_s3, monkeypatch):
     from ampel.ztf.archive.server.settings import settings
 
     monkeypatch.setattr(settings, "s3_endpoint_url", localstack_s3)
@@ -256,4 +256,4 @@ def localstack_s3_bucket(aws_credentials, localstack_s3, monkeypatch):
 # metafixture as suggested in https://github.com/pytest-dev/pytest/issues/349#issuecomment-189370273
 @pytest.fixture(params=["mock_s3_bucket", "localstack_s3_bucket"])
 def s3_bucket(request):
-    yield request.getfixturevalue(request.param)
+    return request.getfixturevalue(request.param)

@@ -34,7 +34,7 @@ def test_insert_unique_alerts(empty_archive, alert_generator):
 
         # (candid,pid) is unique within an alert packet
         prevs = dict()
-        for candidate in ([alert["candidate"]] + alert["prv_candidates"]):
+        for candidate in [alert["candidate"]] + alert["prv_candidates"]:
             key = (candidate["candid"], candidate["pid"])
             assert key not in prevs
             prevs[key] = candidate
@@ -526,7 +526,9 @@ def test_insert_future_schema(alert_generator, empty_archive):
 
     alert, schema = next(alert_generator(True))
     schema["version"] = str(float(schema["version"]) + 10)
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError, match=r"alert schema \(.*\) is newer than database schema \(.*\)"
+    ):
         db.insert_alert(alert, schema, 0, 0)
 
 
