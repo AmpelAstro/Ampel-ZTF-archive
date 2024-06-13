@@ -16,12 +16,11 @@ on:
 
 jobs:
   ci:
-    uses: AmpelProject/Ampel-interface/.github/workflows/ci.yml@6744df5a70735c261659a10d8819f11f5780ecbd
+    uses: AmpelProject/Ampel-interface/.github/workflows/ci.yml@2a1c618613ed2b80480db71a557f57cb44c33b34
     secrets:
       PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
     with:
       mongo: false
-      localstack: true
       lint: false
       format: false
       # renovate: datasource=conda depName=conda-forge/python

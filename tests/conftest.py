@@ -11,3 +11,9 @@ def pytest_addoption(parser):
         default=False,
         help="run docker-based integration tests",
     )
+    parser.addoption(
+        "--no-integration",
+        dest="integration",
+        action="store_false",
+        help="disable docker-based integration tests",
+    )

@@ -16,7 +16,7 @@ from moto import mock_s3
 import fastavro
 
 POSTGRES_IMAGE = "ampelproject/postgres:14.1"
-LOCALSTACK_IMAGE = "localstack/localstack:0.12.19.1"
+LOCALSTACK_IMAGE = "localstack/localstack:3.4.0"
 
 
 @pytest.fixture(scope="session")
@@ -39,7 +39,6 @@ def archive(integration):
                 [
                     "docker",
                     "run",
-                    "--rm",
                     "-d",
                     "-e",
                     "POSTGRES_USER=ampel",
@@ -61,20 +60,24 @@ def archive(integration):
             .strip()
         )
         # wait for startup
-        subprocess.check_call(
-            [
-                "docker",
-                "run",
-                "--link",
-                f"{container}:postgres",
-                POSTGRES_IMAGE,
-                "sh",
-                "-c",
-                "for _ in $(seq 1 60); do if pg_isready -U ampel -p "
-                + password
-                + " -h ${POSTGRES_PORT_5432_TCP_ADDR} -p ${POSTGRES_PORT_5432_TCP_PORT}; then break; fi; sleep 1; done",
-            ]
-        )
+        try:
+            subprocess.check_call(
+                [
+                    "docker",
+                    "run",
+                    "--link",
+                    f"{container}:postgres",
+                    POSTGRES_IMAGE,
+                    "sh",
+                    "-c",
+                    "for _ in $(seq 1 60); do if pg_isready -U ampel -p "
+                    + password
+                    + " -h ${POSTGRES_PORT_5432_TCP_ADDR} -p ${POSTGRES_PORT_5432_TCP_PORT}; then break; fi; sleep 1; done",
+                ],
+                timeout=30,
+            )
+        finally:
+            subprocess.call(["docker", "logs", container])
         info = subprocess.check_output(["docker", "inspect", container]).decode()
         port = json.loads(info)[0]["NetworkSettings"]["Ports"]["5432/tcp"][0][
             "HostPort"
@@ -82,8 +85,11 @@ def archive(integration):
         yield f"postgresql://ampel:{password}@localhost:{port}/ztfarchive"
     finally:
         if container is not None:
-            subprocess.check_call(
+            subprocess.call(
                 ["docker", "stop", container], stdout=subprocess.DEVNULL
+            )
+            subprocess.check_call(
+                ["docker", "rm", container], stdout=subprocess.DEVNULL
             )
 
 
@@ -101,7 +107,6 @@ def localstack_s3(integration):
                 [
                     "docker",
                     "run",
-                    "--rm",
                     "-d",
                     "-e",
                     "SERVICES=s3",
@@ -120,25 +125,30 @@ def localstack_s3(integration):
         def raise_on_4xx_5xx(response):
             response.raise_for_status()
 
-        for _ in range(100):
+        for _ in range(30):
             try:
                 with httpx.Client(event_hooks={"response": [raise_on_4xx_5xx]}) as client:
                     if (
-                        client.get(f"http://localhost:{port}").json()["services"]["s3"]
-                        == "running"
+                        (status := client.get(f"http://localhost:{port}/_localstack/health").json()["services"]["s3"])
+                        == "available"
                     ):
                         break
+                    print(f"s3 status: {status}")
             except httpx.HTTPError as exc:
-                print(f"Failed to fetch http://localhost:{port}: {exc}")
-                time.sleep(1)
+                print(f"Failed to fetch http://localhost:{port}/_localstack/health: {exc}")
+            time.sleep(1)
         else:
+            subprocess.call(["docker", "logs", container])
             raise RuntimeError("Could not contact localstack s3")
 
         yield f"http://localhost:{port}"
     finally:
         if container is not None:
-            subprocess.check_call(
+            subprocess.call(
                 ["docker", "stop", container], stdout=subprocess.DEVNULL
+            )
+            subprocess.check_call(
+                ["docker", "rm", container], stdout=subprocess.DEVNULL
             )
 
 
