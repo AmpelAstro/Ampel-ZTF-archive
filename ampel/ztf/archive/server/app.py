@@ -1,49 +1,43 @@
 import base64
-import io
-import time
 import hashlib
+import io
 import json
-from urllib.parse import urlsplit
-from ampel.ztf.archive.server.cutouts import extract_alert, pack_records, repack_alert
-from ampel.ztf.t0.ArchiveUpdater import ArchiveUpdater
-from pydantic.fields import Field
-import sqlalchemy
-from ampel.ztf.archive.server.models import AlertChunk
 import secrets
-import fastavro
-from base64 import b64encode
-from typing import TYPE_CHECKING, Any, List, Literal, Optional, Union
+from typing import TYPE_CHECKING, Any, Literal, Optional, Union
+from urllib.parse import urlsplit
 
+import fastavro
+import sqlalchemy
 from fastapi import (
-    Body,
-    FastAPI,
-    Depends,
-    Request,
-    Query,
-    HTTPException,
-    status,
     BackgroundTasks,
+    Body,
+    Depends,
+    FastAPI,
+    HTTPException,
+    Query,
+    Request,
+    status,
 )
 from fastapi.encoders import jsonable_encoder
-from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import JSONResponse
+from fastapi.middleware.gzip import GZipMiddleware
+from pydantic.fields import Field
 
-from .settings import settings
+from ampel.ztf.archive.ArchiveDB import (
+    ArchiveDB,
+    GroupInfo,
+    GroupNotFoundError,
+    NoSuchColumnError,
+)
+from ampel.ztf.archive.server.cutouts import extract_alert, pack_records
+from ampel.ztf.archive.server.skymap import deres
+from ampel.ztf.t0.ArchiveUpdater import ArchiveUpdater
+
 from .db import (
+    OperationalError,
     get_archive,
     get_archive_updater,
-    OperationalError,
     handle_operationalerror,
-)
-from .s3 import get_object, get_range, get_s3_bucket, get_url_for_key
-from .tokens import (
-    router as token_router,
-    verify_access_token,
-    verify_write_token,
-    AuthToken,
 )
 from .models import (
     Alert,
@@ -61,13 +55,16 @@ from .models import (
     TopicDescription,
     TopicQuery,
 )
-from ampel.ztf.archive.ArchiveDB import (
-    ArchiveDB,
-    GroupInfo,
-    GroupNotFoundError,
-    NoSuchColumnError,
+from .s3 import get_range, get_s3_bucket, get_url_for_key
+from .settings import settings
+from .tokens import (
+    AuthToken,
+    verify_access_token,
+    verify_write_token,
 )
-from ampel.ztf.archive.server.skymap import deres
+from .tokens import (
+    router as token_router,
+)
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.service_resource import Bucket
@@ -125,6 +122,7 @@ app.include_router(token_router, prefix="/tokens")
 
 app.exception_handler(OperationalError)(handle_operationalerror)
 
+
 # NB: make deserialization depend on write auth to minimize attack surface
 async def deserialize_avro_body(
     request: Request, auth: bool = Depends(verify_write_token)
@@ -135,13 +133,13 @@ async def deserialize_avro_body(
     except ValueError as exc:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY, headers={"x-exception": str(exc)}
-        )
+        ) from exc
     try:
         content, schema = list(reader), reader.writer_schema
     except StopIteration as exc:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY, headers={"x-exception": str(exc)}
-        )
+        ) from exc
     return content, schema  # type: ignore[return-value]
 
 
@@ -171,7 +169,7 @@ def post_alert_chunk(
         ContentMD5=md5,
         Metadata={"schema-name": schema["name"], "schema-version": schema["version"]},
     )
-    assert 200 <= s3_response["ResponseMetadata"]["HTTPStatusCode"] < 300
+    assert 200 <= s3_response["ResponseMetadata"]["HTTPStatusCode"] < 300  # noqa: PLR2004
 
     try:
         archive.insert_alert_chunk(
@@ -195,7 +193,7 @@ def get_alert_from_s3(
     assert path[-2] == bucket.name
     try:
         return extract_alert(candid, *get_range(bucket, path[-1], start, end))
-    except KeyError as err:
+    except KeyError:
         return None
 
 
@@ -215,10 +213,9 @@ def get_alert(
     """
     if alert := get_alert_from_s3(candid, db, bucket):
         return alert
-    elif alert := db.get_alert(candid, with_history=True):
+    if alert := db.get_alert(candid, with_history=True):
         return alert
-    else:
-        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    raise HTTPException(status.HTTP_404_NOT_FOUND)
 
 
 @app.get("/alert/{candid}/cutouts", tags=["cutouts"], response_model=AlertCutouts)
@@ -241,7 +238,7 @@ def verify_authorized_programid(
     if not auth.partnership:
         if programid is None:
             return 1
-        elif programid != 1:
+        if programid != 1:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail=f"Not authorized for programid {programid}",
@@ -253,7 +250,7 @@ def verify_authorized_programid(
 @app.get(
     "/object/{objectId}/alerts",
     tags=["alerts"],
-    response_model=List[Alert],
+    response_model=list[Alert],
     response_model_exclude_none=True,
 )
 def get_alerts_for_object(
@@ -421,9 +418,7 @@ def get_alerts_in_cone(
     )
 
 
-@app.get(
-    "/alerts/sample"
-)
+@app.get("/alerts/sample")
 def get_random_alerts(
     count: int = Query(1, ge=1, le=10_000),
     with_history: bool = Query(False),
@@ -457,8 +452,8 @@ def get_objects_in_cone(
     archive: ArchiveDB = Depends(get_archive),
     auth: bool = Depends(verify_access_token),
     programid: Optional[int] = Depends(verify_authorized_programid),
-) -> List[str]:
-    chunk = list(
+) -> list[str]:
+    return list(
         archive.get_objects_in_cone(
             ra=ra,
             dec=dec,
@@ -468,7 +463,6 @@ def get_objects_in_cone(
             programid=programid,
         )
     )
-    return chunk
 
 
 @app.get(
@@ -494,7 +488,7 @@ def get_alerts_in_healpix_pixel(
         "4096",
         "8192",
     ] = Query("64", description="NSide of (nested) HEALpix grid"),
-    ipix: List[int] = Query(..., description="Pixel index"),
+    ipix: list[int] = Query(..., description="Pixel index"),
     jd_start: float = Query(..., description="Earliest observation jd"),
     jd_end: float = Query(..., description="Latest observation jd"),
     latest: bool = Query(
@@ -621,7 +615,7 @@ def create_topic(
                 "msg": "Topic did not match any alerts. Are you sure these are valid candidate ids?",
                 "topic": jsonable_encoder(topic),
             },
-        )
+        ) from None
     return name
 
 
@@ -649,14 +643,14 @@ def create_stream_from_topic(
     """
     resume_token = secrets.token_urlsafe()
     try:
-        queue_info = archive.create_read_queue_from_topic(
+        archive.create_read_queue_from_topic(
             query.topic,
             resume_token,
             query.chunk_size,
             slice(query.start, query.stop, query.step),
         )
     except GroupNotFoundError:
-        raise HTTPException(status_code=404, detail="Topic not found")
+        raise HTTPException(status_code=404, detail="Topic not found") from None
     stream_info = get_stream_info(resume_token, archive)
     return {"resume_token": resume_token, **stream_info}
 
@@ -720,7 +714,7 @@ def create_stream_from_query(
     try:
         if isinstance(query, AlertQuery):
             if query.cone:
-                condition, order = archive._cone_search_condition(
+                condition, order = archive._cone_search_condition(  # noqa: SLF001
                     ra=query.cone.ra,
                     dec=query.cone.dec,
                     radius=query.cone.radius,
@@ -730,14 +724,14 @@ def create_stream_from_query(
                     candidate_filter=query.candidate,
                 )
             else:
-                condition, order = archive._time_range_condition(
+                condition, order = archive._time_range_condition(  # noqa: SLF001
                     programid=programid,
                     jd_start=query.jd.gt,
                     jd_end=query.jd.lt,
                     candidate_filter=query.candidate,
                 )
         elif isinstance(query, ObjectQuery):
-            condition, order = archive._object_search_condition(
+            condition, order = archive._object_search_condition(  # noqa: SLF001
                 objectId=query.objectId,
                 programid=programid,
                 jd_start=query.jd.gt,
@@ -748,7 +742,7 @@ def create_stream_from_query(
             pixels: dict[int, list[int]] = {}
             for region in query.regions:
                 pixels[region.nside] = pixels.get(region.nside, []) + region.pixels
-            condition, order = archive._healpix_search_condition(
+            condition, order = archive._healpix_search_condition(  # noqa: SLF001
                 pixels=pixels,
                 jd_min=query.jd.gt,
                 jd_max=query.jd.lt,
@@ -760,29 +754,27 @@ def create_stream_from_query(
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={"msg": f"unknown candidate field {exc.args[0]}"},
-        )
+        ) from None
 
     name = secrets.token_urlsafe(32)
     try:
-        conn = archive._engine.connect()
+        conn = archive._engine.connect()  # noqa: SLF001
     except sqlalchemy.exc.TimeoutError as exc:
         conn.close()
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={"msg": str(exc)}
-        )
-    
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={"msg": str(exc)}
+        ) from None
+
     conn.execute(f"set statement_timeout={settings.stream_query_timeout*1000};")
-    group_id = archive._create_read_queue(conn, name, query.chunk_size)
+    group_id = archive._create_read_queue(conn, name, query.chunk_size)  # noqa: SLF001
 
     # create stream in the background
     def create_stream() -> None:
         try:
-            archive._fill_read_queue(
-                conn, condition, order, group_id, query.chunk_size
-            ) 
+            archive._fill_read_queue(conn, condition, order, group_id, query.chunk_size)  # noqa: SLF001
         finally:
             conn.close()
+
     tasks.add_task(create_stream)
 
     return {"resume_token": name, "chunk_size": query.chunk_size}
@@ -792,13 +784,13 @@ def get_stream_info(resume_token: str, archive: ArchiveDB = Depends(get_archive)
     try:
         info = archive.get_group_info(resume_token)
     except GroupNotFoundError:
-        raise HTTPException(status_code=404, detail="Stream not found")
+        raise HTTPException(status_code=404, detail="Stream not found") from None
     if info["error"] is None:
         raise HTTPException(
             status_code=status.HTTP_423_LOCKED,
             detail={"msg": "queue-populating query has not yet finished"},
         )
-    elif info["error"]:
+    if info["error"]:
         raise HTTPException(
             status_code=status.HTTP_424_FAILED_DEPENDENCY,
             detail={"msg": info["msg"]},
@@ -847,7 +839,7 @@ def stream_get_chunk(
     try:
         chunk_id, alerts = archive.get_chunk_from_queue(resume_token, with_history)
     except GroupNotFoundError:
-        raise HTTPException(status_code=404, detail="Stream not found")
+        raise HTTPException(status_code=404, detail="Stream not found") from None
     info = get_stream_info(resume_token, archive)
     return AlertChunk(
         resume_token=resume_token,

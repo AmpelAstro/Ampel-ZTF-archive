@@ -1,11 +1,12 @@
 import math
 from base64 import b64encode
 from datetime import datetime
-from chunk import Chunk
-from typing import List, Dict, Any, Literal, Optional, Union
-from pydantic import BaseModel, Field, validator, root_validator
-from ..types import FilterClause
+from typing import ClassVar, Literal, Optional, Union
+
+from pydantic import BaseModel, Field, root_validator, validator
+
 from ..ArchiveDBClient import ArchiveDBClient
+from ..types import FilterClause
 
 
 class StrictModel(BaseModel):
@@ -32,7 +33,7 @@ class StreamDescription(Stream):
 
 class Topic(BaseModel):
     description: str = Field(..., description="Informative string for this topic")
-    candids: List[int] = Field(
+    candids: list[int] = Field(
         ..., description="IPAC candidate ids to associate with this topic"
     )
 
@@ -82,8 +83,7 @@ class CandidateFilterable(StrictModel):
     def validate_operator(cls, v):
         if isinstance(v, dict):
             return v
-        else:
-            return {"$eq": v}
+        return {"$eq": v}
 
 
 class AlertQuery(CandidateFilterable):
@@ -97,12 +97,12 @@ class AlertQuery(CandidateFilterable):
     @root_validator
     def at_least_one_constraint(cls, values):
         if not {"cone", "jd"}.intersection(values.keys()):
-            raise ValueError(f"At least one constraint (cone or jd) must be specified")
+            raise ValueError("At least one constraint (cone or jd) must be specified")
         return values
 
 
 class ObjectQuery(CandidateFilterable):
-    objectId: Union[str, List[str]]
+    objectId: Union[str, list[str]]
     jd: TimeConstraint = TimeConstraint()  # type: ignore[call-arg]
     candidate: Optional[FilterClause] = None
     chunk_size: int = Field(
@@ -142,20 +142,17 @@ class HEALpixMapRegion(StrictModel):
         return nside
 
 
-class HEALpixMapQuery(AlertChunkQueryBase, MapQueryBase, HEALpixMapRegion):
-    ...
+class HEALpixMapQuery(AlertChunkQueryBase, MapQueryBase, HEALpixMapRegion): ...
 
 
 class HEALpixRegionQueryBase(MapQueryBase):
     regions: list[HEALpixMapRegion]
 
 
-class HEALpixRegionQuery(AlertChunkQueryBase, HEALpixRegionQueryBase):
-    ...
+class HEALpixRegionQuery(AlertChunkQueryBase, HEALpixRegionQueryBase): ...
 
 
-class HEALpixRegionCountQuery(HEALpixRegionQueryBase):
-    ...
+class HEALpixRegionCountQuery(HEALpixRegionQueryBase): ...
 
 
 # Generated from tests/test-data/schema_3.3.json
@@ -383,7 +380,7 @@ class AlertBase(BaseModel):
     objectId: str
 
     class Config:
-        json_encoders = {bytes: lambda v: b64encode(v).decode()}
+        json_encoders: ClassVar[dict] = {bytes: lambda v: b64encode(v).decode()}
 
 
 class AlertCutouts(AlertBase):
@@ -397,15 +394,22 @@ class Alert_33(AlertCutouts):
     avro alert schema for ZTF (www.ztf.caltech.edu)
     """
 
-    schemavsn: Union[Literal["1.9"], Literal["2.0"], Literal["3.0"], Literal["3.1"], Literal["3.2"], Literal["3.3"]]
+    schemavsn: Union[
+        Literal["1.9"],
+        Literal["2.0"],
+        Literal["3.0"],
+        Literal["3.1"],
+        Literal["3.2"],
+        Literal["3.3"],
+    ]
     publisher: str = "Ampel"
     candidate: Candidate
-    prv_candidates: Optional[List[PrvCandidate]]
+    prv_candidates: Optional[list[PrvCandidate]]
 
 
 class Alert_402(Alert_33):
     schemavsn: Literal["4.02"]  # type: ignore[assignment]
-    fp_hists: Optional[List[FPHist]]
+    fp_hists: Optional[list[FPHist]]
 
 
 Alert = Union[Alert_33, Alert_402]
@@ -414,12 +418,12 @@ Alert = Union[Alert_33, Alert_402]
 class AlertChunk(BaseModel):
     resume_token: str
     chunk: Optional[int]
-    alerts: List[Alert]
+    alerts: list[Alert]
     remaining: ChunkCount
     pending: ChunkCount
 
     class Config:
-        json_encoders = {bytes: lambda v: b64encode(v).decode()}
+        json_encoders: ClassVar[dict] = {bytes: lambda v: b64encode(v).decode()}
 
 
 class AlertCount(BaseModel):

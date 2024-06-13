@@ -1,5 +1,5 @@
-from functools import lru_cache
 import io
+from functools import lru_cache
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
@@ -7,12 +7,13 @@ import boto3
 from botocore.exceptions import ClientError
 from starlette.status import HTTP_404_NOT_FOUND
 
+from .cutouts import ALERT_SCHEMAS, get_parsed_schema, read_schema
 from .settings import settings
-from .cutouts import get_parsed_schema, read_schema, ALERT_SCHEMAS
 
 if TYPE_CHECKING:
-    from mypy_boto3_s3.service_resource import Bucket
     from typing import BinaryIO
+
+    from mypy_boto3_s3.service_resource import Bucket
 
 
 class NoSuchKey(KeyError): ...
@@ -32,17 +33,15 @@ def get_object(bucket: "Bucket", key: str) -> bytes:
     except ClientError as err:
         if err.response["Error"]["Code"] == str(HTTP_404_NOT_FOUND):
             raise KeyError() from err
-        else:
-            raise
+        raise
     return buffer.getvalue()
 
 
 def get_stream(bucket: "Bucket", key: str) -> "BinaryIO":
     response = bucket.Object(key).get()
-    if response["ResponseMetadata"]["HTTPStatusCode"] <= 400:
+    if response["ResponseMetadata"]["HTTPStatusCode"] <= 400:  # noqa: PLR2004
         return response["Body"]  # type: ignore[return-value]
-    else:
-        raise KeyError
+    raise KeyError
 
 
 def get_range(
@@ -53,7 +52,7 @@ def get_range(
         response = obj.get(Range=f"={start}-{end}")
     except bucket.meta.client.exceptions.NoSuchKey as err:
         raise KeyError(f"bucket {bucket.name} has no key {key}") from err
-    if response["ResponseMetadata"]["HTTPStatusCode"] <= 400:
+    if response["ResponseMetadata"]["HTTPStatusCode"] <= 400:  # noqa: PLR2004
         schema_key = (
             obj.metadata["schema-name"],
             obj.metadata["schema-version"],
@@ -63,8 +62,7 @@ def get_range(
         else:
             schema = ALERT_SCHEMAS[schema_key]
         return response["Body"], schema  # type: ignore[return-value]
-    else:
-        raise KeyError
+    raise KeyError
 
 
 def get_url_for_key(bucket: "Bucket", key: str) -> str:

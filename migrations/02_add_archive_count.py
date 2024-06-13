@@ -1,17 +1,13 @@
 #!/usr/bin/env python
 
 import logging
-import time
-import sys
 from argparse import ArgumentParser
-import sqlalchemy as sa
-import fastavro
 
 import boto3
+import fastavro
+import sqlalchemy as sa
 
-from ampel.ztf.t0.ArchiveUpdater import ArchiveUpdater
-from ampel.ztf.archive.server.s3 import get_object, get_key_for_url, get_stream
-
+from ampel.ztf.archive.server.s3 import get_key_for_url, get_stream
 
 logging.basicConfig(level="INFO", format="[%(asctime)s] %(message)s")
 log = logging.getLogger()
@@ -48,7 +44,7 @@ with engine.connect() as connection:
     )
 
     log.info("filling in missing avro_archive.count")
-    for row in connection.execute(Archive.select(Archive.c.count == None)).fetchall():
+    for row in connection.execute(Archive.select(Archive.c.count is None)).fetchall():
         key = get_key_for_url(bucket, row["uri"])
         count = len(list(fastavro.reader(get_stream(bucket, key))))
 
@@ -79,9 +75,8 @@ with engine.connect() as connection:
 
     log.info("cleaning up blobs not referenced by any alert")
     with connection.begin() as transaction:
-
         i = 0
-        for i, row in enumerate(
+        for i, row in enumerate(  # noqa: B007
             connection.execute(
                 Archive.delete(
                     sa.and_(
@@ -137,6 +132,8 @@ with engine.connect() as connection:
                 log.info(f"would delete {key}")
             else:
                 log.info(bucket.Object(key).delete())
-        log.info(f"Deleted {len(missing_in_archive)} objects not referenced by any avro_archive row")
+        log.info(
+            f"Deleted {len(missing_in_archive)} objects not referenced by any avro_archive row"
+        )
     else:
         log.warning("skipped bucket check; enable with --check-bucket")

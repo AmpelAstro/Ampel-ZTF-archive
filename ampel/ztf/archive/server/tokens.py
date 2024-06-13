@@ -1,31 +1,30 @@
 from dataclasses import dataclass
-from functools import cached_property
-import sqlalchemy
-from ampel.ztf.archive.ArchiveDB import ArchiveDB, select
-from typing import Any, List, Optional
-import jwt
+from typing import Optional
 
-from pydantic import BaseModel, ValidationError
-from fastapi import APIRouter, Depends, status, HTTPException
+import jwt
+import sqlalchemy
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer
 from fastapi.security.http import HTTPAuthorizationCredentials
+from pydantic import BaseModel, ValidationError
 
-from .settings import settings
+from ampel.ztf.archive.ArchiveDB import ArchiveDB, select
+
 from .db import get_archive
+from .settings import settings
 
 user_bearer = HTTPBearer(scheme_name="Ampel API token")
 token_bearer = HTTPBearer(scheme_name="ZTF archive access token")
 
 
 class User(BaseModel):
-
     name: str
-    orgs: List[str]
-    teams: List[str]
+    orgs: list[str]
+    teams: list[str]
 
     @property
-    def identities(self) -> List[str]:
-        return [self.name] + self.orgs + self.teams
+    def identities(self) -> list[str]:
+        return [self.name, *self.orgs, *self.teams]
 
 
 class TokenRequest(BaseModel):
@@ -57,15 +56,15 @@ async def get_user(auth: HTTPAuthorizationCredentials = Depends(user_bearer)) ->
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
             return token_data
         except ValidationError:
-            raise credentials_exception
+            raise credentials_exception from None
     except jwt.PyJWTError:
-        raise credentials_exception
+        raise credentials_exception from None
 
 
 def find_access_token(db: ArchiveDB, token: str) -> Optional[AuthToken]:
-    Token = db._meta.tables["access_token"]
+    Token = db.get_table("access_token")
     try:
-        with db._engine.connect() as conn:
+        with db.connect() as conn:
             try:
                 cursor = conn.execute(
                     select([Token.c.token_id, Token.c.role, Token.c.partnership])
@@ -79,7 +78,7 @@ def find_access_token(db: ArchiveDB, token: str) -> Optional[AuthToken]:
     except sqlalchemy.exc.TimeoutError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
-        )
+        ) from None
 
 
 async def verify_access_token(
@@ -103,7 +102,7 @@ async def verify_write_token(
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    elif token.role != "writer":
+    if token.role != "writer":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
@@ -117,8 +116,8 @@ router = APIRouter(tags=["tokens"])
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
 def create_token(user: User = Depends(get_user), db: ArchiveDB = Depends(get_archive)):
-    Token = db._meta.tables["access_token"]
-    with db._engine.connect() as conn:
+    Token = db.get_table("access_token")
+    with db.connect() as conn:
         cursor = conn.execute(
             Token.insert(
                 {
@@ -134,8 +133,8 @@ def create_token(user: User = Depends(get_user), db: ArchiveDB = Depends(get_arc
 
 @router.get("/")
 def list_tokens(user: User = Depends(get_user), db: ArchiveDB = Depends(get_archive)):
-    Token = db._meta.tables["access_token"]
-    with db._engine.connect() as conn:
+    Token = db.get_table("access_token")
+    with db.connect() as conn:
         cursor = conn.execute(Token.select().where(Token.c.owner == user.name))
         return cursor.fetchall()
 
@@ -144,8 +143,8 @@ def list_tokens(user: User = Depends(get_user), db: ArchiveDB = Depends(get_arch
 def get_token(
     token_id: int, user: User = Depends(get_user), db: ArchiveDB = Depends(get_archive)
 ):
-    Token = db._meta.tables["access_token"]
-    with db._engine.connect() as conn:
+    Token = db.get_table("access_token")
+    with db.connect() as conn:
         cursor = conn.execute(
             Token.select().where(
                 Token.c.token_id == token_id and Token.c.owner == user.name
@@ -153,16 +152,15 @@ def get_token(
         )
         if result := cursor.fetchone():
             return result
-        else:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
 
 @router.delete("/{token_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_token(
     token_id: int, user: User = Depends(get_user), db: ArchiveDB = Depends(get_archive)
 ):
-    Token = db._meta.tables["access_token"]
-    with db._engine.connect() as conn:
+    Token = db.get_table("access_token")
+    with db.connect() as conn:
         cursor = conn.execute(
             Token.delete().where(
                 Token.c.token_id == token_id and Token.c.owner == user.name

@@ -1,8 +1,9 @@
 import io
-from typing import Any, BinaryIO
-import fastavro
 import json
 import pathlib
+from typing import Any, BinaryIO
+
+import fastavro
 from fastavro._read_py import BLOCK_READERS, BinaryDecoder
 
 with open(pathlib.Path(__file__).parent / "cutout_schema.json") as f:
@@ -10,16 +11,19 @@ with open(pathlib.Path(__file__).parent / "cutout_schema.json") as f:
 
 ALERT_SCHEMAS: dict[tuple[str, str], Any] = {}
 
+
 def get_parsed_schema(schema: dict):
     key = schema["name"], schema["version"]
     if key not in ALERT_SCHEMAS:
         ALERT_SCHEMAS[key] = fastavro.parse_schema(schema)
     return ALERT_SCHEMAS[key]
 
+
 def read_schema(fo: BinaryIO) -> dict[str, Any]:
     reader = fastavro.reader(fo)
     assert isinstance(reader.writer_schema, dict)
     return reader.writer_schema
+
 
 def repack_alert(alert: dict) -> bytes:
     """
@@ -60,7 +64,7 @@ def pack_records(
         # reader has consumed the block; note offset
         end = buf.tell()
         for _ in block:
-            ranges.append((pos, end))
+            ranges.append((pos, end))  # noqa: PERF401
         pos = end
 
     return buf.getvalue(), ranges
@@ -78,7 +82,8 @@ def extract_alert(
 
     decoder = BinaryDecoder(block)
     # consume record count to advance to the compressed block
-    assert (nrecords := decoder.read_long()) > 0
+    nrecords = decoder.read_long()
+    assert nrecords > 0
     # consume compressed block
     buf = read_block(decoder)
     # iterate over deserialized records
@@ -86,5 +91,4 @@ def extract_alert(
         alert = fastavro.schemaless_reader(buf, get_parsed_schema(schema), None)
         if isinstance(alert, dict) and alert["candid"] == candid:
             return alert
-    else:
-        raise KeyError(f"{candid} not found in block")
+    raise KeyError(f"{candid} not found in block")

@@ -4,16 +4,16 @@ import os
 import secrets
 import subprocess
 import tarfile
-from pathlib import Path
-from os import environ
-from os.path import dirname, join
-from ampel.ztf.archive.server.s3 import get_s3_bucket
-import httpx
 import time
+from os.path import dirname, join
+from pathlib import Path
 
+import fastavro
+import httpx
 import pytest
 from moto import mock_s3
-import fastavro
+
+from ampel.ztf.archive.server.s3 import get_s3_bucket
 
 POSTGRES_IMAGE = "ampelproject/postgres:14.1"
 LOCALSTACK_IMAGE = "localstack/localstack:3.4.0"
@@ -30,7 +30,9 @@ def archive(integration):
         yield os.environ["POSTGRES_URI"]
         return
     elif not integration:
-        raise pytest.skip("integration tests require --integration flag or POSTGRES_URI env var")
+        raise pytest.skip(
+            "integration tests require --integration flag or POSTGRES_URI env var"
+        )
     password = secrets.token_hex()
     container = None
     try:
@@ -52,7 +54,7 @@ def archive(integration):
                     "ARCHIVE_WRITE_USER=ampel-client",
                     "-P",
                     "-v",
-                    f"{str(Path(__file__).parent/'test-data'/'initdb'/'archive')}:/docker-entrypoint-initdb.d",
+                    f"{Path(__file__).parent/'test-data'/'initdb'/'archive'}:/docker-entrypoint-initdb.d",
                     POSTGRES_IMAGE,
                 ],
             )
@@ -85,9 +87,7 @@ def archive(integration):
         yield f"postgresql://ampel:{password}@localhost:{port}/ztfarchive"
     finally:
         if container is not None:
-            subprocess.call(
-                ["docker", "stop", container], stdout=subprocess.DEVNULL
-            )
+            subprocess.call(["docker", "stop", container], stdout=subprocess.DEVNULL)
             subprocess.check_call(
                 ["docker", "rm", container], stdout=subprocess.DEVNULL
             )
@@ -99,7 +99,9 @@ def localstack_s3(integration):
         yield f"http://localhost:{os.environ['LOCALSTACK_PORT']}"
         return
     elif not integration:
-        raise pytest.skip("integration tests require --integration flag or LOCALSTACK_PORT env var")
+        raise pytest.skip(
+            "integration tests require --integration flag or LOCALSTACK_PORT env var"
+        )
     container = None
     try:
         container = (
@@ -127,15 +129,20 @@ def localstack_s3(integration):
 
         for _ in range(30):
             try:
-                with httpx.Client(event_hooks={"response": [raise_on_4xx_5xx]}) as client:
+                with httpx.Client(
+                    event_hooks={"response": [raise_on_4xx_5xx]}
+                ) as client:
                     if (
-                        (status := client.get(f"http://localhost:{port}/_localstack/health").json()["services"]["s3"])
-                        == "available"
-                    ):
+                        status := client.get(
+                            f"http://localhost:{port}/_localstack/health"
+                        ).json()["services"]["s3"]
+                    ) == "available":
                         break
                     print(f"s3 status: {status}")
             except httpx.HTTPError as exc:
-                print(f"Failed to fetch http://localhost:{port}/_localstack/health: {exc}")
+                print(
+                    f"Failed to fetch http://localhost:{port}/_localstack/health: {exc}"
+                )
             time.sleep(1)
         else:
             subprocess.call(["docker", "logs", container])
@@ -144,20 +151,18 @@ def localstack_s3(integration):
         yield f"http://localhost:{port}"
     finally:
         if container is not None:
-            subprocess.call(
-                ["docker", "stop", container], stdout=subprocess.DEVNULL
-            )
+            subprocess.call(["docker", "stop", container], stdout=subprocess.DEVNULL)
             subprocess.check_call(
                 ["docker", "rm", container], stdout=subprocess.DEVNULL
             )
 
 
-@pytest.fixture
+@pytest.fixture()
 def empty_archive(archive):
     """
     Yield archive database, dropping all rows when finished
     """
-    from sqlalchemy import create_engine, MetaData
+    from sqlalchemy import MetaData, create_engine
 
     engine = create_engine(archive)
     meta = MetaData()
@@ -175,7 +180,7 @@ def empty_archive(archive):
                     connection.execute(table.delete())
 
 
-@pytest.fixture
+@pytest.fixture()
 def alert_archive(empty_archive, alert_generator):
     from ampel.ztf.t0.ArchiveUpdater import ArchiveUpdater
 
@@ -185,7 +190,7 @@ def alert_archive(empty_archive, alert_generator):
     for alert, schema in islice(alert_generator(with_schema=True), 10):
         assert schema["version"] == "3.0", "Need alerts with current schema"
         updater.insert_alert(alert, schema, 0, 0)
-    yield empty_archive
+    return empty_archive
 
 
 @pytest.fixture(scope="session")
@@ -219,15 +224,13 @@ def alert_generator(alert_tarball):
 
 
 @pytest.fixture(scope="module")
-def aws_credentials():
+def _aws_credentials():
     os.environ["AWS_ACCESS_KEY_ID"] = "KEY"
     os.environ["AWS_SECRET_ACCESS_KEY"] = "SEEKRIT"
 
 
-@pytest.fixture
-def mock_s3_bucket(aws_credentials):
-    from ampel.ztf.archive.server.settings import settings
-
+@pytest.fixture()
+def mock_s3_bucket(_aws_credentials):
     get_s3_bucket.cache_clear()
     with mock_s3():
         bucket = get_s3_bucket()
@@ -236,8 +239,8 @@ def mock_s3_bucket(aws_credentials):
     get_s3_bucket.cache_clear()
 
 
-@pytest.fixture
-def localstack_s3_bucket(aws_credentials, localstack_s3, monkeypatch):
+@pytest.fixture()
+def localstack_s3_bucket(_aws_credentials, localstack_s3, monkeypatch):
     from ampel.ztf.archive.server.settings import settings
 
     monkeypatch.setattr(settings, "s3_endpoint_url", localstack_s3)
@@ -253,4 +256,4 @@ def localstack_s3_bucket(aws_credentials, localstack_s3, monkeypatch):
 # metafixture as suggested in https://github.com/pytest-dev/pytest/issues/349#issuecomment-189370273
 @pytest.fixture(params=["mock_s3_bucket", "localstack_s3_bucket"])
 def s3_bucket(request):
-    yield request.getfixturevalue(request.param)
+    return request.getfixturevalue(request.param)

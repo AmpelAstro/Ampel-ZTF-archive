@@ -1,28 +1,17 @@
 import io
-import fastavro
-import pytest
-import os
+import operator
 import secrets
 import time
-import operator
 from math import isnan
-from collections import defaultdict
-from sqlalchemy.sql.elements import BindParameter
 
-from sqlalchemy.sql.sqltypes import Binary
+import fastavro
+import pytest
+from sqlalchemy import select
+from sqlalchemy.sql.expression import BinaryExpression, BooleanClauseList
+from sqlalchemy.sql.functions import count
 
 from ampel.ztf.archive.ArchiveDB import ArchiveDB
 from ampel.ztf.t0.ArchiveUpdater import ArchiveUpdater
-
-from sqlalchemy import select, create_engine, MetaData
-import sqlalchemy
-from sqlalchemy.sql.functions import count
-from sqlalchemy.exc import SAWarning
-from sqlalchemy.sql.expression import BooleanClauseList, BinaryExpression, Function
-import warnings
-
-from collections.abc import Iterable
-import json
 
 
 def test_walk_tarball(alert_generator):
@@ -45,7 +34,7 @@ def test_insert_unique_alerts(empty_archive, alert_generator):
 
         # (candid,pid) is unique within an alert packet
         prevs = dict()
-        for idx, candidate in enumerate([alert["candidate"]] + alert["prv_candidates"]):
+        for candidate in [alert["candidate"]] + alert["prv_candidates"]:
             key = (candidate["candid"], candidate["pid"])
             assert key not in prevs
             prevs[key] = candidate
@@ -60,13 +49,11 @@ def test_insert_unique_alerts(empty_archive, alert_generator):
 
 
 def count_previous_candidates(alert):
-    upper_limits = sum((1 for c in alert["prv_candidates"] if c["candid"] is None))
+    upper_limits = sum(1 for c in alert["prv_candidates"] if c["candid"] is None)
     return len(alert["prv_candidates"]) - upper_limits, upper_limits
 
 
 def test_insert_duplicate_alerts(empty_archive, alert_generator):
-    import itertools
-
     processor_id = 0
     db = ArchiveUpdater(empty_archive)
     connection = db._engine.connect()
@@ -124,11 +111,11 @@ def test_insert_duplicate_photopoints(empty_archive, alert_generator):
     db = ArchiveUpdater(empty_archive)
     connection = db._engine.connect()
     meta = db._meta
-    from sqlalchemy.sql.expression import tuple_, func
+    from sqlalchemy.sql.expression import func
     from sqlalchemy.sql.functions import sum
 
     # find an alert with at least 1 previous detection
-    for alert, schema in alert_generator(with_schema=True):
+    for alert, schema in alert_generator(with_schema=True):  # noqa: B007
         detections, upper_limits = count_previous_candidates(alert)
         if detections > 0 and upper_limits > 0:
             break
@@ -249,7 +236,7 @@ def test_delete_alert(empty_archive, alert_generator):
     db = ArchiveUpdater(empty_archive)
     connection = db._engine.connect()
     meta = db._meta
-    from sqlalchemy.sql.expression import tuple_, func
+    from sqlalchemy.sql.expression import func
     from sqlalchemy.sql.functions import sum
 
     alert, schema = next(alert_generator(with_schema=True))
@@ -280,7 +267,7 @@ def test_delete_alert(empty_archive, alert_generator):
                 )
             )
         ).first()[0]
-        == None
+        is None
     )
     assert (
         connection.execute(
@@ -296,7 +283,7 @@ def test_delete_alert(empty_archive, alert_generator):
                 )
             )
         ).first()[0]
-        == None
+        is None
     )
     # array-joined tables don't participate in delete cascade, because ELEMENT REFERENCES is still not a thing
     # http://blog.2ndquadrant.com/postgresql-9-3-development-array-element-foreign-keys/
@@ -315,7 +302,6 @@ def test_delete_alert(empty_archive, alert_generator):
 
 
 def assert_alerts_equivalent(alert, reco_alert):
-
     # some necessary normalization on the alert
     fluff = ["pdiffimfilename", "programpi"]
     alert = dict(alert)
@@ -349,19 +335,22 @@ def assert_alerts_equivalent(alert, reco_alert):
     try:
         assert [c.get("candid") for c in prvs] == [c.get("candid") for c in reco_prvs]
     except:
-        jd_off = lambda cands: [c["jd"] - cands[0]["jd"] for c in cands]
+
+        def jd_off(cands):
+            return [c["jd"] - cands[0]["jd"] for c in cands]
+
         print(jd_off(prvs))
         print(jd_off(reco_alert["prv_candidates"]))
         raise
     for prv, reco_prv in zip(prvs, reco_prvs):
-        prv = strip(prv)
+        prv = strip(prv)  # noqa: PLW2901
         # remove keys not in original alert (because it came from an older schema)
         for k in set(reco_prv.keys()).difference(prv.keys()):
             del reco_prv[k]
         assert {k for k, v in prv.items() if v is not None} == {
             k for k, v in reco_prv.items() if v is not None
         }
-        for k in prv.keys():
+        for k in prv:
             # print(k, prv[k], reco_prv[k])
             try:
                 if prv[k] is None:
@@ -391,9 +380,10 @@ def test_serializability(empty_archive, alert_generator):
     """
     # the python implementation of writer throws more useful errors on schema
     # violations
-    from fastavro._write_py import writer
-    from fastavro import reader
     from io import BytesIO
+
+    from fastavro import reader
+    from fastavro._write_py import writer
 
     processor_id = 0
     updater = ArchiveUpdater(empty_archive)
@@ -403,20 +393,21 @@ def test_serializability(empty_archive, alert_generator):
         processor_id = idx % 16
         updater.insert_alert(alert, schema, processor_id, 0)
 
-    for idx, alert in enumerate(alert_generator()):
+    for alert in alert_generator():
         reco = db.get_alert(alert["candid"], with_history=True)
         # round-trip to avro and back
         f = BytesIO()
         writer(f, schema, [reco])
-        deserialized = next(reader(BytesIO(f.getvalue())))
+        next(reader(BytesIO(f.getvalue())))
 
 
 @pytest.fixture(params=["3.2", "3.3"])
 def alert_with_schema(request):
-    from os.path import join, dirname
+    from os.path import dirname, join
+
     import fastavro
 
-    fname = join(dirname(__file__), "test-data", "schema_{}.avro".format(request.param))
+    fname = join(dirname(__file__), "test-data", f"schema_{request.param}.avro")
     with open(fname, "rb") as f:
         r = fastavro.reader(f)
         alert, schema = next(r), r.writer_schema
@@ -424,10 +415,10 @@ def alert_with_schema(request):
 
 
 def test_schema_update(empty_archive, alert_with_schema):
-    from os.path import join, dirname
-    from fastavro._write_py import writer
-    from fastavro import reader
     from io import BytesIO
+
+    from fastavro import reader
+    from fastavro._write_py import writer
 
     updater = ArchiveUpdater(empty_archive)
     db = ArchiveDB(empty_archive)
@@ -444,7 +435,7 @@ def test_schema_update(empty_archive, alert_with_schema):
             del deserialized[k]
     assert deserialized.keys() == reco.keys()
     for k in reco:
-        if not "candidate" in k or "cutout" in k:
+        if "candidate" not in k or "cutout" in k:
             assert deserialized[k] == reco[k]
     # reconstructed alert from the database may have extra keys
     assert not set(deserialized["candidate"].keys()).difference(
@@ -527,8 +518,7 @@ def test_archive_object(alert_generator, empty_archive) -> None:
 def test_partitioned_read_single(alert_archive):
     db = ArchiveDB(alert_archive)
     alerts = db.get_alerts_in_time_range(jd_start=0, jd_end=1e8, group_name="testy")[1]
-    l = list((alert["candid"] for alert in alerts))
-    assert len(l) == 10
+    assert len([alert["candid"] for alert in alerts]) == 10
 
 
 def test_insert_future_schema(alert_generator, empty_archive):
@@ -536,7 +526,9 @@ def test_insert_future_schema(alert_generator, empty_archive):
 
     alert, schema = next(alert_generator(True))
     schema["version"] = str(float(schema["version"]) + 10)
-    with pytest.raises(ValueError) as e_info:
+    with pytest.raises(
+        ValueError, match=r"alert schema \(.*\) is newer than database schema \(.*\)"
+    ):
         db.insert_alert(alert, schema, 0, 0)
 
 
@@ -602,7 +594,7 @@ def test_cone_search(alert_archive):
 @pytest.mark.parametrize("ipix", [13, [13]])
 def test_healpix_search(empty_archive, nside, ipix):
     db = ArchiveDB(empty_archive)
-    group = secrets.token_urlsafe()
+    secrets.token_urlsafe()
     condition, order = db._healpix_search_condition(
         pixels={nside: ipix}, jd_min=-1, jd_max=1
     )
@@ -626,7 +618,7 @@ def test_seekable_avro(alert_generator, cutouts: bool):
     from fastavro._read_py import BLOCK_READERS, BinaryDecoder
 
     alerts = []
-    for alert, schema in alert_generator(with_schema=True):
+    for alert, schema in alert_generator(with_schema=True):  # noqa: B007
         if not cutouts:
             for k in list(alert.keys()):
                 if k.startswith("cutout"):
@@ -650,7 +642,7 @@ def test_seekable_avro(alert_generator, cutouts: bool):
             ranges[alert["candid"]] = (pos, end)
         pos = end
 
-    print(buf.tell() / 2 ** 20)
+    print(buf.tell() / 2**20)
 
     codec = reader.metadata["avro.codec"]
     read_block = BLOCK_READERS.get(codec)

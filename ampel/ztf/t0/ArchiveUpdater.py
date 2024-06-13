@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 # File              : ampel/ztf/t0/ArchiveUpdater.py
 # License           : BSD-3-Clause
 # Author            : Jakob van Santen <jakob.van.santen@desy.de>
@@ -7,17 +6,17 @@
 # Last Modified Date: 14.11.2018
 # Last Modified By  : vb <vbrinnel@physik.hu-berlin.de>
 
-from typing import Any
-from ampel.ztf.archive.ArchiveDBClient import ArchiveDBClient
-from sqlalchemy import UniqueConstraint, select, bindparam
-import sqlalchemy
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.dialects import postgresql
-from sqlalchemy.sql.elements import literal_column
-from sqlalchemy.sql.expression import tuple_, func
 from distutils.version import LooseVersion
+from typing import Any
+
+import sqlalchemy
 from astropy import units as u
 from astropy_healpix import lonlat_to_healpix
+from sqlalchemy import UniqueConstraint, bindparam, select
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.sql.expression import func, tuple_
+
+from ampel.ztf.archive.ArchiveDBClient import ArchiveDBClient
 
 
 class ArchiveUpdater(ArchiveDBClient):
@@ -40,7 +39,6 @@ class ArchiveUpdater(ArchiveDBClient):
         AvroArchive = self._meta.tables["avro_archive"]
 
         with self._engine.connect() as conn:
-
             if row := conn.execute(
                 select([AvroArchive.c.avro_archive_id]).where(
                     AvroArchive.c.uri == archive_uri
@@ -83,14 +81,11 @@ class ArchiveUpdater(ArchiveDBClient):
                 )
             )
 
-        with self._engine.connect() as conn:
-            with conn.begin() as transaction:
-                if inserted := self._insert_alert(
-                    conn, alert, partition_id, ingestion_time
-                ):
-                    transaction.commit()
-                else:
-                    transaction.rollback()
+        with self._engine.connect() as conn, conn.begin() as transaction:
+            if self._insert_alert(conn, alert, partition_id, ingestion_time):
+                transaction.commit()
+            else:
+                transaction.rollback()
 
     def _insert_alert(self, conn, alert, partition_id=0, ingestion_time=0):
         """
@@ -153,7 +148,7 @@ class ArchiveUpdater(ArchiveDBClient):
         # come with unique ids) and upper limits (which don't)
         detections = []
         upper_limits = []
-        for index, c in enumerate(alert["prv_candidates"] or []):
+        for c in alert["prv_candidates"] or []:
             # entries with no candid are nondetections
             if c["candid"] is None:
                 upper_limits.append(c)
@@ -182,11 +177,11 @@ class ArchiveUpdater(ArchiveDBClient):
         target = tuple_(*identifiers).in_(keys)
 
         # collect the ids of the rows in an array and insert into the bridge table
-        bridge = self._meta.tables["alert_{}_pivot".format(label)]
+        bridge = self._meta.tables[f"alert_{label}_pivot"]
         source = select(
             [
                 bindparam("alert_id"),
-                func.array_agg(history.columns["{}_id".format(label)]),
+                func.array_agg(history.columns[f"{label}_id"]),
             ]
         ).where(target)
 

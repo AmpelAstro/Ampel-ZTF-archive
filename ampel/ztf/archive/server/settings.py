@@ -1,12 +1,10 @@
 import secrets
-
-from typing import Optional, Set, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from pydantic import (
     AnyHttpUrl,
     AnyUrl,
     BaseSettings,
-    DirectoryPath,
     Field,
     stricturl,
 )
@@ -39,12 +37,12 @@ class Settings(BaseSettings):
     s3_bucket: str = Field("ampel-ztf-cutout-archive", env="S3_BUCKET")
     jwt_secret_key: str = Field(secrets.token_urlsafe(64), env="JWT_SECRET_KEY")
     jwt_algorithm: str = Field("HS256", env="JWT_ALGORITHM")
-    allowed_identities: Set[str] = Field(
+    allowed_identities: set[str] = Field(
         {"AmpelProject", "ZwickyTransientFacility"},
         env="ALLOWED_IDENTITIES",
         description="Usernames, teams, and orgs allowed to create persistent tokens",
     )
-    partnership_identities: Set[str] = Field(
+    partnership_identities: set[str] = Field(
         {"ZwickyTransientFacility"},
         env="PARTNERSHIP_IDENTITIES",
         description="Usernames, teams, and orgs allowed to create persistent tokens with access to ZTF partnership alerts",
@@ -59,4 +57,5 @@ settings = Settings()  # type: ignore[call-arg]
 
 if settings.query_debug:
     from ampel.ztf.archive.ArchiveDB import ArchiveDB
+
     ArchiveDB.query_debug = True

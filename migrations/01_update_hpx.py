@@ -3,11 +3,12 @@
 import logging
 import time
 from argparse import ArgumentParser
+
 import sqlalchemy as sa
+from astropy import units as u
+from astropy_healpix import lonlat_to_healpix
 
 from ampel.ztf.t0.ArchiveUpdater import ArchiveUpdater
-from astropy_healpix import lonlat_to_healpix
-from astropy import units as u
 
 logging.basicConfig(level="INFO", format="[%(asctime)s] %(message)s")
 log = logging.getLogger()
@@ -31,7 +32,7 @@ with engine.connect() as connection:
         sa.select([Candidate.c.candidate_id, Candidate.c.ra, Candidate.c.dec])
         .where(
             sa.and_(
-                Candidate.columns._hpx.is_(None),
+                Candidate.columns._hpx.is_(None),  # noqa: SLF001
                 Candidate.c.candidate_id > sa.bindparam("min_id"),
             )
         )
@@ -45,7 +46,9 @@ with engine.connect() as connection:
         .values(_hpx=sa.bindparam("hpx"))
     )
 
-    total = connection.execute("select reltuples as estimate from pg_class where relname = 'candidate';").fetchone()[0]
+    total = connection.execute(
+        "select reltuples as estimate from pg_class where relname = 'candidate';"
+    ).fetchone()[0]
 
     min_id = args.min_id
     updated = 0
@@ -77,27 +80,3 @@ with engine.connect() as connection:
         )
         dt = time.time() - t0
         log.info(f"updated {len(rows)/dt:.1f} rows/s")
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
