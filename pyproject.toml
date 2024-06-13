@@ -92,8 +92,8 @@ select = [
     "I",
     "UP",
     "B",
-    # "DTZ",
-    # "T20",
+    "DTZ",
+    "T20",
     # "PT",
     # "RET",
     # "SLF",
@@ -106,5 +106,6 @@ select = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"ampel/ztf/archive/server/app.py" = ["B008"]
-"ampel/ztf/archive/server/tokens.py" = ["B008"]
+"ampel/ztf/archive/server/*" = ["B008"]
+"migrations/*" = ["T201"]
+"tests/*" = ["T201"]

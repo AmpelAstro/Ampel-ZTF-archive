@@ -1513,8 +1513,8 @@ def consumer_groups_command() -> None:
     )
     if args.action == "remove":
         archive.remove_consumer_group(args.group_name)
-    print(
+    print(  # noqa: T201
         json.dumps(
             list(map(lambda v: dict(v), archive.get_consumer_groups())), indent=1
         )
-    )  # pylint: disable=bad-builtin
+    )
