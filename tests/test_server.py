@@ -137,18 +137,18 @@ def set_token_role(token: str, role: str):
     db = get_archive()
     Token = db._meta.tables["access_token"]
     with db._engine.connect() as conn:
-        prev_role = conn.execute(
-            Token.select().where(Token.c.token == token)
-        ).fetchone()["role"]
+        prev_role = (
+            conn.execute(Token.select().where(Token.c.token == token)).fetchone().role
+        )
         try:
-            conn.execute(
-                Token.update(values={"role": role}).where(Token.c.token == token)
-            )
+            conn.execute(Token.update().values(role=role).where(Token.c.token == token))
+            conn.commit()
             yield
         finally:
             conn.execute(
-                Token.update(values={"role": prev_role}).where(Token.c.token == token)
+                Token.update().values(role=prev_role).where(Token.c.token == token)
             )
+            conn.commit()
 
 
 @pytest.fixture()
@@ -702,7 +702,7 @@ def test_post_alert_chunk(
     with db._engine.connect() as conn:
         result = conn.execute(db._meta.tables["avro_archive"].select()).fetchall()
         assert len(result) == 1
-        assert urlsplit(result[0]["uri"]).path.split("/")[-1] == obj.key
+        assert urlsplit(result[0].uri).path.split("/")[-1] == obj.key
 
 
 @pytest.mark.asyncio()

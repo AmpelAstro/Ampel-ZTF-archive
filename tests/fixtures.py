@@ -10,10 +10,16 @@ from pathlib import Path
 
 import fastavro
 import httpx
+
+# pass KeyboardInterrupt through to the backend
+import psycopg2
+import psycopg2.extras
 import pytest
 from moto import mock_s3
 
 from ampel.ztf.archive.server.s3 import get_s3_bucket
+
+psycopg2.extensions.set_wait_callback(psycopg2.extras.wait_select)
 
 POSTGRES_IMAGE = "ampelproject/postgres:14.1"
 LOCALSTACK_IMAGE = "localstack/localstack:3.4.0"
@@ -67,6 +73,7 @@ def archive(integration):
                 [
                     "docker",
                     "run",
+                    "--rm",
                     "--link",
                     f"{container}:postgres",
                     POSTGRES_IMAGE,
@@ -172,12 +179,14 @@ def empty_archive(archive):
             for name, table in meta.tables.items():
                 if name != "versions":
                     connection.execute(table.delete())
+            connection.commit()
         yield archive
     finally:
         with engine.connect() as connection:
             for name, table in meta.tables.items():
                 if name != "versions":
                     connection.execute(table.delete())
+            connection.commit()
 
 
 @pytest.fixture()

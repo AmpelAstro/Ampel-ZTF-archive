@@ -128,7 +128,7 @@ def create_token(user: User = Depends(get_user), db: ArchiveDB = Depends(get_arc
             )
             .returning(Token.c.token)
         )
-        return cursor.fetchone()["token"]
+        return cursor.fetchone().token
 
 
 @router.get("/")
@@ -136,7 +136,7 @@ def list_tokens(user: User = Depends(get_user), db: ArchiveDB = Depends(get_arch
     Token = db.get_table("access_token")
     with db.connect() as conn:
         cursor = conn.execute(Token.select().where(Token.c.owner == user.name))
-        return cursor.fetchall()
+        return cursor.mappings().fetchall()
 
 
 @router.get("/{token_id}")
@@ -150,7 +150,7 @@ def get_token(
                 Token.c.token_id == token_id and Token.c.owner == user.name
             )
         )
-        if result := cursor.fetchone():
+        if result := cursor.mappings().fetchone():
             return result
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 

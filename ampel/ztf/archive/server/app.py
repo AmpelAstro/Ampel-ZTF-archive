@@ -769,11 +769,13 @@ def create_stream_from_query(
         sqlalchemy.text(f"set statement_timeout={settings.stream_query_timeout*1000};")
     )
     group_id = archive._create_read_queue(conn, name, query.chunk_size)  # noqa: SLF001
+    conn.commit()
 
     # create stream in the background
     def create_stream() -> None:
         try:
             archive._fill_read_queue(conn, condition, order, group_id, query.chunk_size)  # noqa: SLF001
+            conn.commit()
         finally:
             conn.close()
 

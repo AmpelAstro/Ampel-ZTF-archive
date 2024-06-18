@@ -6,13 +6,14 @@
 # Last Modified Date: 14.11.2018
 # Last Modified By  : vb <vbrinnel@physik.hu-berlin.de>
 
+from collections.abc import Sequence
 from distutils.version import LooseVersion
 from typing import Any
 
 import sqlalchemy
 from astropy import units as u
 from astropy_healpix import lonlat_to_healpix
-from sqlalchemy import UniqueConstraint, bindparam, select
+from sqlalchemy import Connection, UniqueConstraint, bindparam, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.sql.expression import func, tuple_
 
@@ -53,6 +54,7 @@ class ArchiveUpdater(ArchiveDBClient):
                 ).fetchone()
                 assert row is not None
                 archive_id = row[0]
+                conn.commit()
 
                 for alert, span in zip(alerts, ranges):
                     with conn.begin() as transaction:
@@ -67,7 +69,13 @@ class ArchiveUpdater(ArchiveDBClient):
                         )
                         transaction.commit()
 
-    def insert_alert(self, alert, schema, partition_id, ingestion_time):
+    def insert_alert(
+        self,
+        alert: dict[str, Any],
+        schema: dict[str, Any],
+        partition_id: int,
+        ingestion_time: int,
+    ):
         """
         Insert an alert into the archive database
 
@@ -83,13 +91,19 @@ class ArchiveUpdater(ArchiveDBClient):
                 )
             )
 
-        with self._engine.connect() as conn, conn.begin() as transaction:
+        with self._engine.connect() as conn:
             if self._insert_alert(conn, alert, partition_id, ingestion_time):
-                transaction.commit()
+                conn.commit()
             else:
-                transaction.rollback()
+                conn.rollback()
 
-    def _insert_alert(self, conn, alert, partition_id=0, ingestion_time=0):
+    def _insert_alert(
+        self,
+        conn: Connection,
+        alert: dict[str, Any],
+        partition_id: int = 0,
+        ingestion_time: int = 0,
+    ):
         """
         Insert an alert into the archive database
 
@@ -143,7 +157,16 @@ class ArchiveUpdater(ArchiveDBClient):
             return False
         alert_id = result[0]
 
-        conn.execute(Candidate.insert(), alert_id=alert_id, **alert["candidate"])
+        conn.execute(
+            Candidate.insert().values(
+                alert_id=alert_id,
+                **{
+                    k: v
+                    for k, v in alert["candidate"].items()
+                    if k in Candidate.columns
+                },
+            )
+        )
 
         # entries in prv_candidates will often be duplicated, but may also
         # be updated without warning. sort these into detections (which
@@ -165,7 +188,13 @@ class ArchiveUpdater(ArchiveDBClient):
 
         return True
 
-    def _update_history(self, conn, label, rows, alert_id):
+    def _update_history(
+        self,
+        conn: Connection,
+        label: str,
+        rows: Sequence[dict[str, Any]],
+        alert_id: int,
+    ):
         """ """
         # insert the rows if needed
         history = self._meta.tables[label]
@@ -173,7 +202,7 @@ class ArchiveUpdater(ArchiveDBClient):
 
         # build a condition that selects the rows (just inserted or already existing)
         identifiers = next(
-            filter(lambda c: isinstance(c, UniqueConstraint), history.constraints)
+            c for c in history.constraints if isinstance(c, UniqueConstraint)
         ).columns
         keys = [[r[c.name] for c in identifiers] for r in rows]
         target = tuple_(*identifiers).in_(keys)
@@ -181,12 +210,11 @@ class ArchiveUpdater(ArchiveDBClient):
         # collect the ids of the rows in an array and insert into the bridge table
         bridge = self._meta.tables[f"alert_{label}_pivot"]
         source = select(
-            [
-                bindparam("alert_id"),
-                func.array_agg(history.columns[f"{label}_id"]),
-            ]
+            bindparam("alert_id"),
+            func.array_agg(history.columns[f"{label}_id"]),
         ).where(target)
 
         conn.execute(
-            bridge.insert().from_select(bridge.columns, source), alert_id=alert_id
+            bridge.insert().from_select(bridge.columns.keys(), source),
+            {"alert_id": alert_id},
         )

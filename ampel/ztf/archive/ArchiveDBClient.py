@@ -40,8 +40,7 @@ class ArchiveDBClient:
             ).first()
             if row:
                 return LooseVersion(row[0])
-            else:
-                raise RuntimeError("no alert version found in database")
+            raise RuntimeError("no alert version found in database")
 
     @cached_property
     def _meta(self) -> MetaData:
