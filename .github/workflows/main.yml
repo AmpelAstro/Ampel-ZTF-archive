@@ -16,7 +16,7 @@ on:
 
 jobs:
   ci:
-    uses: AmpelProject/Ampel-interface/.github/workflows/ci.yml@ci-py12-v5
+    uses: AmpelProject/Ampel-interface/.github/workflows/ci.yml@ci-py12-v6
     secrets:
       PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
     with:

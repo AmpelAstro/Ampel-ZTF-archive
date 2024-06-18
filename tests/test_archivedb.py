@@ -6,7 +6,7 @@ from math import isnan
 
 import fastavro
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.sql.expression import BinaryExpression, BooleanClauseList
 from sqlalchemy.sql.functions import count
 
@@ -41,9 +41,7 @@ def test_insert_unique_alerts(empty_archive, alert_generator):
 
         timestamps.append(int(time.time() * 1e6))
         db.insert_alert(alert, schema, processor_id, timestamps[-1])
-    rows = connection.execute(
-        select([meta.tables["alert"].c.ingestion_time])
-    ).fetchall()
+    rows = connection.execute(select(meta.tables["alert"].c.ingestion_time)).fetchall()
     db_timestamps = sorted([tup[0] for tup in rows])
     assert timestamps == db_timestamps
 
@@ -234,7 +232,6 @@ def test_insert_duplicate_photopoints(empty_archive, alert_generator):
 def test_delete_alert(empty_archive, alert_generator):
     processor_id = 0
     db = ArchiveUpdater(empty_archive)
-    connection = db._engine.connect()
     meta = db._meta
     from sqlalchemy.sql.expression import func
     from sqlalchemy.sql.functions import sum
@@ -245,60 +242,67 @@ def test_delete_alert(empty_archive, alert_generator):
     db.insert_alert(alert, schema, processor_id, int(time.time() * 1e6))
 
     Alert = meta.tables["alert"]
-    connection.execute(Alert.delete().where(Alert.c.candid == alert["candid"]))
-    assert (
-        connection.execute(count(meta.tables["alert"].columns.candid)).first()[0] == 0
-    )
-    assert (
-        connection.execute(count(meta.tables["candidate"].columns.candid)).first()[0]
-        == 0
-    )
-    assert (
-        connection.execute(
-            count(meta.tables["alert_prv_candidate_pivot"].columns.alert_id)
-        ).first()[0]
-        == 0
-    )
-    assert (
-        connection.execute(
-            sum(
-                func.array_length(
-                    meta.tables["alert_prv_candidate_pivot"].columns.prv_candidate_id, 1
+    with db._engine.connect() as connection:
+        connection.execute(Alert.delete().where(Alert.c.candid == alert["candid"]))
+        assert (
+            connection.execute(count(meta.tables["alert"].columns.candid)).first()[0]
+            == 0
+        )
+        assert (
+            connection.execute(count(meta.tables["candidate"].columns.candid)).first()[
+                0
+            ]
+            == 0
+        )
+        assert (
+            connection.execute(
+                count(meta.tables["alert_prv_candidate_pivot"].columns.alert_id)
+            ).first()[0]
+            == 0
+        )
+        assert (
+            connection.execute(
+                sum(
+                    func.array_length(
+                        meta.tables[
+                            "alert_prv_candidate_pivot"
+                        ].columns.prv_candidate_id,
+                        1,
+                    )
                 )
-            )
-        ).first()[0]
-        is None
-    )
-    assert (
-        connection.execute(
-            count(meta.tables["alert_upper_limit_pivot"].columns.upper_limit_id)
-        ).first()[0]
-        == 0
-    )
-    assert (
-        connection.execute(
-            sum(
-                func.array_length(
-                    meta.tables["alert_upper_limit_pivot"].columns.upper_limit_id, 1
+            ).first()[0]
+            is None
+        )
+        assert (
+            connection.execute(
+                count(meta.tables["alert_upper_limit_pivot"].columns.upper_limit_id)
+            ).first()[0]
+            == 0
+        )
+        assert (
+            connection.execute(
+                sum(
+                    func.array_length(
+                        meta.tables["alert_upper_limit_pivot"].columns.upper_limit_id, 1
+                    )
                 )
-            )
-        ).first()[0]
-        is None
-    )
-    # array-joined tables don't participate in delete cascade, because ELEMENT REFERENCES is still not a thing
-    # http://blog.2ndquadrant.com/postgresql-9-3-development-array-element-foreign-keys/
-    assert (
-        connection.execute(count(meta.tables["prv_candidate"].columns.candid)).first()[
-            0
-        ]
-        == detections
-    )
-    assert (
-        connection.execute(
-            count(meta.tables["upper_limit"].columns.upper_limit_id)
-        ).first()[0]
-        == upper_limits
-    )
+            ).first()[0]
+            is None
+        )
+        # array-joined tables don't participate in delete cascade, because ELEMENT REFERENCES is still not a thing
+        # http://blog.2ndquadrant.com/postgresql-9-3-development-array-element-foreign-keys/
+        assert (
+            connection.execute(
+                count(meta.tables["prv_candidate"].columns.candid)
+            ).first()[0]
+            == detections
+        )
+        assert (
+            connection.execute(
+                count(meta.tables["upper_limit"].columns.upper_limit_id)
+            ).first()[0]
+            == upper_limits
+        )
 
 
 def assert_alerts_equivalent(alert, reco_alert):
@@ -469,8 +473,8 @@ def test_archive_object(alert_generator, empty_archive) -> None:
         updater.insert_alert(alert, schema, 0, 0)
     # end the transaction to commit changes to the stats tables
     with updater._engine.connect() as connection:
-        connection.execute("end")
-        connection.execute("vacuum full")
+        connection.execute(text("end"))
+        connection.execute(text("vacuum full"))
     del updater
     db = ArchiveDB(empty_archive)
 
@@ -547,7 +551,7 @@ def test_create_topic(alert_archive):
             Topic.select().where(Topic.c.topic_id == topic_id)
         ).fetchone()
         assert row
-        assert len(row["alert_ids"]) == 3
+        assert len(row.alert_ids) == 3
 
 
 @pytest.mark.parametrize("selection", [slice(None), slice(None, None, 1)])
@@ -601,13 +605,14 @@ def test_healpix_search(empty_archive, nside, ipix):
     assert isinstance(condition, BooleanClauseList)
     assert condition.operator == operator.and_
 
-    ops = []
-    ops.extend(condition.get_children()[0].get_children())
+    ops = list(condition.get_children())
 
-    for op in ops:
-        assert isinstance(op, BinaryExpression)
-        assert op.left.name == "_hpx"
-        assert op.operator in {operator.ge, operator.lt}
+    assert any(
+        isinstance(op, BinaryExpression)
+        and op.left.name == "_hpx"
+        and op.operator in {operator.ge, operator.lt}
+        for op in ops
+    )
 
 
 @pytest.mark.parametrize("cutouts", [False, True])

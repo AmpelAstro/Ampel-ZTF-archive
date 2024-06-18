@@ -9,13 +9,13 @@
 import collections
 import datetime
 import json
+import logging
 import math
 import operator
 import time
 from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
 from typing import (
-    TYPE_CHECKING,
     Any,
     ClassVar,
     Optional,
@@ -25,25 +25,19 @@ from typing import (
 )
 
 import sqlalchemy
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import RowMapping, and_, or_, select, text, update
 from sqlalchemy.engine.base import Connection
 from sqlalchemy.sql.elements import (
-    BooleanClauseList,
-    ClauseElement,
     ColumnClause,
+    ColumnElement,
     UnaryExpression,
 )
 from sqlalchemy.sql.expression import func
-from sqlalchemy.sql.schema import Column, Table
+from sqlalchemy.sql.schema import Table
 
 from ampel.ztf.archive.ArchiveDBClient import ArchiveDBClient
 
 from .types import FilterClause
-
-if TYPE_CHECKING:
-    from sqlalchemy.sql.visitors import Visitable
-
-import logging
 
 log = logging.getLogger("ampel.ztf.archive")
 
@@ -91,10 +85,14 @@ class ArchiveDB(ArchiveDBClient):
         self._default_statement_timeout = default_statement_timeout
 
     @contextmanager
-    def connect(self):
+    def connect(self, autocommit: bool = True):
         with self._engine.connect() as conn:
-            conn.execute(f"set statement_timeout={self._default_statement_timeout}")
+            conn.execute(
+                text(f"set statement_timeout={self._default_statement_timeout}")
+            )
             yield conn
+            if autocommit:
+                conn.commit()
 
     def _get_alert_column(self, name: str) -> ColumnClause:
         if "alert" in self._meta.tables and name in self._meta.tables["alert"].c:
@@ -121,9 +119,9 @@ class ArchiveDB(ArchiveDBClient):
         """ """
         stats = {}
         with self.connect() as conn:
-            sql = "select relname, n_live_tup from pg_catalog.pg_stat_user_tables"
-            rows = dict(conn.execute(sql).fetchall())
-            sql = """SELECT TABLE_NAME, index_bytes, toast_bytes, table_bytes
+            sql = text("select relname, n_live_tup from pg_catalog.pg_stat_user_tables")
+            rows = dict(conn.execute(sql).mappings().fetchall())
+            sql = text("""SELECT TABLE_NAME, index_bytes, toast_bytes, table_bytes
                         FROM (
                         SELECT *, total_bytes-index_bytes-COALESCE(toast_bytes,0) AS table_bytes FROM (
                             SELECT c.oid,nspname AS table_schema, relname AS TABLE_NAME
@@ -135,9 +133,9 @@ class ArchiveDB(ArchiveDBClient):
                                 LEFT JOIN pg_namespace n ON n.oid = c.relnamespace
                                 WHERE relkind = 'r' AND nspname = 'public'
                         ) a
-                    ) a;"""
-            for row in conn.execute(sql):
-                table = {k: v for k, v in dict(row).items() if v is not None}
+                    ) a;""")
+            for row in conn.execute(sql).mappings():
+                table = {k: v for k, v in row.items() if v is not None}
                 k: str = table.pop("table_name")
                 table["rows"] = rows[k]
                 stats[k] = table
@@ -148,18 +146,16 @@ class ArchiveDB(ArchiveDBClient):
         Queue = self._meta.tables["read_queue"]
         query = (
             select(
-                [
-                    Groups.c.group_name,
-                    func.count(Queue.c.alert_ids).label("chunks"),
-                    func.sum(func.array_length(Queue.c.alert_ids, 1)).label("items"),
-                ]
+                Groups.c.group_name,
+                func.count(Queue.c.alert_ids).label("chunks"),
+                func.sum(func.array_length(Queue.c.alert_ids, 1)).label("items"),
             )
             .select_from(Groups.outerjoin(Queue))
             .group_by(Groups.c.group_id)
             .order_by(Groups.c.group_id)
         )
         with self.connect() as conn:
-            return conn.execute(query).fetchall()
+            return [dict(r) for r in conn.execute(query).mappings().fetchall()]
 
     def create_topic(
         self, name: str, candidate_ids: list[int], description: Optional[str] = None
@@ -170,13 +166,14 @@ class ArchiveDB(ArchiveDBClient):
         # TODO: chunk inputs, add update operation
         with self.connect() as conn:
             result = conn.execute(
-                Groups.insert(),
-                topic_name=name,
-                topic_description=description,
+                Groups.insert().values(
+                    topic_name=name,
+                    topic_description=description,
+                )
             )
             topic_id = result.inserted_primary_key[0]
             alert_id = (
-                select([Alert.c.alert_id])
+                select(Alert.c.alert_id)
                 .where(Alert.c.candid.in_(candidate_ids))
                 .alias()
                 .c.alert_id
@@ -184,7 +181,7 @@ class ArchiveDB(ArchiveDBClient):
             conn.execute(
                 Queue.insert().from_select(
                     [Queue.c.topic_id, Queue.c.alert_ids],
-                    select([topic_id, func.array_agg(alert_id)]),
+                    select(topic_id, func.array_agg(alert_id)),
                 )
             )
         return topic_id
@@ -196,7 +193,7 @@ class ArchiveDB(ArchiveDBClient):
             if (
                 row := conn.execute(
                     select(
-                        [TopicGroups.c.topic_id, TopicGroups.c.topic_description]
+                        TopicGroups.c.topic_id, TopicGroups.c.topic_description
                     ).where(TopicGroups.c.topic_name == topic)
                 ).fetchone()
             ) is None:
@@ -204,7 +201,7 @@ class ArchiveDB(ArchiveDBClient):
             topic_id: int = row.topic_id
 
             info = conn.execute(
-                select([func.sum(func.array_length(Topic.c.alert_ids, 1))]).where(
+                select(func.sum(func.array_length(Topic.c.alert_ids, 1))).where(
                     Topic.c.topic_id == topic_id
                 )
             ).fetchone()
@@ -229,7 +226,7 @@ class ArchiveDB(ArchiveDBClient):
         with self.connect() as conn:
             if (
                 row := conn.execute(
-                    select([TopicGroups.c.topic_id]).where(
+                    select(TopicGroups.c.topic_id).where(
                         TopicGroups.c.topic_name == topic
                     )
                 ).fetchone()
@@ -237,21 +234,20 @@ class ArchiveDB(ArchiveDBClient):
                 raise GroupNotFoundError
             topic_id: int = row.topic_id
             group_id = conn.execute(
-                Groups.insert(),
-                group_name=group_name,
-                chunk_size=block_size,
+                Groups.insert().values(
+                    group_name=group_name,
+                    chunk_size=block_size,
+                )
             ).inserted_primary_key[0]
 
             unnested = (
-                select([func.unnest(Topic.c.alert_ids).label("alert_id")])
+                select(func.unnest(Topic.c.alert_ids).label("alert_id"))
                 .where(Topic.c.topic_id == topic_id)
                 .alias()
             )
             numbered = select(
-                [
-                    unnested.c.alert_id,
-                    func.row_number().over(order_by="alert_id").label("row_number"),
-                ]
+                unnested.c.alert_id,
+                func.row_number().over(order_by="alert_id").label("row_number"),
             ).alias()
             alert_id, row_number = numbered.columns
             if selection != slice(None):
@@ -263,7 +259,7 @@ class ArchiveDB(ArchiveDBClient):
                     conditions.append(row_number <= selection.stop)
                 if selection.step is not None:
                     conditions.append((row_number - 1) % selection.step == 0)
-                where: Visitable = and_(*conditions)
+                where = and_(*conditions)
             else:
                 where = sqlalchemy.true()
 
@@ -274,7 +270,7 @@ class ArchiveDB(ArchiveDBClient):
 
             q = Queue.insert().from_select(
                 [Queue.c.group_id, Queue.c.alert_ids],
-                select([group_id, func.array_agg(alert_id)])
+                select(group_id, func.array_agg(alert_id))
                 .where(where)
                 .group_by(block)
                 .order_by(block),
@@ -282,29 +278,31 @@ class ArchiveDB(ArchiveDBClient):
 
             conn.execute(q)
 
-            conn.execute(Groups.update(Groups.c.group_id == group_id, {"error": False}))
+            conn.execute(
+                Groups.update().where(Groups.c.group_id == group_id).values(error=False)
+            )
             col = Queue.c.alert_ids
-            return conn.execute(
-                select(
-                    [
+            return (
+                conn.execute(
+                    select(
                         func.count(col).label("chunks"),
                         func.sum(func.array_length(col, 1)).label("items"),
-                    ]
-                ).where(Queue.c.group_id == group_id)
-            ).fetchone()
+                    ).where(Queue.c.group_id == group_id)
+                )
+                .mappings()
+                .fetchone()
+            )
 
     def remove_consumer_group(self, pattern: str) -> None:
         Groups = self._meta.tables["read_queue_groups"]
         with self.connect() as conn:
-            return conn.execute(
-                Groups.delete().where(Groups.c.group_name.like(pattern))
-            )
+            conn.execute(Groups.delete().where(Groups.c.group_name.like(pattern)))
 
     def _select_alert_ids(
         self,
         group_id: int,
         block_size: int,
-        condition: BooleanClauseList,
+        condition: ColumnElement[bool],
         order: Sequence[UnaryExpression] = tuple(),
     ):
         """Generate a statement that selects blocks of alert_id"""
@@ -325,10 +323,8 @@ class ArchiveDB(ArchiveDBClient):
             source = alert_id.table
         numbered = (
             select(
-                [
-                    alert_id,
-                    func.row_number().over(order_by=order).label("row_number"),
-                ]
+                alert_id,
+                func.row_number().over(order_by=order).label("row_number"),
             )
             .select_from(source)
             .where(condition)
@@ -337,9 +333,7 @@ class ArchiveDB(ArchiveDBClient):
         alert_ids, row_number = numbered.columns
         block = func.div(row_number - 1, block_size)
         return (
-            select([group_id, func.array_agg(alert_ids)])
-            .group_by(block)
-            .order_by(block)
+            select(group_id, func.array_agg(alert_ids)).group_by(block).order_by(block)  # type: ignore[call-overload]
         )
 
     def _populate_read_queue(
@@ -347,7 +341,7 @@ class ArchiveDB(ArchiveDBClient):
         conn: Connection,
         group_id: int,
         block_size: int,
-        condition: BooleanClauseList,
+        condition: ColumnElement[bool],
         order: Sequence[UnaryExpression] = tuple(),
     ):
         Queue = self._meta.tables["read_queue"]
@@ -368,14 +362,16 @@ class ArchiveDB(ArchiveDBClient):
             )
         )
         col = Queue.c.alert_ids
-        return conn.execute(
-            select(
-                [
+        return (
+            conn.execute(
+                select(
                     func.count(col).label("chunks"),
                     func.sum(func.array_length(col, 1)).label("items"),
-                ]
-            ).where(Queue.c.group_id == group_id)
-        ).fetchone()
+                ).where(Queue.c.group_id == group_id)
+            )
+            .mappings()
+            .fetchone()
+        )
 
     def _create_read_queue(
         self,
@@ -386,14 +382,17 @@ class ArchiveDB(ArchiveDBClient):
         Groups = self._meta.tables["read_queue_groups"]
 
         result = conn.execute(
-            Groups.insert(), group_name=group_name, chunk_size=block_size
+            Groups.insert().values(
+                group_name=group_name,
+                chunk_size=block_size,
+            )
         )
         return result.inserted_primary_key[0]
 
     def _fill_read_queue(
         self,
         conn: Connection,
-        condition: BooleanClauseList,
+        condition: ColumnElement[bool],
         order: Sequence[UnaryExpression],
         group_id: int,
         block_size: int,
@@ -405,10 +404,9 @@ class ArchiveDB(ArchiveDBClient):
                 conn, group_id, block_size, condition, order
             )
             conn.execute(
-                Groups.update(
-                    Groups.columns.group_id == group_id,
-                    values={"error": False, "resolved": func.now()},
-                )
+                Groups.update()
+                .where(Groups.columns.group_id == group_id)
+                .values(error=False, resolved=func.now())
             )
 
             chunks = queue_info["chunks"]
@@ -419,11 +417,11 @@ class ArchiveDB(ArchiveDBClient):
             )
             return chunks
         except sqlalchemy.exc.SQLAlchemyError as exc:
+            conn.rollback()
             conn.execute(
-                Groups.update(
-                    Groups.columns.group_id == group_id,
-                    values={"error": True, "msg": str(exc)},
-                )
+                Groups.update()
+                .where(Groups.columns.group_id == group_id)
+                .values(error=True, msg=str(exc))
             )
             log.exception(f"Failed to populate group {group_id}")
             return 0
@@ -435,16 +433,16 @@ class ArchiveDB(ArchiveDBClient):
             if (
                 row := conn.execute(
                     select(
-                        [
-                            Groups.c.group_id,
-                            Groups.c.chunk_size,
-                            Groups.c.error,
-                            Groups.c.msg,
-                            Groups.c.created,
-                            Groups.c.resolved,
-                        ]
+                        Groups.c.group_id,
+                        Groups.c.chunk_size,
+                        Groups.c.error,
+                        Groups.c.msg,
+                        Groups.c.created,
+                        Groups.c.resolved,
                     ).where(Groups.c.group_name == group_name)
-                ).fetchone()
+                )
+                .mappings()
+                .fetchone()
             ) is not None:
                 group_id: int = row["group_id"]
                 chunk_size: int = row["chunk_size"]
@@ -467,15 +465,13 @@ class ArchiveDB(ArchiveDBClient):
             }
             for row in conn.execute(
                 select(
-                    [
-                        pending,
-                        func.count(col).label("chunks"),
-                        func.sum(func.array_length(col, 1)).label("items"),
-                    ]
+                    pending,
+                    func.count(col).label("chunks"),
+                    func.sum(func.array_length(col, 1)).label("items"),
                 )
                 .where(Queue.c.group_id == group_id)
                 .group_by(pending)
-            ):
+            ).mappings():
                 target = info["pending"] if row["pending"] else info["remaining"]
                 target["chunks"] = row["chunks"]
                 target["items"] = row["items"]
@@ -485,7 +481,7 @@ class ArchiveDB(ArchiveDBClient):
     def _fetch_alerts_with_condition(
         self,
         conn: Connection,
-        condition: BooleanClauseList,
+        condition: ColumnElement[bool],
         order: Sequence[UnaryExpression] = tuple(),
         *,
         distinct: bool = False,
@@ -512,6 +508,7 @@ class ArchiveDB(ArchiveDBClient):
                 group_id,
                 block_size,
             )
+            conn.commit()
             return self.get_chunk_from_queue(group_name, with_history=with_history)
 
         alert_query = self._build_alert_query(
@@ -523,33 +520,9 @@ class ArchiveDB(ArchiveDBClient):
             skip=skip,
         )
 
-        alerts = []
-        while True:
-            nrows = 0
-            nchunks = 0
-            with conn.begin() as transaction:
-                for result in conn.execute(alert_query):
-                    nrows += 1
-                    alerts.append(self._apply_schema(result))
-                # If we reach this point, all alerts from the block have been
-                # consumed. Commit the transaction to delete the queue item. If
-                # the generator is destroyed before we reach this point,
-                # however, the transaction will be rolled back, releasing the
-                # lock on the queue item and allowing another client to claim
-                # it.
-                transaction.commit()
-                nchunks += 1
-            # If in shared queue mode (group_name is not None), execute
-            # the query over and over again until it returns no rows.
-            # If in standalone mode (group name is None), execute it
-            # only once
-            if (
-                nrows == 0
-                or group_name is None
-                or (max_blocks is not None and nchunks >= max_blocks)
-            ):
-                break
-        return -1, alerts
+        return -1, [
+            self._apply_schema(row) for row in conn.execute(alert_query).mappings()
+        ]
 
     def get_chunk_from_queue(self, group_name: str, with_history: bool = True):
         Groups = self._meta.tables["read_queue_groups"]
@@ -581,7 +554,7 @@ class ArchiveDB(ArchiveDBClient):
                 Queue.update()
                 .where(
                     Queue.c.item_id
-                    == select([item_id])
+                    == select(item_id)
                     .where(Queue.c.group_id == group_id)
                     .where(Queue.c.issued == sqlalchemy.sql.null())
                     .order_by(item_id.asc())
@@ -593,18 +566,17 @@ class ArchiveDB(ArchiveDBClient):
                 .cte()
             )
             # Query for alerts whose IDs were in the block
-            alert_ids = select([func.unnest(Queue.c.alert_ids)]).where(
+            alert_ids = select(func.unnest(Queue.c.alert_ids)).where(
                 Queue.c.item_id == popped_item.c.item_id
             )
             alert_query = self._build_alert_query(
                 self._alert_id_column.in_(alert_ids),
                 with_history=with_history,
-            )
-            alert_query.append_column(popped_item.c.item_id.label("_chunk_id"))
+            ).add_columns(popped_item.c.item_id.label("_chunk_id"))
 
             alerts = []
             chunk_id = None
-            for row in conn.execute(alert_query):
+            for row in conn.execute(alert_query).mappings():
                 chunk_id = row["_chunk_id"]
                 alerts.append(self._apply_schema(row))
 
@@ -635,8 +607,8 @@ class ArchiveDB(ArchiveDBClient):
 
     def _build_base_alert_query(
         self,
-        columns: list[Column],
-        condition,
+        columns: list[ColumnElement],
+        condition: ColumnElement[bool],
         *,
         order: Sequence[UnaryExpression] = tuple(),
         distinct: bool = False,
@@ -648,7 +620,7 @@ class ArchiveDB(ArchiveDBClient):
         Alert = meta.tables["alert"]
 
         alert_base = (
-            select(columns)
+            select(*columns)
             .select_from(
                 Alert.join(Candidate, Alert.c.alert_id == Candidate.c.alert_id)
             )
@@ -702,7 +674,7 @@ class ArchiveDB(ArchiveDBClient):
         ).alias()
 
         candidate = (
-            select([json_agg(Candidate).cast(JSON)[0].label("candidate")])
+            select(json_agg(Candidate).cast(JSON)[0].label("candidate"))
             .select_from(Candidate)
             .where(Candidate.c.alert_id == alert.c.alert_id)
         )
@@ -712,13 +684,11 @@ class ArchiveDB(ArchiveDBClient):
         if with_history:
             # unpack the array of keys from the bridge table in order to perform a normal join
             prv_candidates_ids = select(
-                [
-                    Pivot.c.alert_id,
-                    func.unnest(Pivot.c.prv_candidate_id).label("prv_candidate_id"),
-                ]
+                Pivot.c.alert_id,
+                func.unnest(Pivot.c.prv_candidate_id).label("prv_candidate_id"),
             ).alias()
             prv_candidates = (
-                select([json_agg(PrvCandidate).label("prv_candidates")])
+                select(json_agg(PrvCandidate).label("prv_candidates"))
                 .select_from(
                     PrvCandidate.join(
                         prv_candidates_ids,
@@ -730,15 +700,11 @@ class ArchiveDB(ArchiveDBClient):
             )
 
             upper_limit_ids = select(
-                [
-                    UpperLimitPivot.c.alert_id,
-                    func.unnest(UpperLimitPivot.c.upper_limit_id).label(
-                        "upper_limit_id"
-                    ),
-                ]
+                UpperLimitPivot.c.alert_id,
+                func.unnest(UpperLimitPivot.c.upper_limit_id).label("upper_limit_id"),
             ).alias()
             upper_limits = (
-                select([json_agg(UpperLimit).label("upper_limits")])
+                select(json_agg(UpperLimit).label("upper_limits"))
                 .select_from(
                     UpperLimit.join(
                         upper_limit_ids,
@@ -754,7 +720,7 @@ class ArchiveDB(ArchiveDBClient):
 
         return query.select()
 
-    def _apply_schema(self, candidate_row):
+    def _apply_schema(self, candidate_row: RowMapping) -> dict[str, Any]:
         alert = dict(candidate_row)
 
         # trim artifacts of schema adaptation
@@ -823,7 +789,7 @@ class ArchiveDB(ArchiveDBClient):
             "prv_candidate_id"
         )
         prv_candidate_ids = (
-            select([Alert.c.objectId, prv_candidate_id])
+            select(Alert.c.objectId, prv_candidate_id)
             .select_from(Alert.join(Pivot, isouter=True))
             .where(condition)
             .distinct(prv_candidate_id)
@@ -835,10 +801,10 @@ class ArchiveDB(ArchiveDBClient):
         )
 
         selects = [
-            select([json_agg(PrvCandidate).label("prv_candidates")]).select_from(
+            select(json_agg(PrvCandidate).label("prv_candidates")).select_from(
                 prv_candidates
             ),
-            select([json_agg(Candidate).label("candidates")])
+            select(json_agg(Candidate).label("candidates"))
             .select_from(Candidate.join(Alert))
             .where(condition),
         ]
@@ -848,7 +814,7 @@ class ArchiveDB(ArchiveDBClient):
                 "upper_limit_id"
             )
             upper_limit_ids = (
-                select([upper_limit_id])
+                select(upper_limit_id)
                 .select_from(Alert.join(UpperLimitPivot, isouter=True))
                 .where(condition)
                 .distinct(upper_limit_id)
@@ -860,7 +826,7 @@ class ArchiveDB(ArchiveDBClient):
             )
             selects.insert(
                 0,
-                select([json_agg(UpperLimit).label("upper_limits")]).select_from(
+                select(json_agg(UpperLimit).label("upper_limits")).select_from(
                     upper_limits
                 ),
             )
@@ -886,11 +852,9 @@ class ArchiveDB(ArchiveDBClient):
 
         return [photopoints[k] for k in sorted(photopoints.keys(), reverse=True)]
 
-    def count_alerts(self):
+    def count_alerts(self) -> int:
         with self.connect() as conn:
-            return conn.execute(select([func.count(self._alert_id_column)])).fetchone()[
-                0
-            ]
+            return conn.execute(select(func.count(self._alert_id_column))).fetchone()[0]
 
     def get_alert(self, candid: int, *, with_history: bool = True):
         """
@@ -914,17 +878,15 @@ class ArchiveDB(ArchiveDBClient):
                 return alerts[0]
         return None
 
-    def get_archive_segment(self, candid):
+    def get_archive_segment(self, candid: int) -> tuple[str, int, int]:
         """ """
         Alert = self._meta.tables["alert"]
         AvroArchive = self._meta.tables["avro_archive"]
         q = (
             select(
-                [
-                    AvroArchive.c.uri,
-                    Alert.c.avro_archive_start,
-                    Alert.c.avro_archive_end,
-                ]
+                AvroArchive.c.uri,
+                Alert.c.avro_archive_start,
+                Alert.c.avro_archive_end,
             )
             .select_from(
                 Alert.join(
@@ -1060,7 +1022,7 @@ class ArchiveDB(ArchiveDBClient):
 
     def _candidate_filter_condition(
         self, candidate_filter: FilterClause
-    ) -> BooleanClauseList:
+    ) -> ColumnElement[bool]:
         Candidate = self.get_table("candidate")
         ops = {
             "$eq": operator.eq,
@@ -1086,10 +1048,10 @@ class ArchiveDB(ArchiveDBClient):
         jd_start: Optional[float] = None,
         jd_end: Optional[float] = None,
         candidate_filter: Optional[FilterClause] = None,
-    ) -> tuple[BooleanClauseList, list[UnaryExpression]]:
+    ) -> tuple[ColumnElement[bool], list[UnaryExpression]]:
         jd = self._get_alert_column("jd")
 
-        conditions: list[ClauseElement] = []
+        conditions: list[ColumnElement[bool]] = []
         if jd_end is not None:
             conditions.insert(0, jd < jd_end)
         if jd_start is not None:
@@ -1150,7 +1112,7 @@ class ArchiveDB(ArchiveDBClient):
         jd_max: Optional[float] = None,
         latest: bool = False,
         candidate_filter: Optional[FilterClause] = None,
-    ) -> tuple[BooleanClauseList, list[UnaryExpression]]:
+    ) -> tuple[ColumnElement[bool], list[UnaryExpression]]:
         from sqlalchemy import func, or_
 
         from .server.healpix_cone_search import ranges_for_cone
@@ -1204,7 +1166,7 @@ class ArchiveDB(ArchiveDBClient):
         latest: bool = False,
         programid: Optional[int] = None,
         candidate_filter: Optional[FilterClause] = None,
-    ) -> tuple[BooleanClauseList, list[UnaryExpression]]:
+    ) -> tuple[ColumnElement[bool], list[UnaryExpression]]:
         from .server.skymap import multirange
 
         Candidate = self.get_table("candidate")
@@ -1258,7 +1220,7 @@ class ArchiveDB(ArchiveDBClient):
         jd_start: Optional[float] = None,
         jd_end: Optional[float] = None,
         candidate_filter: Optional[FilterClause] = None,
-    ) -> tuple[BooleanClauseList, list[UnaryExpression]]:
+    ) -> tuple[ColumnElement[bool], list[UnaryExpression]]:
         Alert = self._meta.tables["alert"]
         if isinstance(objectId, str):
             match = Alert.c.objectId == objectId
@@ -1401,7 +1363,7 @@ class ArchiveDB(ArchiveDBClient):
                     distinct=True,
                 )
             ):
-                yield row["objectId"]
+                yield row.objectId
 
     def get_alerts_in_healpix(
         self,

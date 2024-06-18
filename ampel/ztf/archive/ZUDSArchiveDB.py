@@ -48,7 +48,7 @@ class ZUDSArchiveDB(ArchiveDB):
             .where(bridge.c.candid == bindparam("alert_id"))
         )
 
-        cutout_query = select([Cutout.c.kind, Cutout.c.stampData]).where(
+        cutout_query = select(Cutout.c.kind, Cutout.c.stampData).where(
             Cutout.c.candid == bindparam("alert_id")
         )
 

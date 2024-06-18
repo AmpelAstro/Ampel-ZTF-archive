@@ -33,13 +33,14 @@ class ArchiveDBClient:
     def _alert_version(self) -> LooseVersion:
         Versions = self._meta.tables["versions"]
         with self._engine.connect() as conn:
-            return LooseVersion(
-                conn.execute(
-                    select([Versions.c.alert_version])
-                    .order_by(Versions.c.version_id.desc())
-                    .limit(1)
-                ).first()[0]
-            )
+            row = conn.execute(
+                select(Versions.c.alert_version)
+                .order_by(Versions.c.version_id.desc())
+                .limit(1)
+            ).first()
+            if row:
+                return LooseVersion(row[0])
+            raise RuntimeError("no alert version found in database")
 
     @cached_property
     def _meta(self) -> MetaData:
