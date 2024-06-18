@@ -15,7 +15,7 @@ import httpx
 import psycopg2
 import psycopg2.extras
 import pytest
-from moto import mock_s3
+from moto import mock_aws
 
 from ampel.ztf.archive.server.s3 import get_s3_bucket
 
@@ -241,7 +241,7 @@ def _aws_credentials():
 @pytest.fixture()
 def mock_s3_bucket(_aws_credentials):
     get_s3_bucket.cache_clear()
-    with mock_s3():
+    with mock_aws():
         bucket = get_s3_bucket()
         bucket.create()
         yield bucket
