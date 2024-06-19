@@ -587,7 +587,6 @@ files = [
 
 [package.dependencies]
 types-awscrt = "*"
-typing-extensions = {version = ">=4.1.0", markers = "python_version < \"3.9\""}
 
 [package.extras]
 botocore = ["botocore"]
@@ -2028,5 +2027,5 @@ server = ["fastapi"]
 
 [metadata]
 lock-version = "2.0"
-python-versions = "^3.8"
-content-hash = "3adbef3aeece7fe7aa2571375ade67bbba31a1c7fc15837dd9b9fc373ed24b4b"
+python-versions = "^3.9"
+content-hash = "0167119ba0a1313d4ab2089f2325cd7719bd0e252fe192759814f7ad813e123b"
