@@ -25,7 +25,7 @@ from typing import (
 )
 
 import sqlalchemy
-from sqlalchemy import RowMapping, and_, or_, select, text, update
+from sqlalchemy import Join, RowMapping, and_, or_, select, text, update
 from sqlalchemy.engine.base import Connection
 from sqlalchemy.sql.elements import (
     ColumnClause,
@@ -518,7 +518,7 @@ class ArchiveDB(ArchiveDBClient):
             with_history=with_history,
             limit=limit,
             skip=skip,
-        )
+        ).select()
 
         return -1, [
             self._apply_schema(row) for row in conn.execute(alert_query).mappings()
@@ -560,6 +560,7 @@ class ArchiveDB(ArchiveDBClient):
                     .order_by(item_id.asc())
                     .with_for_update(skip_locked=True)
                     .limit(1)
+                    .scalar_subquery()
                 )
                 .values(issued=sqlalchemy.func.now())
                 .returning(Queue.c.item_id)
@@ -569,10 +570,17 @@ class ArchiveDB(ArchiveDBClient):
             alert_ids = select(func.unnest(Queue.c.alert_ids)).where(
                 Queue.c.item_id == popped_item.c.item_id
             )
-            alert_query = self._build_alert_query(
-                self._alert_id_column.in_(alert_ids),
-                with_history=with_history,
-            ).add_columns(popped_item.c.item_id.label("_chunk_id"))
+            alert_query = (
+                self._build_alert_query(
+                    self._alert_id_column.in_(alert_ids),
+                    with_history=with_history,
+                )
+                .join(
+                    select(popped_item.c.item_id.label("_chunk_id")).lateral(),
+                    sqlalchemy.true(),
+                )
+                .select()
+            )
 
             alerts = []
             chunk_id = None
@@ -642,7 +650,7 @@ class ArchiveDB(ArchiveDBClient):
         with_history: bool = True,
         limit: Optional[int] = None,
         skip: int = 0,
-    ):
+    ) -> Join:
         """
         Build a query whose results _mostly_ match the structure of the orginal
         alert packet.
@@ -718,7 +726,7 @@ class ArchiveDB(ArchiveDBClient):
                 upper_limits.lateral(), true()
             )
 
-        return query.select()
+        return query
 
     def _apply_schema(self, candidate_row: RowMapping) -> dict[str, Any]:
         alert = dict(candidate_row)
