@@ -7,12 +7,12 @@
 # Last Modified By  : vb <vbrinnel@physik.hu-berlin.de>
 
 from collections.abc import Sequence
-from distutils.version import LooseVersion
 from typing import Any
 
 import sqlalchemy
 from astropy import units as u
 from astropy_healpix import lonlat_to_healpix
+from packaging.version import Version
 from sqlalchemy import Connection, UniqueConstraint, bindparam, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.sql.expression import func, tuple_
@@ -30,7 +30,7 @@ class ArchiveUpdater(ArchiveDBClient):
         archive_uri: str,
         ranges: list[tuple[int, int]],
     ):
-        if LooseVersion(schema["version"]) > self._alert_version:
+        if Version(schema["version"]) > self._alert_version:
             raise ValueError(
                 "alert schema ({}) is newer than database schema ({})".format(
                     schema["version"], self._alert_version
@@ -84,7 +84,7 @@ class ArchiveUpdater(ArchiveDBClient):
         :param partition_id: the index of the Kafka partition this alert came from
         :param ingestion_time: time the alert was received, in UNIX epoch microseconds
         """
-        if LooseVersion(schema["version"]) > self._alert_version:
+        if Version(schema["version"]) > self._alert_version:
             raise ValueError(
                 "alert schema ({}) is newer than database schema ({})".format(
                     schema["version"], self._alert_version

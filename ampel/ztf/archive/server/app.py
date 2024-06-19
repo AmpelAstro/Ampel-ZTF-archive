@@ -14,6 +14,7 @@ from fastapi import (
     Depends,
     FastAPI,
     HTTPException,
+    Path,
     Query,
     Request,
     status,
@@ -21,7 +22,6 @@ from fastapi import (
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from pydantic.fields import Field
 
 from ampel.ztf.archive.ArchiveDB import (
     ArchiveDB,
@@ -254,7 +254,7 @@ def verify_authorized_programid(
     response_model_exclude_none=True,
 )
 def get_alerts_for_object(
-    objectId: str = Field(..., description="ZTF object name"),
+    objectId: str = Path(..., description="ZTF object name"),
     jd_start: Optional[float] = Query(
         None, description="minimum Julian Date of observation"
     ),
@@ -295,7 +295,7 @@ def get_alerts_for_object(
     response_model_exclude_none=True,
 )
 def get_photopoints_for_object(
-    objectId: str = Field(..., description="ZTF object name"),
+    objectId: str = Path(..., description="ZTF object name"),
     jd_start: Optional[float] = Query(
         None, description="minimum Julian Date of observation"
     ),
@@ -665,7 +665,7 @@ def create_stream_from_query(
     tasks: BackgroundTasks,
     query: Union[AlertQuery, ObjectQuery, HEALpixRegionQuery] = Body(
         ...,
-        examples={
+        examples={  # type: ignore[arg-type]
             "cone": {
                 "summary": "Cone search",
                 "value": {

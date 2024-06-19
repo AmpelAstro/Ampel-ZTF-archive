@@ -1232,7 +1232,7 @@ class ArchiveDB(ArchiveDBClient):
         Alert = self._meta.tables["alert"]
         if isinstance(objectId, str):
             match = Alert.c.objectId == objectId
-        elif isinstance(objectId, collections.Collection):
+        elif isinstance(objectId, collections.abc.Collection):
             match = Alert.c.objectId.in_(objectId)
         else:
             raise TypeError(f"objectId must be str or collection, got {type(objectId)}")

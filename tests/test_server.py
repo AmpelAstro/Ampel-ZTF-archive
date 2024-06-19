@@ -12,6 +12,7 @@ import fastavro
 import httpx
 import jwt
 import pytest
+import pytest_asyncio
 import sqlalchemy
 from fastapi import status
 from starlette.status import (
@@ -92,10 +93,10 @@ def mock_db(mocked_app, alert_generator):
     mocked_app.get_archive_updater.cache_clear()
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture()
 async def mock_client(mocked_app):
     async with httpx.AsyncClient(
-        app=mocked_app.app,
+        transport=httpx.ASGITransport(app=mocked_app.app),
         base_url="http://test",
         auth=BearerAuth("blah"),
     ) as client:
@@ -123,10 +124,10 @@ def integration_app(monkeypatch: "MonkeyPatch", alert_archive, localstack_s3_buc
     app.get_archive_updater.cache_clear()
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture()
 async def integration_client(integration_app):
     async with httpx.AsyncClient(
-        app=integration_app.app,
+        transport=httpx.ASGITransport(app=integration_app.app),
         base_url="http://test",
     ) as client:
         yield client
@@ -157,10 +158,10 @@ def write_token(integration_app, access_token):
         yield access_token
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture()
 async def authed_integration_client(integration_app, write_token):
     async with httpx.AsyncClient(
-        app=integration_app.app,
+        transport=httpx.ASGITransport(app=integration_app.app),
         base_url="http://test",
         auth=BearerAuth(write_token),
     ) as client:
@@ -188,7 +189,7 @@ async def test_get_alert(mock_client: httpx.AsyncClient, mock_db: MagicMock, sch
     mock_db.get_alert.return_value = alert
     response = await mock_client.get("/alert/123")
     response.raise_for_status()
-    assert mock_db.get_alert.called_once
+    assert mock_db.get_alert.call_count == 1
     assert mock_db.get_alert.call_args.args[0] == 123
     assert response.json().keys() == alert.keys()
 
@@ -487,7 +488,7 @@ async def test_read_topic(
     candids = [595147624915010001, 595193335915010017, 595211874215015018]
     description = "the bird is the word"
     response = await authed_integration_client.post(
-        "/topics", json={"description": description, "candids": candids}
+        "/topics/", json={"description": description, "candids": candids}
     )
     assert response.status_code == 201
     topic = response.json()
@@ -520,7 +521,7 @@ async def test_create_topic_with_bad_ids(
     candids = [1, 2, 3]
     description = "these are not the candids you're looking for"
     response = await authed_integration_client.post(
-        "/topics", json={"description": description, "candids": candids}
+        "/topics/", json={"description": description, "candids": candids}
     )
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     detail = response.json()
@@ -553,14 +554,14 @@ def user_token(test_user):
     )
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture()
 async def access_token(
     integration_client: httpx.AsyncClient,
     integration_app,
     user_token: str,
     test_user,
 ):
-    response = await integration_client.post("/tokens", auth=BearerAuth(user_token))
+    response = await integration_client.post("/tokens/", auth=BearerAuth(user_token))
     assert response.status_code == 201
     return response.json()
 
@@ -585,18 +586,17 @@ async def test_delete_token(
     access_token: str,
 ):
     tokens = (
-        await integration_client.get("/tokens", auth=BearerAuth(user_token))
+        await integration_client.get("/tokens/", auth=BearerAuth(user_token))
     ).json()
     token_id = next(t["token_id"] for t in tokens if t["token"] == access_token)
     response = await integration_client.delete(
         f"/tokens/{token_id}", auth=BearerAuth(user_token)
     )
     assert response.status_code == 204
-    token = response.json()
     db: ArchiveDB = integration_app.get_archive()
     with db._engine.connect() as conn:
         Token = db._meta.tables["access_token"]
-        cursor = conn.execute(Token.select().where(Token.c.token == token))
+        cursor = conn.execute(Token.select().where(Token.c.token == access_token))
         assert len(cursor.fetchall()) == 0
 
 
@@ -606,7 +606,7 @@ async def test_list_tokens(
     user_token: str,
     access_token: str,
 ):
-    response = await integration_client.get("/tokens", auth=BearerAuth(user_token))
+    response = await integration_client.get("/tokens/", auth=BearerAuth(user_token))
     assert response.status_code == 200
     tokens = response.json()
     assert any(token["token"] == access_token for token in tokens)
@@ -622,7 +622,7 @@ async def test_forbidden_identity(
     monkeypatch.setattr(
         "ampel.ztf.archive.server.tokens.settings.allowed_identities", {"none", "such"}
     )
-    response = await integration_client.get("/tokens", auth=BearerAuth(user_token))
+    response = await integration_client.get("/tokens/", auth=BearerAuth(user_token))
     assert response.status_code == status.HTTP_403_FORBIDDEN
 
 
@@ -675,7 +675,7 @@ def test_extract_block_from_s3(
         assert reco == record
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture()
 async def post_alert_chunk(
     authed_integration_client: httpx.AsyncClient, alert_generator
 ):

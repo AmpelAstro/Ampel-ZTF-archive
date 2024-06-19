@@ -6,8 +6,8 @@
 # Last Modified Date: 08.10.2020
 # Last Modified By  : Jakob van Santen <jakob.van.santen@desy.de>
 
-from distutils.version import LooseVersion
 
+from packaging.version import Version
 from sqlalchemy import bindparam, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import IntegrityError
@@ -25,7 +25,7 @@ class ZUDSArchiveUpdater(ArchiveDBClient):
 
         :param alert: alert dict
         """
-        if LooseVersion(alert["schemavsn"]) > self._alert_version:
+        if Version(alert["schemavsn"]) > self._alert_version:
             raise ValueError(
                 "alert schema ({}) is newer than database schema ({})".format(
                     alert["schemavsn"], self._alert_version
