@@ -665,7 +665,7 @@ def create_stream_from_query(
     tasks: BackgroundTasks,
     query: Union[AlertQuery, ObjectQuery, HEALpixRegionQuery] = Body(
         ...,
-        examples={
+        examples={  # type: ignore[arg-type]
             "cone": {
                 "summary": "Cone search",
                 "value": {

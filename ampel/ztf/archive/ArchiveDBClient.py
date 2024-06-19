@@ -8,9 +8,9 @@
 
 import logging
 import warnings
-from distutils.version import LooseVersion
 from functools import cached_property
 
+from packaging.version import Version
 from sqlalchemy import MetaData, create_engine, select
 from sqlalchemy.exc import SAWarning
 
@@ -30,7 +30,7 @@ class ArchiveDBClient:
         self._engine = create_engine(*args, **kwargs)
 
     @cached_property
-    def _alert_version(self) -> LooseVersion:
+    def _alert_version(self) -> Version:
         Versions = self._meta.tables["versions"]
         with self._engine.connect() as conn:
             row = conn.execute(
@@ -39,7 +39,7 @@ class ArchiveDBClient:
                 .limit(1)
             ).first()
             if row:
-                return LooseVersion(row[0])
+                return Version(row[0])
             raise RuntimeError("no alert version found in database")
 
     @cached_property
