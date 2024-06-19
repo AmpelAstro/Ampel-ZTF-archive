@@ -64,6 +64,7 @@ addopts = "--showlocals -r a -v --integration"
 filterwarnings = [
     "error",
     "default::pytest.PytestUnraisableExceptionWarning",
+    "ignore:datetime\\.datetime\\.utcnow\\(\\) is deprecated:DeprecationWarning:botocore",
 ]
 
 [tool.mypy]
