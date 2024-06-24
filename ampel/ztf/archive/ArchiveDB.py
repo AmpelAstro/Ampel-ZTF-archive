@@ -215,7 +215,7 @@ class ArchiveDB(ArchiveDBClient):
                     Topic.c.topic_id == topic_id
                 )
             ).fetchone()
-            size = 0 if info is None else info[0]
+            size = info[0] or 0
             assert row.topic_description
             return {
                 "description": row.topic_description,
