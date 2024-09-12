@@ -43,7 +43,7 @@ class BearerAuth(httpx.Auth):
         yield request
 
 
-@pytest.fixture()
+@pytest.fixture
 def mocked_app(monkeypatch: "MonkeyPatch", mocker: "MockerFixture", mock_s3_bucket):
     monkeypatch.setenv("ALLOWED_IDENTITIES", '["someorg","someorg/a-team"]')
     from ampel.ztf.archive.server import app, db
@@ -57,7 +57,7 @@ def mocked_app(monkeypatch: "MonkeyPatch", mocker: "MockerFixture", mock_s3_buck
     get_archive_updater.cache_clear()
 
 
-@pytest.fixture()
+@pytest.fixture
 def _mock_auth(mocker: "MockerFixture"):
     from ampel.ztf.archive.server import tokens
 
@@ -68,7 +68,7 @@ def _mock_auth(mocker: "MockerFixture"):
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_db(mocked_app, alert_generator):
     db = mocked_app.get_archive()
     alert = next(alert_generator())
@@ -103,7 +103,7 @@ async def mock_client(mocked_app):
         yield client
 
 
-@pytest.fixture()
+@pytest.fixture
 def integration_app(monkeypatch: "MonkeyPatch", alert_archive, localstack_s3_bucket):
     monkeypatch.setattr(
         "ampel.ztf.archive.server.settings.settings.archive_uri", alert_archive
@@ -152,7 +152,7 @@ def set_token_role(token: str, role: str):
             conn.commit()
 
 
-@pytest.fixture()
+@pytest.fixture
 def write_token(integration_app, access_token):
     with set_token_role(access_token, "writer"):
         yield access_token
@@ -180,7 +180,7 @@ def test_parse_json_from_env(monkeypatch):
 
 
 @pytest.mark.parametrize("schemavsn", ["3.3", "4.02"])
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_get_alert(mock_client: httpx.AsyncClient, mock_db: MagicMock, schemavsn):
     with open(
         Path(__file__).parent / "test-data" / f"schema_{schemavsn}.avro", "rb"
@@ -208,7 +208,7 @@ def client(request):
         (BearerAuth, status.HTTP_401_UNAUTHORIZED),
     ],
 )
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_basic_auth(
     mock_client: httpx.AsyncClient,
     mock_db: MagicMock,
@@ -240,7 +240,7 @@ async def test_basic_auth(
         ({"programid": 2}, status.HTTP_401_UNAUTHORIZED),
     ],
 )
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_programid_auth(
     mock_client: httpx.AsyncClient,
     mock_db: MagicMock,
@@ -271,7 +271,7 @@ async def test_programid_auth(
             ), "non-partnership tokens always query programid 1"
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_auth_timeout(
     mock_client: httpx.AsyncClient,
     mock_db: MagicMock,
@@ -288,7 +288,7 @@ async def test_auth_timeout(
 
 
 @pytest.mark.usefixtures("_mock_auth")
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_get_healpix(mock_client: httpx.AsyncClient, mock_db: MagicMock):
     params = {"jd_start": 0, "jd_end": 1}
     response = await mock_client.get(
@@ -304,7 +304,7 @@ async def test_get_healpix(mock_client: httpx.AsyncClient, mock_db: MagicMock):
 
 
 @pytest.mark.usefixtures("_mock_auth")
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_get_healpix_skymap(mock_client: httpx.AsyncClient, mock_db: MagicMock):
     query = {
         "nside": 4,
@@ -323,7 +323,7 @@ async def test_get_healpix_skymap(mock_client: httpx.AsyncClient, mock_db: Magic
 
 @pytest.mark.usefixtures("_mock_auth")
 @pytest.mark.parametrize("nside", [0, ArchiveDB.NSIDE * 2, ArchiveDB.NSIDE - 1])
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_get_healpix_validation(
     mock_client: httpx.AsyncClient, mock_db: MagicMock, nside
 ):
@@ -340,7 +340,7 @@ async def test_get_healpix_validation(
     ("auth", "status"),
     [(DEFAULT, status.HTTP_200_OK), (BearerAuth, status.HTTP_401_UNAUTHORIZED)],
 )
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_get_photopoints(
     authed_integration_client: httpx.AsyncClient,
     auth,
@@ -355,7 +355,7 @@ async def test_get_photopoints(
         assert len(response.json()["prv_candidates"]) == 48
 
 
-@pytest.fixture()
+@pytest.fixture
 def _instant_timeout(monkeypatch: pytest.MonkeyPatch):
     """
     Set statement timeout to 1 ms
@@ -370,7 +370,7 @@ def _instant_timeout(monkeypatch: pytest.MonkeyPatch):
     db.get_archive.cache_clear()
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_query_canceled(
     authed_integration_client: httpx.AsyncClient,
     _instant_timeout,  # noqa: PT019
@@ -384,7 +384,7 @@ async def test_query_canceled(
     assert response.status_code == status.HTTP_504_GATEWAY_TIMEOUT
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_create_stream(
     authed_integration_client: httpx.AsyncClient, integration_app
 ):
@@ -411,7 +411,7 @@ async def test_create_stream(
     assert response.json()["remaining"]["chunks"] == 0
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_create_stream_bad(
     authed_integration_client: httpx.AsyncClient, integration_app
 ):
@@ -436,7 +436,7 @@ async def test_create_stream_bad(
     )
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_read_stream(
     integration_client: httpx.AsyncClient,
     authed_integration_client: httpx.AsyncClient,
@@ -480,7 +480,7 @@ async def test_read_stream(
     assert response.status_code == 404
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_read_topic(
     integration_client: httpx.AsyncClient,
     authed_integration_client: httpx.AsyncClient,
@@ -514,7 +514,7 @@ async def test_read_topic(
     assert response.json()["remaining"]["chunks"] == 0
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_create_topic_with_bad_ids(
     authed_integration_client: httpx.AsyncClient, integration_app
 ):
@@ -528,7 +528,7 @@ async def test_create_topic_with_bad_ids(
     assert set(detail["detail"].keys()) == {"msg", "topic"}
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_read_invalid_topic(
     integration_client: httpx.AsyncClient, integration_app
 ):
@@ -538,14 +538,14 @@ async def test_read_invalid_topic(
     assert response.status_code == 404
 
 
-@pytest.fixture()
+@pytest.fixture
 def test_user():
     from ampel.ztf.archive.server.tokens import User
 
     return User(name="flerpyherp", orgs=["someorg"], teams=["someorg/a-team"])
 
 
-@pytest.fixture()
+@pytest.fixture
 def user_token(test_user):
     from ampel.ztf.archive.server.settings import settings
 
@@ -566,7 +566,7 @@ async def access_token(
     return response.json()
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_create_token(
     integration_app,
     access_token: str,
@@ -578,7 +578,7 @@ async def test_create_token(
         assert len(cursor.fetchall()) == 1
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_delete_token(
     integration_client: httpx.AsyncClient,
     integration_app,
@@ -600,7 +600,7 @@ async def test_delete_token(
         assert len(cursor.fetchall()) == 0
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_list_tokens(
     integration_client: httpx.AsyncClient,
     user_token: str,
@@ -612,7 +612,7 @@ async def test_list_tokens(
     assert any(token["token"] == access_token for token in tokens)
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_forbidden_identity(
     integration_client: httpx.AsyncClient,
     user_token: str,
@@ -626,7 +626,7 @@ async def test_forbidden_identity(
     assert response.status_code == status.HTTP_403_FORBIDDEN
 
 
-@pytest.fixture()
+@pytest.fixture
 def packed_alert_chunk(
     alert_generator,
 ) -> tuple[dict, bytes, list[dict], list[tuple[int, int]]]:
@@ -705,7 +705,7 @@ def test_post_alert_chunk(
         assert urlsplit(result[0].uri).path.split("/")[-1] == obj.key
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_get_cutouts_from_chunk(
     authed_integration_client: httpx.AsyncClient, post_alert_chunk
 ):
@@ -729,7 +729,7 @@ async def test_get_cutouts_from_chunk(
     assert response.status_code == HTTP_404_NOT_FOUND, "archive blob missing"
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_repost_alert_chunk(
     authed_integration_client: httpx.AsyncClient, alert_generator
 ):
@@ -773,14 +773,14 @@ async def test_repost_alert_chunk(
             )
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_post_alert_unauthorized(integration_client: httpx.AsyncClient):
     response = await integration_client.post("/alerts", content=b"")
     assert response.status_code == status.HTTP_403_FORBIDDEN
 
 
 @pytest.mark.usefixtures("_mock_auth")
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_post_alert_malformed(mock_client: httpx.AsyncClient):
     response = await mock_client.post("/alerts", content=b"")
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY

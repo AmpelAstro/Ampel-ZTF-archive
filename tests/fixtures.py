@@ -164,7 +164,7 @@ def localstack_s3(integration):
             )
 
 
-@pytest.fixture()
+@pytest.fixture
 def empty_archive(archive):
     """
     Yield archive database, dropping all rows when finished
@@ -189,7 +189,7 @@ def empty_archive(archive):
             connection.commit()
 
 
-@pytest.fixture()
+@pytest.fixture
 def alert_archive(empty_archive, alert_generator):
     from ampel.ztf.t0.ArchiveUpdater import ArchiveUpdater
 
@@ -238,7 +238,7 @@ def _aws_credentials():
     os.environ["AWS_SECRET_ACCESS_KEY"] = "SEEKRIT"
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_s3_bucket(_aws_credentials):
     get_s3_bucket.cache_clear()
     with mock_aws():
@@ -248,7 +248,7 @@ def mock_s3_bucket(_aws_credentials):
     get_s3_bucket.cache_clear()
 
 
-@pytest.fixture()
+@pytest.fixture
 def localstack_s3_bucket(_aws_credentials, localstack_s3, monkeypatch):
     from ampel.ztf.archive.server.settings import settings
 
