@@ -1,17 +1,23 @@
 import math
 from base64 import b64encode
 from datetime import datetime
-from typing import ClassVar, Literal, Optional, Union
+from typing import Annotated, Any, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, root_validator, validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PlainSerializer,
+    field_validator,
+    model_validator,
+)
 
 from ..ArchiveDBClient import ArchiveDBClient
 from ..types import FilterClause
 
 
 class StrictModel(BaseModel):
-    class Config:
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
 
 
 class Stream(BaseModel):
@@ -28,7 +34,7 @@ class StreamDescription(Stream):
     remaining: ChunkCount
     pending: ChunkCount
     started_at: datetime
-    finished_at: Optional[datetime]
+    finished_at: Optional[datetime] = None
 
 
 class Topic(BaseModel):
@@ -47,10 +53,10 @@ class TopicDescription(BaseModel):
 class TopicQuery(StrictModel):
     topic: str
     chunk_size: int = Field(
-        100, gte=100, lte=10000, description="Number of alerts per chunk"
+        100, ge=100, le=10000, description="Number of alerts per chunk"
     )
-    start: Optional[int] = Field(None, gte=0)
-    stop: Optional[int] = Field(None, gte=1)
+    start: Optional[int] = Field(None, ge=0)
+    stop: Optional[int] = Field(None, ge=1)
     step: Optional[int] = Field(None, gt=0)
 
 
@@ -79,24 +85,19 @@ class StrictTimeConstraint(TimeConstraint):
 class CandidateFilterable(StrictModel):
     candidate: Optional[FilterClause] = None
 
-    @validator("candidate", pre=True, each_item=True)
-    def validate_operator(cls, v):
-        if isinstance(v, dict):
-            return v
-        return {"$eq": v}
-
 
 class AlertQuery(CandidateFilterable):
     cone: Optional[ConeConstraint] = None
     jd: TimeConstraint = TimeConstraint()  # type: ignore[call-arg]
     candidate: Optional[FilterClause] = None
     chunk_size: int = Field(
-        100, gte=0, lte=10000, description="Number of alerts per chunk"
+        100, ge=0, le=10000, description="Number of alerts per chunk"
     )
 
-    @root_validator
-    def at_least_one_constraint(cls, values):
-        if not {"cone", "jd"}.intersection(values.keys()):
+    @model_validator(mode="before")
+    @classmethod
+    def at_least_one_constraint(cls, values: Any):
+        if isinstance(values, dict) and not {"cone", "jd"}.intersection(values.keys()):
             raise ValueError("At least one constraint (cone or jd) must be specified")
         return values
 
@@ -106,7 +107,7 @@ class ObjectQuery(CandidateFilterable):
     jd: TimeConstraint = TimeConstraint()  # type: ignore[call-arg]
     candidate: Optional[FilterClause] = None
     chunk_size: int = Field(
-        100, gte=0, lte=10000, description="Number of alerts per chunk"
+        100, ge=0, le=10000, description="Number of alerts per chunk"
     )
 
 
@@ -119,7 +120,7 @@ class AlertChunkQueryBase(StrictModel):
     with_history: bool = False
     with_cutouts: bool = False
     chunk_size: int = Field(
-        100, gt=0, lte=10000, description="Number of alerts to return per page"
+        100, gt=0, le=10000, description="Number of alerts to return per page"
     )
     resume_token: Optional[str] = Field(
         None,
@@ -135,7 +136,8 @@ class HEALpixMapRegion(StrictModel):
     nside: int = Field(..., gt=0, le=ArchiveDBClient.NSIDE)
     pixels: list[int]
 
-    @validator("nside")
+    @field_validator("nside")
+    @classmethod
     def power_of_two(cls, nside):
         if not math.log2(nside).is_integer():
             raise ValueError("nside must be a power of 2")
@@ -168,106 +170,106 @@ class Candidate(BaseModel):
     jd: float
     fid: int
     pid: int
-    diffmaglim: Optional[float]
-    pdiffimfilename: Optional[str]
-    programpi: Optional[str]
+    diffmaglim: Optional[float] = None
+    pdiffimfilename: Optional[str] = None
+    programpi: Optional[str] = None
     programid: Literal[1, 2, 3]
     candid: int
     isdiffpos: str
     tblid: int
-    nid: Optional[int]
-    rcid: Optional[int]
-    field: Optional[int]
-    xpos: Optional[float]
-    ypos: Optional[float]
+    nid: Optional[int] = None
+    rcid: Optional[int] = None
+    field: Optional[int] = None
+    xpos: Optional[float] = None
+    ypos: Optional[float] = None
     ra: float
     dec: float
     magpsf: float
     sigmapsf: float
-    chipsf: Optional[float]
-    magap: Optional[float]
-    sigmagap: Optional[float]
-    distnr: Optional[float]
-    magnr: Optional[float]
-    sigmagnr: Optional[float]
-    chinr: Optional[float]
-    sharpnr: Optional[float]
-    sky: Optional[float]
-    magdiff: Optional[float]
-    fwhm: Optional[float]
-    classtar: Optional[float]
-    mindtoedge: Optional[float]
-    magfromlim: Optional[float]
-    seeratio: Optional[float]
-    aimage: Optional[float]
-    bimage: Optional[float]
-    aimagerat: Optional[float]
-    bimagerat: Optional[float]
-    elong: Optional[float]
-    nneg: Optional[int]
-    nbad: Optional[int]
-    rb: Optional[float]
-    ssdistnr: Optional[float]
-    ssmagnr: Optional[float]
-    ssnamenr: Optional[str]
-    sumrat: Optional[float]
-    magapbig: Optional[float]
-    sigmagapbig: Optional[float]
+    chipsf: Optional[float] = None
+    magap: Optional[float] = None
+    sigmagap: Optional[float] = None
+    distnr: Optional[float] = None
+    magnr: Optional[float] = None
+    sigmagnr: Optional[float] = None
+    chinr: Optional[float] = None
+    sharpnr: Optional[float] = None
+    sky: Optional[float] = None
+    magdiff: Optional[float] = None
+    fwhm: Optional[float] = None
+    classtar: Optional[float] = None
+    mindtoedge: Optional[float] = None
+    magfromlim: Optional[float] = None
+    seeratio: Optional[float] = None
+    aimage: Optional[float] = None
+    bimage: Optional[float] = None
+    aimagerat: Optional[float] = None
+    bimagerat: Optional[float] = None
+    elong: Optional[float] = None
+    nneg: Optional[int] = None
+    nbad: Optional[int] = None
+    rb: Optional[float] = None
+    ssdistnr: Optional[float] = None
+    ssmagnr: Optional[float] = None
+    ssnamenr: Optional[str] = None
+    sumrat: Optional[float] = None
+    magapbig: Optional[float] = None
+    sigmagapbig: Optional[float] = None
     ranr: float
     decnr: float
-    sgmag1: Optional[float]
-    srmag1: Optional[float]
-    simag1: Optional[float]
-    szmag1: Optional[float]
-    sgscore1: Optional[float]
-    distpsnr1: Optional[float]
+    sgmag1: Optional[float] = None
+    srmag1: Optional[float] = None
+    simag1: Optional[float] = None
+    szmag1: Optional[float] = None
+    sgscore1: Optional[float] = None
+    distpsnr1: Optional[float] = None
     ndethist: int
     ncovhist: int
-    jdstarthist: Optional[float]
-    jdendhist: Optional[float]
-    scorr: Optional[float]
-    tooflag: Optional[int]
-    objectidps1: Optional[int]
-    objectidps2: Optional[int]
-    sgmag2: Optional[float]
-    srmag2: Optional[float]
-    simag2: Optional[float]
-    szmag2: Optional[float]
-    sgscore2: Optional[float]
-    distpsnr2: Optional[float]
-    objectidps3: Optional[int]
-    sgmag3: Optional[float]
-    srmag3: Optional[float]
-    simag3: Optional[float]
-    szmag3: Optional[float]
-    sgscore3: Optional[float]
-    distpsnr3: Optional[float]
+    jdstarthist: Optional[float] = None
+    jdendhist: Optional[float] = None
+    scorr: Optional[float] = None
+    tooflag: Optional[int] = None
+    objectidps1: Optional[int] = None
+    objectidps2: Optional[int] = None
+    sgmag2: Optional[float] = None
+    srmag2: Optional[float] = None
+    simag2: Optional[float] = None
+    szmag2: Optional[float] = None
+    sgscore2: Optional[float] = None
+    distpsnr2: Optional[float] = None
+    objectidps3: Optional[int] = None
+    sgmag3: Optional[float] = None
+    srmag3: Optional[float] = None
+    simag3: Optional[float] = None
+    szmag3: Optional[float] = None
+    sgscore3: Optional[float] = None
+    distpsnr3: Optional[float] = None
     nmtchps: int
     rfid: int
     jdstartref: float
     jdendref: float
     nframesref: int
-    rbversion: Optional[str]
-    dsnrms: Optional[float]
-    ssnrms: Optional[float]
-    dsdiff: Optional[float]
-    magzpsci: Optional[float]
-    magzpsciunc: Optional[float]
-    magzpscirms: Optional[float]
-    nmatches: Optional[int]
-    clrcoeff: Optional[float]
-    clrcounc: Optional[float]
-    zpclrcov: Optional[float]
-    zpmed: Optional[float]
-    clrmed: Optional[float]
-    clrrms: Optional[float]
-    neargaia: Optional[float]
-    neargaiabright: Optional[float]
-    maggaia: Optional[float]
-    maggaiabright: Optional[float]
-    exptime: Optional[float]
-    drb: Optional[float]
-    drbversion: Optional[str]
+    rbversion: Optional[str] = None
+    dsnrms: Optional[float] = None
+    ssnrms: Optional[float] = None
+    dsdiff: Optional[float] = None
+    magzpsci: Optional[float] = None
+    magzpsciunc: Optional[float] = None
+    magzpscirms: Optional[float] = None
+    nmatches: Optional[int] = None
+    clrcoeff: Optional[float] = None
+    clrcounc: Optional[float] = None
+    zpclrcov: Optional[float] = None
+    zpmed: Optional[float] = None
+    clrmed: Optional[float] = None
+    clrrms: Optional[float] = None
+    neargaia: Optional[float] = None
+    neargaiabright: Optional[float] = None
+    maggaia: Optional[float] = None
+    maggaiabright: Optional[float] = None
+    exptime: Optional[float] = None
+    drb: Optional[float] = None
+    drbversion: Optional[str] = None
 
 
 class PrvCandidate(BaseModel):
@@ -278,92 +280,92 @@ class PrvCandidate(BaseModel):
     jd: float
     fid: int
     pid: int
-    diffmaglim: Optional[float]
-    pdiffimfilename: Optional[str]
-    programpi: Optional[str]
+    diffmaglim: Optional[float] = None
+    pdiffimfilename: Optional[str] = None
+    programpi: Optional[str] = None
     programid: int
-    candid: Optional[int]
-    isdiffpos: Optional[str]
-    tblid: Optional[int]
-    nid: Optional[int]
-    rcid: Optional[int]
-    field: Optional[int]
-    xpos: Optional[float]
-    ypos: Optional[float]
-    ra: Optional[float]
-    dec: Optional[float]
-    magpsf: Optional[float]
-    sigmapsf: Optional[float]
-    chipsf: Optional[float]
-    magap: Optional[float]
-    sigmagap: Optional[float]
-    distnr: Optional[float]
-    magnr: Optional[float]
-    sigmagnr: Optional[float]
-    chinr: Optional[float]
-    sharpnr: Optional[float]
-    sky: Optional[float]
-    magdiff: Optional[float]
-    fwhm: Optional[float]
-    classtar: Optional[float]
-    mindtoedge: Optional[float]
-    magfromlim: Optional[float]
-    seeratio: Optional[float]
-    aimage: Optional[float]
-    bimage: Optional[float]
-    aimagerat: Optional[float]
-    bimagerat: Optional[float]
-    elong: Optional[float]
-    nneg: Optional[int]
-    nbad: Optional[int]
-    rb: Optional[float]
-    ssdistnr: Optional[float]
-    ssmagnr: Optional[float]
-    ssnamenr: Optional[str]
-    sumrat: Optional[float]
-    magapbig: Optional[float]
-    sigmagapbig: Optional[float]
-    ranr: Optional[float]
-    decnr: Optional[float]
-    scorr: Optional[float]
-    magzpsci: Optional[float]
-    magzpsciunc: Optional[float]
-    magzpscirms: Optional[float]
-    clrcoeff: Optional[float]
-    clrcounc: Optional[float]
-    rbversion: Optional[str]
+    candid: Optional[int] = None
+    isdiffpos: Optional[str] = None
+    tblid: Optional[int] = None
+    nid: Optional[int] = None
+    rcid: Optional[int] = None
+    field: Optional[int] = None
+    xpos: Optional[float] = None
+    ypos: Optional[float] = None
+    ra: Optional[float] = None
+    dec: Optional[float] = None
+    magpsf: Optional[float] = None
+    sigmapsf: Optional[float] = None
+    chipsf: Optional[float] = None
+    magap: Optional[float] = None
+    sigmagap: Optional[float] = None
+    distnr: Optional[float] = None
+    magnr: Optional[float] = None
+    sigmagnr: Optional[float] = None
+    chinr: Optional[float] = None
+    sharpnr: Optional[float] = None
+    sky: Optional[float] = None
+    magdiff: Optional[float] = None
+    fwhm: Optional[float] = None
+    classtar: Optional[float] = None
+    mindtoedge: Optional[float] = None
+    magfromlim: Optional[float] = None
+    seeratio: Optional[float] = None
+    aimage: Optional[float] = None
+    bimage: Optional[float] = None
+    aimagerat: Optional[float] = None
+    bimagerat: Optional[float] = None
+    elong: Optional[float] = None
+    nneg: Optional[int] = None
+    nbad: Optional[int] = None
+    rb: Optional[float] = None
+    ssdistnr: Optional[float] = None
+    ssmagnr: Optional[float] = None
+    ssnamenr: Optional[str] = None
+    sumrat: Optional[float] = None
+    magapbig: Optional[float] = None
+    sigmagapbig: Optional[float] = None
+    ranr: Optional[float] = None
+    decnr: Optional[float] = None
+    scorr: Optional[float] = None
+    magzpsci: Optional[float] = None
+    magzpsciunc: Optional[float] = None
+    magzpscirms: Optional[float] = None
+    clrcoeff: Optional[float] = None
+    clrcounc: Optional[float] = None
+    rbversion: Optional[str] = None
 
 
 class FPHist(BaseModel):
-    field: Optional[int]
-    rcid: Optional[int]
+    field: Optional[int] = None
+    rcid: Optional[int] = None
     fid: int
     pid: int
     rfid: int
-    sciinpseeing: Optional[float]
-    scibckgnd: Optional[float]
-    scisigpix: Optional[float]
-    magzpsci: Optional[float]
-    magzpsciunc: Optional[float]
-    magzpscirms: Optional[float]
-    clrcoeff: Optional[float]
-    clrcounc: Optional[float]
-    exptime: Optional[float]
-    adpctdif1: Optional[float]
-    adpctdif2: Optional[float]
-    diffmaglim: Optional[float]
+    sciinpseeing: Optional[float] = None
+    scibckgnd: Optional[float] = None
+    scisigpix: Optional[float] = None
+    magzpsci: Optional[float] = None
+    magzpsciunc: Optional[float] = None
+    magzpscirms: Optional[float] = None
+    clrcoeff: Optional[float] = None
+    clrcounc: Optional[float] = None
+    exptime: Optional[float] = None
+    adpctdif1: Optional[float] = None
+    adpctdif2: Optional[float] = None
+    diffmaglim: Optional[float] = None
     programid: int
     jd: float
-    forcediffimflux: Optional[float]
-    forcediffimfluxunc: Optional[float]
-    procstatus: Optional[str]
-    distnr: Optional[float]
+    forcediffimflux: Optional[float] = None
+    forcediffimfluxunc: Optional[float] = None
+    procstatus: Optional[str] = None
+    distnr: Optional[float] = None
     ranr: float
     decnr: float
-    magnr: Optional[float]
-    sigmagnr: Optional[float]
-    chinr: Optional[float]
-    sharpnr: Optional[float]
+    magnr: Optional[float] = None
+    sigmagnr: Optional[float] = None
+    chinr: Optional[float] = None
+    sharpnr: Optional[float] = None
 
 
 class Cutout(BaseModel):
@@ -372,21 +374,29 @@ class Cutout(BaseModel):
     """
 
     fileName: str
-    stampData: bytes
+    # NB: ser_json_bytes="base64" uses a URL-safe alphabet, whereas b64encode
+    # uses +/ to represent 62 and 63. Use a serialization function to emit
+    # strings that can be properly decoded with b64decode. See:
+    # https://github.com/pydantic/pydantic/issues/7000
+    stampData: Annotated[
+        bytes,
+        PlainSerializer(lambda v: b64encode(v), return_type=bytes, when_used="json"),
+    ]
 
 
 class AlertBase(BaseModel):
     candid: int
     objectId: str
-
-    class Config:
-        json_encoders: ClassVar[dict] = {bytes: lambda v: b64encode(v).decode()}
+    model_config = ConfigDict(
+        ser_json_bytes="base64",
+        val_json_bytes="base64",
+    )
 
 
 class AlertCutouts(AlertBase):
-    cutoutScience: Optional[Cutout]
-    cutoutTemplate: Optional[Cutout]
-    cutoutDifference: Optional[Cutout]
+    cutoutScience: Optional[Cutout] = None
+    cutoutTemplate: Optional[Cutout] = None
+    cutoutDifference: Optional[Cutout] = None
 
 
 class Alert_33(AlertCutouts):
@@ -404,12 +414,12 @@ class Alert_33(AlertCutouts):
     ]
     publisher: str = "Ampel"
     candidate: Candidate
-    prv_candidates: Optional[list[PrvCandidate]]
+    prv_candidates: Optional[list[PrvCandidate]] = None
 
 
 class Alert_402(Alert_33):
     schemavsn: Literal["4.02"]  # type: ignore[assignment]
-    fp_hists: Optional[list[FPHist]]
+    fp_hists: Optional[list[FPHist]] = None
 
 
 Alert = Union[Alert_33, Alert_402]
@@ -417,13 +427,14 @@ Alert = Union[Alert_33, Alert_402]
 
 class AlertChunk(BaseModel):
     resume_token: str
-    chunk: Optional[int]
+    chunk: Optional[int] = None
     alerts: list[Alert]
     remaining: ChunkCount
     pending: ChunkCount
-
-    class Config:
-        json_encoders: ClassVar[dict] = {bytes: lambda v: b64encode(v).decode()}
+    model_config = ConfigDict(
+        ser_json_bytes="base64",
+        val_json_bytes="base64",
+    )
 
 
 class AlertCount(BaseModel):

@@ -388,7 +388,9 @@ async def test_query_canceled(
 async def test_create_stream(
     authed_integration_client: httpx.AsyncClient, integration_app
 ):
-    response = await authed_integration_client.post("/streams/from_query", json={})
+    response = await authed_integration_client.post(
+        "/streams/from_query", json={"jd": {}}
+    )
     assert response.status_code == HTTP_202_ACCEPTED
     body = response.json()
     response = await authed_integration_client.get(f"/stream/{body['resume_token']}")
@@ -441,7 +443,9 @@ async def test_read_stream(
     integration_client: httpx.AsyncClient,
     authed_integration_client: httpx.AsyncClient,
 ):
-    response = await authed_integration_client.post("/streams/from_query", json={})
+    response = await authed_integration_client.post(
+        "/streams/from_query", json={"jd": {}}
+    )
     assert response.status_code == HTTP_202_ACCEPTED
     body = response.json()
 
@@ -550,7 +554,9 @@ def user_token(test_user):
     from ampel.ztf.archive.server.settings import settings
 
     return jwt.encode(
-        test_user.dict(), settings.jwt_secret_key, algorithm=settings.jwt_algorithm
+        test_user.model_dump(),
+        settings.jwt_secret_key,
+        algorithm=settings.jwt_algorithm,
     )
 
 
