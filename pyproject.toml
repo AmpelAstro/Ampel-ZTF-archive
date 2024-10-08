@@ -31,10 +31,12 @@ python = "^3.9"
 sqlalchemy = "~2.0.0"
 psycopg2 = "^2.8.6"
 fastapi = {version = "^0.114.0", optional = true}
+pydantic = {version = "^2", optional = true}
 PyJWT = {version = "^2.1.0", extras = ["server"]}
 boto3 = "^1.19.2"
 fastavro = "^1.9.2"
 astropy-healpix = "^1.0.0"
+pydantic-settings = {version = "^2.5.2", optional = true}
 
 [tool.poetry.dev-dependencies]
 pytest = "^8.3.3"
@@ -49,7 +51,7 @@ moto = "^5.0.14"
 boto3-stubs = {extras = ["s3"], version = "^1.35.18"}
 
 [tool.poetry.extras]
-server = ["fastapi"]
+server = ["fastapi", "pydantic-settings", "pydantic"]
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

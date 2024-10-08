@@ -21,9 +21,12 @@ class NoSuchKey(KeyError): ...
 
 @lru_cache(maxsize=1)
 def get_s3_bucket() -> "Bucket":
-    return boto3.resource("s3", endpoint_url=settings.s3_endpoint_url).Bucket(
-        settings.s3_bucket
-    )
+    return boto3.resource(
+        "s3",
+        endpoint_url=str(settings.s3_endpoint_url)
+        if settings.s3_endpoint_url
+        else None,
+    ).Bucket(settings.s3_bucket)
 
 
 def get_object(bucket: "Bucket", key: str) -> bytes:
