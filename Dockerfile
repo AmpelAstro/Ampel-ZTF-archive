@@ -18,6 +18,8 @@ ENV PIP_DEFAULT_TIMEOUT=100 \
 RUN pip install "poetry==$POETRY_VERSION"
 RUN python -m venv /venv
 
+RUN apt-get update && apt-get install -y build-essential libpq-dev && rm -rf /var/lib/apt/lists/*
+
 COPY pyproject.toml poetry.lock ./
 RUN VIRTUAL_ENV=/venv poetry install --no-root --all-extras
 
@@ -30,6 +32,8 @@ FROM base AS final
 # create cache dirs for astropy and friends
 RUN mkdir -p --mode a=rwx /var/cache/astropy
 ENV XDG_CACHE_HOME=/var/cache XDG_CONFIG_HOME=/var/cache
+
+RUN apt-get update && apt-get install -y libpq5 && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /venv /venv
 CMD ["/venv/bin/uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "80"]
