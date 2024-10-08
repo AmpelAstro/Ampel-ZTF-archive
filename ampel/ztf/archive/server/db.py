@@ -13,16 +13,16 @@ from .settings import settings
 
 
 @lru_cache(maxsize=1)
-def get_archive():
+def get_archive() -> ArchiveDB:
     return ArchiveDB(
-        settings.archive_uri,
+        str(settings.archive_uri),
         default_statement_timeout=settings.default_statement_timeout * 1000,
     )
 
 
 @lru_cache(maxsize=1)
 def get_archive_updater() -> ArchiveUpdater:
-    return ArchiveUpdater(settings.archive_uri)
+    return ArchiveUpdater(str(settings.archive_uri))
 
 
 async def handle_operationalerror(request: Request, exc: OperationalError):
