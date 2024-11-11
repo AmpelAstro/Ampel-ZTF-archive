@@ -37,6 +37,7 @@ boto3 = "^1.19.2"
 fastavro = "^1.9.2"
 astropy-healpix = "^1.0.0"
 pydantic-settings = {version = "^2.5.2", optional = true}
+uvicorn = {version = "^0.32.0", optional = true}
 
 [tool.poetry.dev-dependencies]
 pytest = "^8.3.3"
@@ -51,7 +52,7 @@ moto = "^5.0.16"
 boto3-stubs = {extras = ["s3"], version = "^1.35.35"}
 
 [tool.poetry.extras]
-server = ["fastapi", "pydantic-settings", "pydantic"]
+server = ["fastapi", "pydantic-settings", "pydantic", "uvicorn"]
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
