@@ -4,13 +4,31 @@ on:
   push:
     tags:
       - 'v*'
+    branches:
+      - main
+      - renovate/*
+    paths:
+      - pyproject.toml
+      - poetry.lock
+      - Dockerfile
+      - .github/workflows/cd.yaml
+      - ampel/**
+  pull_request:
+    branches:
+      - main
+    paths:
+      - pyproject.toml
+      - poetry.lock
+      - Dockerfile
+      - .github/workflows/cd.yaml
+      - ampel/**
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  publish:
+  container:
 
     runs-on: ubuntu-24.04
 
@@ -21,39 +39,39 @@ jobs:
       id-token: write
 
     steps:
-    - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
     - name: Set up QEMU
       uses: docker/setup-qemu-action@49b3bc8e6bdd4a60e6116a5414239cba5943d3cf # v3
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@988b5a0280414f521da01fcc63a27aeeb4b104db # v3
+      uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3
     - name: Login to Github Packages
       uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3
       with:
         registry: ghcr.io
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
-    - name: lowercase github.repository
-      run: |
-        echo "IMAGE_NAME=`echo ${{github.repository}} | tr '[:upper:]' '[:lower:]'`" >>${GITHUB_ENV}
     - name: Build
+      id: docker_build
       uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75 # v6
       with:
         load: true
-        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test
-    - run: |
-        docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test /venv/bin/python -c "import ampel.ztf.archive.server.app"
+    - name: Smoke test
+      run: |
+        container=$(docker run -d "${{ steps.docker_build.outputs.imageid }}")
+        sleep 1
+        docker stop -s INT -t 5 $container
+        docker logs $container
+        exit $(docker wait $container)
     - name: Extract metadata (tags, labels) for Docker
       id: meta
       uses: docker/metadata-action@8e5442c4ef9f78752691e2d8f8d19755c6f78e81 # v5
       with:
         images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
     - name: Build and push
-      id: docker_build
+      if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+      id: docker_push
       uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75 # v6
       with:
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
-    - name: Image digest
-      run: echo ${{ steps.docker_build.outputs.digest }}
-      
