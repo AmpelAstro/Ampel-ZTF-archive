@@ -8,7 +8,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     root_path: str = Field("", validation_alias="ROOT_PATH")
     archive_uri: PostgresDsn = Field(
-        "postgresql://localhost:5432/ztfarchive", validation_alias="ARCHIVE_URI"
+        PostgresDsn("postgresql://localhost:5432/ztfarchive"),
+        validation_alias="ARCHIVE_URI",
     )
     default_statement_timeout: int = Field(
         60,

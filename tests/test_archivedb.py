@@ -371,11 +371,12 @@ def assert_alerts_equivalent(alert, reco_alert):
     reco_candidate = {k: v for k, v in reco_alert["candidate"].items() if k in keys}
     for k in set(alert["candidate"].keys()).difference(keys):
         assert reco_alert["candidate"][k] is None
-    for k in reco_candidate:
-        if isinstance(reco_candidate[k], float):
-            assert reco_candidate[k] == pytest.approx(candidate[k])
+    for k, rv in reco_candidate.items():
+        v = candidate[k]
+        if isinstance(rv, float):
+            assert rv == pytest.approx(v)
         else:
-            assert reco_candidate[k] == candidate[k]
+            assert rv == v
 
 
 def test_serializability(empty_archive, alert_generator):
