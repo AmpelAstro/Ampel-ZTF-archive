@@ -77,7 +77,7 @@ class TimeConstraint(StrictModel):
     gt: Optional[float] = Field(None, alias="$gt")
 
 
-class StrictTimeConstraint(TimeConstraint):
+class StrictTimeConstraint(StrictModel):
     lt: float = Field(..., alias="$lt")
     gt: float = Field(..., alias="$gt")
 
@@ -393,13 +393,19 @@ class AlertBase(BaseModel):
     )
 
 
-class AlertCutouts(AlertBase):
+class AlertWithCutouts(AlertBase):
     cutoutScience: Optional[Cutout] = None
     cutoutTemplate: Optional[Cutout] = None
     cutoutDifference: Optional[Cutout] = None
 
 
-class Alert_33(AlertCutouts):
+class AlertWithDifferentialPhotometry(AlertWithCutouts):
+    publisher: str = "Ampel"
+    candidate: Candidate
+    prv_candidates: Optional[list[PrvCandidate]] = None
+
+
+class Alert_33(AlertWithDifferentialPhotometry):
     """
     avro alert schema for ZTF (www.ztf.caltech.edu)
     """
@@ -412,13 +418,10 @@ class Alert_33(AlertCutouts):
         Literal["3.2"],
         Literal["3.3"],
     ]
-    publisher: str = "Ampel"
-    candidate: Candidate
-    prv_candidates: Optional[list[PrvCandidate]] = None
 
 
-class Alert_402(Alert_33):
-    schemavsn: Literal["4.02"]  # type: ignore[assignment]
+class Alert_402(AlertWithDifferentialPhotometry):
+    schemavsn: Literal["4.02"]
     fp_hists: Optional[list[FPHist]] = None
 
 

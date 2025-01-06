@@ -43,8 +43,8 @@ from .models import (
     Alert,
     AlertChunk,
     AlertCount,
-    AlertCutouts,
     AlertQuery,
+    AlertWithCutouts,
     HEALpixMapQuery,
     HEALpixRegionCountQuery,
     HEALpixRegionQuery,
@@ -200,7 +200,7 @@ def get_alert_from_s3(
 @app.get(
     "/alert/{candid}",
     tags=["alerts"],
-    response_model=Alert,  # type: ignore[arg-type]
+    response_model=Alert,
     response_model_exclude_none=True,
 )
 def get_alert(
@@ -218,7 +218,7 @@ def get_alert(
     raise HTTPException(status.HTTP_404_NOT_FOUND)
 
 
-@app.get("/alert/{candid}/cutouts", tags=["cutouts"], response_model=AlertCutouts)
+@app.get("/alert/{candid}/cutouts", tags=["cutouts"], response_model=AlertWithCutouts)
 def get_cutouts(
     candid: int,
     db: ArchiveDB = Depends(get_archive),
@@ -291,7 +291,7 @@ def get_alerts_for_object(
 @app.get(
     "/object/{objectId}/photopoints",
     tags=["photopoints"],
-    response_model=Alert,  # type: ignore[arg-type]
+    response_model=Alert,
     response_model_exclude_none=True,
 )
 def get_photopoints_for_object(
