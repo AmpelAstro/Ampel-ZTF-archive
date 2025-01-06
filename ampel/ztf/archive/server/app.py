@@ -43,8 +43,8 @@ from .models import (
     Alert,
     AlertChunk,
     AlertCount,
-    AlertCutouts,
     AlertQuery,
+    AlertWithCutouts,
     HEALpixMapQuery,
     HEALpixRegionCountQuery,
     HEALpixRegionQuery,
@@ -218,7 +218,7 @@ def get_alert(
     raise HTTPException(status.HTTP_404_NOT_FOUND)
 
 
-@app.get("/alert/{candid}/cutouts", tags=["cutouts"], response_model=AlertCutouts)
+@app.get("/alert/{candid}/cutouts", tags=["cutouts"], response_model=AlertWithCutouts)
 def get_cutouts(
     candid: int,
     db: ArchiveDB = Depends(get_archive),
