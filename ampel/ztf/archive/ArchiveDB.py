@@ -1017,7 +1017,7 @@ class ArchiveDB(ArchiveDBClient):
         # mimic mysql field() function, passing the order by hand
         order = cast(
             UnaryExpression,
-            sqlalchemy.text(",".join("alert.candid=%d DESC" % i for i in candids)),
+            sqlalchemy.text(",".join(f"alert.candid={i:d} DESC" for i in candids)),
         )
 
         with self.connect() as conn:
