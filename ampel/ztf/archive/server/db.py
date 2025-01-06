@@ -3,7 +3,7 @@ from functools import lru_cache
 from fastapi import Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
-from psycopg2.errors import QueryCanceled  # type: ignore[import]
+from psycopg2.errors import QueryCanceled  # type: ignore[import-untyped]
 from sqlalchemy.exc import OperationalError
 
 from ampel.ztf.t0.ArchiveUpdater import ArchiveUpdater

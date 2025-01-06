@@ -200,7 +200,7 @@ def get_alert_from_s3(
 @app.get(
     "/alert/{candid}",
     tags=["alerts"],
-    response_model=Alert,  # type: ignore[arg-type]
+    response_model=Alert,
     response_model_exclude_none=True,
 )
 def get_alert(
@@ -291,7 +291,7 @@ def get_alerts_for_object(
 @app.get(
     "/object/{objectId}/photopoints",
     tags=["photopoints"],
-    response_model=Alert,  # type: ignore[arg-type]
+    response_model=Alert,
     response_model_exclude_none=True,
 )
 def get_photopoints_for_object(
