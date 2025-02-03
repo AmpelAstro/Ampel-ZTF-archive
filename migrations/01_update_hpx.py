@@ -79,4 +79,4 @@ with engine.connect() as connection:
             ],
         )
         dt = time.time() - t0
-        log.info(f"updated {len(rows)/dt:.1f} rows/s")
+        log.info(f"updated {len(rows) / dt:.1f} rows/s")

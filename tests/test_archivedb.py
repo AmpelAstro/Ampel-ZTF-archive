@@ -665,4 +665,4 @@ def test_seekable_avro(alert_generator, cutouts: bool):
                 assert reco == alert
                 break
         else:
-            raise ValueError(f'{alert["candid"]} not found')
+            raise ValueError(f"{alert['candid']} not found")
