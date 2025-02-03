@@ -60,7 +60,7 @@ def archive(integration):
                     "ARCHIVE_WRITE_USER=ampel-client",
                     "-P",
                     "-v",
-                    f"{Path(__file__).parent/'test-data'/'initdb'/'archive'}:/docker-entrypoint-initdb.d",
+                    f"{Path(__file__).parent / 'test-data' / 'initdb' / 'archive'}:/docker-entrypoint-initdb.d",
                     POSTGRES_IMAGE,
                 ],
             )

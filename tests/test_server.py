@@ -260,15 +260,15 @@ async def test_programid_auth(
         assert response.status_code == status.HTTP_200_OK
         assert mock_db.get_alerts_for_object.call_args.kwargs[
             "programid"
-        ] == params.get(
-            "programid"
-        ), "programid is passed through for partnership token"
+        ] == params.get("programid"), (
+            "programid is passed through for partnership token"
+        )
     else:
         assert response.status_code == status_code
         if response.status_code == status.HTTP_200_OK:
-            assert (
-                mock_db.get_alerts_for_object.call_args.kwargs["programid"] == 1
-            ), "non-partnership tokens always query programid 1"
+            assert mock_db.get_alerts_for_object.call_args.kwargs["programid"] == 1, (
+                "non-partnership tokens always query programid 1"
+            )
 
 
 @pytest.mark.asyncio

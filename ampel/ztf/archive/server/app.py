@@ -159,7 +159,7 @@ def post_alert_chunk(
     alerts, schema = content_and_schema
 
     blob, ranges = pack_records(alerts, schema)
-    key = f'{hashlib.sha256(json.dumps(sorted(alert["candid"] for alert in alerts)).encode("utf-8")).hexdigest()}.avro'
+    key = f"{hashlib.sha256(json.dumps(sorted(alert['candid'] for alert in alerts)).encode('utf-8')).hexdigest()}.avro"
     md5 = base64.b64encode(hashlib.md5(blob).digest()).decode("utf-8")
 
     obj = bucket.Object(key)
@@ -766,7 +766,9 @@ def create_stream_from_query(
         ) from None
 
     conn.execute(
-        sqlalchemy.text(f"set statement_timeout={settings.stream_query_timeout*1000};")
+        sqlalchemy.text(
+            f"set statement_timeout={settings.stream_query_timeout * 1000};"
+        )
     )
     group_id = archive._create_read_queue(conn, name, query.chunk_size)  # noqa: SLF001
     conn.commit()
