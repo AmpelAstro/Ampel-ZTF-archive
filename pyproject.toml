@@ -43,7 +43,7 @@ uvicorn = {version = "^0.34.0", optional = true}
 pytest = "^9.0.2"
 pytest-cov = "^7.0.0"
 coverage = {extras = ["toml"], version = "^7.6.4"}
-mypy = "^1.13.0"
+mypy = "^2.1.0"
 pytest-timeout = "^2.3.1"
 httpx = "^0.28.0"
 pytest-mock = "^3.14.0"
