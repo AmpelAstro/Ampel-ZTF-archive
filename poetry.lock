@@ -130,27 +130,32 @@ typing = ["typing_extensions (>=4.0.0)"]
 
 [[package]]
 name = "astropy-healpix"
-version = "1.1.2"
+version = "2.0.1"
 description = "BSD-licensed HEALPix for Astropy"
 optional = false
 python-versions = ">=3.10"
 files = [
-    {file = "astropy_healpix-1.1.2-cp310-abi3-macosx_10_9_x86_64.whl", hash = "sha256:fb504c998e1661215c74da9537558cd2048d29b44acb2d63e613aae133b91668"},
-    {file = "astropy_healpix-1.1.2-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:00a0c9378d7e844aecb23d62c206a999e045a48781a320ac5f012f8c95ac4022"},
-    {file = "astropy_healpix-1.1.2-cp310-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:ee37b14700d28cf53e2376c65f8cb6224a59f80067feb3f3cd6dd6f9a4577337"},
-    {file = "astropy_healpix-1.1.2-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:cf7a616af0b7df9c1d96f6af1e12382f29bd43e3fb88ce98f46992bfa23a149e"},
-    {file = "astropy_healpix-1.1.2-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:3526008fc5ccd4c13f3166a878bfb856b909a00912b27d26666992615c668e88"},
-    {file = "astropy_healpix-1.1.2-cp310-abi3-win32.whl", hash = "sha256:94f4a2fcee2e66ab68f8face8d20be4553cbf6ce81bd214052ddf307e2118513"},
-    {file = "astropy_healpix-1.1.2-cp310-abi3-win_amd64.whl", hash = "sha256:f6b3e50c49e73a66bb1847dc3451e1d22bf828c10881275bf359928e95d25fe3"},
-    {file = "astropy_healpix-1.1.2.tar.gz", hash = "sha256:03671df12a36ec3b357c244d5154b6786362ff5d80770675c7b24815101066e4"},
+    {file = "astropy_healpix-2.0.1-cp310-abi3-macosx_10_9_x86_64.whl", hash = "sha256:218549b1a73c58953b00628da6c5db0f5fbfd7ebe65eb8e376150ac6d5f9a955"},
+    {file = "astropy_healpix-2.0.1-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:8528bd4040becee1b0d47a8b008b43ad007a47449860afe96f70cb2429d644f5"},
+    {file = "astropy_healpix-2.0.1-cp310-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:179119d5a69e7b9245919cbe04c3e6bf0a485516b36c29f3402951aad5452251"},
+    {file = "astropy_healpix-2.0.1-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:c092c54124c48f8d98e04fb22f4b2aa4c8675e65d81c351523f41377f9a6df22"},
+    {file = "astropy_healpix-2.0.1-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:ce875a29c598c1a99f8f68351daeb4173463044dce4f1c7ebfe8c233ec5e9a49"},
+    {file = "astropy_healpix-2.0.1-cp310-abi3-win_amd64.whl", hash = "sha256:82a2d5d285076e44be7cb26e0435cf5a42eec4be79d893fd61b570c7440d9e99"},
+    {file = "astropy_healpix-2.0.1-cp314-cp314t-macosx_10_15_x86_64.whl", hash = "sha256:9654beeec16a31fa038e64b3a3218d32b0a985299be7504725a46c647af59b42"},
+    {file = "astropy_healpix-2.0.1-cp314-cp314t-macosx_11_0_arm64.whl", hash = "sha256:e5fd994d26d1bb2c3d4d5c8682d60353f15d6e0d5b967e6bbb2ec8181731743e"},
+    {file = "astropy_healpix-2.0.1-cp314-cp314t-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:78f76785852bcc748f5efab8bb4f2ab1fe959d7a998b48e7ed1e59a46cbf0e51"},
+    {file = "astropy_healpix-2.0.1-cp314-cp314t-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:02cefde735da1fe74654e786e02286261b04cc43f5c908a86a8457b2989ac2aa"},
+    {file = "astropy_healpix-2.0.1-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:65bee7b70f35ddb81d6b6c849c5bf46768afbce6869395e4f9e0a5c27cb0ce17"},
+    {file = "astropy_healpix-2.0.1-cp314-cp314t-win_amd64.whl", hash = "sha256:0d63cac22a7b0896ef3e3d28aafcc1dfa3f8ac639d0ae6bf600d060062338107"},
+    {file = "astropy_healpix-2.0.1.tar.gz", hash = "sha256:0e3f1c94064c45da779900cb90c938df7aef99a924abb23eeb893b16540e77e6"},
 ]
 
 [package.dependencies]
-astropy = ">=5"
-numpy = ">=1.25"
+astropy = ">=6.1"
+numpy = ">=2"
 
 [package.extras]
-docs = ["matplotlib", "sphinx-astropy"]
+docs = ["matplotlib", "sphinx-astropy[confv3] (>=1.11)"]
 test = ["hypothesis", "pytest-astropy"]
 
 [[package]]
@@ -2408,17 +2413,6 @@ files = [
 
 [[package]]
 name = "typing-extensions"
-version = "4.12.2"
-description = "Backported and Experimental Type Hints for Python 3.8+"
-optional = false
-python-versions = ">=3.8"
-files = [
-    {file = "typing_extensions-4.12.2-py3-none-any.whl", hash = "sha256:04e5ca0351e0f3f85c6853954072df659d0d13fac324d0072316b67d7794700d"},
-    {file = "typing_extensions-4.12.2.tar.gz", hash = "sha256:1a7ead55c7e559dd4dee8856e3a88b41225abfe1ce8df57b7c13915fe121ffb8"},
-]
-
-[[package]]
-name = "typing-extensions"
 version = "4.15.0"
 description = "Backported and Experimental Type Hints for Python 3.9+"
 optional = false
@@ -2498,4 +2492,4 @@ server = ["fastapi", "pydantic", "pydantic-settings", "uvicorn"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "e46ffd535e1e556653928051242c59650582bb164674317af4074499d43c3c07"
+content-hash = "7dc7f0351fd476e751005029427b5a65e0f3930da20baefdcb4e36f147268ecb"
